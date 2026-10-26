@@ -429,7 +429,7 @@ export default function AckoInsurancePortal() {
           (lang === 'hi' && (voices.find((v) => v.name.includes('हिन्दी') || v.lang.startsWith('hi')) || voices.find((v) => v.lang.includes('IN')))) ||
           (lang === 'mr' && (voices.find((v) => v.name.includes('मराठी') || v.lang.startsWith('mr')) || voices.find((v) => v.lang.startsWith('hi')) || voices.find((v) => v.lang.includes('IN')))) ||
           voices.find((v) => (v.name.includes('Natural') || v.name.includes('Enhanced') || v.name.includes('Neural')) && v.lang.startsWith('en')) ||
-          voices.find((v) => (v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Rishi') || v.name.includes('Veena') || v.name.includes('Daniel') || v.name.includes('Karen')) && v.lang.startsWith('en')) ||
+          voices.find((v) => (v.name.includes('Samantha') || v.name.includes('Rishi') || v.name.includes('Veena') || v.name.includes('Daniel') || v.name.includes('Karen') || v.name.includes('Siri')) && v.lang.startsWith('en')) ||
           voices.find((v) => v.lang === targetLang) ||
           voices.find((v) => v.lang.startsWith('en')) ||
           voices[0];
