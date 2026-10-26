@@ -16,13 +16,22 @@ Digital term life insurance conversion suffers from a **78% drop-off rate** in I
 
 | Capability | User & Regulatory Outcome |
 |---|---|
-| **🎙️ Two-Way Regional Voice** | Speak naturally in English, Hindi, or Marathi. Powered by Meta Muse Voice Transcribe + low-latency neural synthesis. |
-| **🖱️ Pure Dual-Cursor Co-Browsing** | Agent glides a visible remote pointer, highlights form fields, and demonstrates inputs while the applicant retains instant override (ESC / click anywhere). |
-| **📜 Policy Evidence Drawer** | Grounded in verbatim policy wordings. Slide-out drawer with highlighted clauses for Section 45 Incontestability, Critical Illness (Clause 4.2), Grace Periods, and IRDAI compliance stamps. |
-| **🪪 1-Click KYC Document OCR** | Multimodal ingestion of PAN / Aadhaar cards powered by Meta Muse Image + SAM 3.1 with client-side 8-digit masking and cursor autofill. |
-| **💰 "What-If" Dual Tax & Net Cost Engine** | Real-time calculation of statutory deductions under Section 80C (Life Cover) and Section 80D (Health/Critical Illness). Demonstrates how tax savings make ₹25L Critical Illness cover net cost-negative. |
-| **ℹ️ "Why Does ACKO Ask This?"** | Contextual explainer chips next to sensitive inputs (Income, Smoker status) explaining underwriting risk rationale in layman's terms. |
-| **🛡️ Application Guardian Audit Certificate** | Generates a cryptographically hashed, downloadable compliance audit certificate (`.json`) guaranteeing Section 45 full disclosure acknowledgment. |
+| **🎙️ Full-Duplex Regional Voice** | Speak naturally in English, Hindi, or Marathi with natural barge-in interruption. Powered by Meta Muse Spark 1.3 + Voice Transcribe. |
+| **🖱️ Pure Dual-Cursor Co-Browsing** | Agent glides a visible remote pointer, highlights form fields, and performs inputs in real time while applicant retains instant override. |
+| **🪜 Complex Living Benefit Ladders** | 3-tier Critical Illness cover (Silver ₹10L / Gold ₹25L / Platinum ₹50L), ATPD 100-month salary replacement ladder, and Life Stage Cover Escalator. |
+| **🛡️ Nomination & MWPA 1874 Trust Shield** | Meta Muse Wonder recommendation (70% Spouse / 30% Child split), minor appointee handling, and Section 6 Married Women's Property Act irrevocable creditor shield. |
+| **⚖️ Statutory Terms & Conditions Drawer** | Interactive slide-over drawer with 8 IRDAI clauses (Section 45 incontestability, 30-day grace, 30-day free-look 100% refund, suicide 80% refund, 99.1% CSR). |
+| **🪪 1-Click KYC Document OCR** | Multimodal ingestion of PAN / Aadhaar cards powered by Meta SAM 3.1 with client-side Zero-PII 8-digit masking and cursor autofill. |
+| **💰 "What-If" Dual Tax & Net Cost Engine** | Real-time calculation of statutory deductions under Section 80C (Life Cover) and Section 80D (Health/Critical Illness). |
+| **ℹ️ "Why Does ACKO Ask This?"** | Contextual explainer chips next to sensitive inputs explaining underwriting risk rationale in layman's terms with statutory citations. |
+| **📜 Application Guardian Audit Certificate** | Generates a cryptographically hashed, downloadable compliance audit certificate (`.json`) guaranteeing Section 45 disclosure acknowledgment. |
+
+---
+
+## 📅 Today's Work & Engineering Log
+
+Detailed work history, architecture decisions, and tomorrow's roadmap are documented in:
+👉 **[TODAYS_WORK_HISTORY_AND_NEXT_STEPS.md](./TODAYS_WORK_HISTORY_AND_NEXT_STEPS.md)**
 
 ---
 
@@ -42,12 +51,12 @@ CoverPilot follows a **Dual-Stream Decoupled Architecture**:
 │ LEAN CRITICAL PATH    │             │ ON-DEMAND SPECIALISTS │
 │ (Low Latency Voice)   │             │ (Triggered by Events) │
 ├───────────────────────┤             ├───────────────────────┤
-│ • Muse Voice          │             │ • Meta Muse Image     │
-│   Transcribe          │             │   (KYC Document OCR)  │
-│ • Meta Muse Spark 1.3 │             │ • SAM 3.1             │
-│   (Session Reasoner)  │             │   (Bounding Boxes)    │
-│ • DOM Mutation Tree   │             │ • Glimmer             │
-│   (Sub-5ms telemetry) │             │   (Risk Underwriting) │
+│ • Muse Voice          │             │ • Meta Muse Wonder 1.0│
+│   Transcribe          │             │   (Actuarial & MWPA)  │
+│ • Meta Muse Spark 1.3 │             │ • Meta Muse Image     │
+│   (Session Reasoner)  │             │   (KYC Document OCR)  │
+│ • DOM Mutation Tree   │             │ • SAM 3.1             │
+│   (Sub-5ms telemetry) │             │   (Zero-PII Masking)  │
 └───────────────────────┘             └───────────────────────┘
 ```
 
@@ -57,14 +66,13 @@ For the complete architectural design and evaluation, see [coverpilot_video_unde
 
 ## 🤖 Meta Model Fleet
 
-1. **Meta Muse Spark 1.3** — Real-time co-browsing session orchestrator, tool caller, and conversational reasoning core.
-2. **Meta Muse Voice Transcribe** — Low-latency streaming speech-to-text with code-switching support (Hindi/Marathi/English).
-3. **SAM 3.1 (Segment Anything)** — High-precision UI element and document bounding-box segmentation.
-4. **Meta Muse Image** — Multimodal KYC document extraction for PAN and Aadhaar identity verification.
-5. **Glimmer** — Edge-deployed underwriting risk scoring and disclosure verification.
-6. **Meta Muse Code** — Dynamic in-browser DOM element selector synthesis and validation.
-7. **Segment Anything 2 (SAM 2)** — Temporal tracking of animated UI components and error tooltips.
-8. **SeamlessM4T v2** — Cross-lingual semantic alignment and regional dialect normalization.
+1. **Meta Muse Spark 1.3** — Real-time co-browsing session orchestrator, tool caller, and audio-to-audio conversational brain.
+2. **Meta Muse Wonder 1.0** — Deep actuarial multi-step reasoning, Benefit Ladders, and IRDAI Section 39 / MWPA 1874 nomination optimization.
+3. **Meta Muse Voice Transcribe** — Low-latency streaming speech-to-text with turn detection and code-switching (Hindi / Marathi / English).
+4. **Meta SAM 3 (Segment Anything 3.1)** — Client-side visual document boundary segmentation and real-time Zero-PII masking on Aadhaar & PAN.
+5. **Meta Muse Image** — Multimodal KYC document visual grounding and policy certificate synthesis.
+6. **Meta Muse Glimmer** — Sub-pixel DOM coordinate resolution and virtual cursor gliding.
+7. **Deterministic Core** — Exact actuarial tax math (80C + 80D), IRDAI policy evidence citations, and browser DOM action execution.
 
 ---
 
