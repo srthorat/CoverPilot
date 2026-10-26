@@ -166,7 +166,40 @@ export default function AckoInsurancePortal() {
     hospitalCash: false,
   });
 
-  // Step 3: Medical & Underwriting Disclosures
+  // Step 3: Nomination & Beneficiary Allocation (IRDAI Section 39 & MWPA 1874)
+  const [nomination, setNomination] = useState({
+    primaryName: '',
+    primaryRelation: 'Spouse',
+    primaryDob: '19/08/1996',
+    primaryShare: 100,
+    hasSecondaryNominee: false,
+    secondaryName: '',
+    secondaryRelation: 'Child',
+    secondaryAge: 7,
+    secondaryShare: 30,
+    appointeeName: '',
+    appointeeRelation: 'Grandparent',
+    mwpaTrustEnabled: false,
+  });
+
+  // Step 2: Complex Benefit Ladders & Living Benefit Tiers
+  const [ciTier, setCiTier] = useState<'tier1' | 'tier2' | 'tier3'>('tier2'); // Silver 10L (₹89), Gold 25L (₹149), Platinum 50L (₹269)
+  const [atpdOption, setAtpdOption] = useState<'lump' | 'income'>('lump'); // Lump 50L (+₹79) or Income Replacement 1L/mo x 100 mo (+₹129)
+  const [lifeStageEscalator, setLifeStageEscalator] = useState<boolean>(false); // +₹49/mo
+  const [terminalIllnessCover, setTerminalIllnessCover] = useState<boolean>(true); // Built-in ₹0
+
+  // Statutory Terms & Conditions Interactive Drawer
+  const [showTermsDrawer, setShowTermsDrawer] = useState<boolean>(false);
+  const [termsSearchQuery, setTermsSearchQuery] = useState<string>('');
+
+  // Parallel Meta Model Fleet Execution Telemetry
+  const [fleetTelemetry, setFleetTelemetry] = useState<{
+    parallel: boolean;
+    models: { name: string; role: string; latency: string; status: string }[];
+    totalParallelMs: number;
+  } | null>(null);
+
+  // Step 4: Medical & Underwriting Disclosures
   const [underwriting, setUnderwriting] = useState({
     familyCardiacHistory: false,
     priorHospitalization: false,
@@ -174,7 +207,7 @@ export default function AckoInsurancePortal() {
     section45Consent: false,
   });
 
-  // Step 4: Proposal Binding & Receipt
+  // Step 5: Proposal Binding & Receipt
   const [proposalId, setProposalId] = useState<string>('');
   const [policyIssued, setPolicyIssued] = useState<boolean>(false);
 
@@ -675,28 +708,68 @@ export default function AckoInsurancePortal() {
           },
         ]);
 
+        // Update Parallel Meta Model Fleet Execution Telemetry
+        if (data.parallelFleetExecution) {
+          setFleetTelemetry(data.parallelFleetExecution);
+        }
+
+        // Open Terms & Conditions Drawer if referenced
+        if (data.elementId === 'drawer-terms-conditions') {
+          setShowTermsDrawer(true);
+        }
+
         // Execute automated co-browsing field actions on the live form
         if (data.fieldAction) {
-          const { field, value } = data.fieldAction;
-          if (field === 'fullName') {
-            glideAgentCursorToElement('field-full-name', `Entering Name: ${value}`, () => {
-              setProfile((p) => ({ ...p, fullName: value }));
+          const action = data.fieldAction;
+          if (action.type === 'nominate') {
+            glideAgentCursorToElement('nomination-section', 'Configuring Nominee & Trust Protection', () => {
+              if (activeStep < 3) setActiveStep(3);
+              setNomination((prev) => ({
+                ...prev,
+                primaryName: action.primaryName !== undefined ? action.primaryName : prev.primaryName,
+                primaryRelation: action.primaryRelation !== undefined ? action.primaryRelation : prev.primaryRelation,
+                primaryShare: action.primaryShare !== undefined ? action.primaryShare : prev.primaryShare,
+                hasSecondaryNominee: action.hasSecondaryNominee !== undefined ? action.hasSecondaryNominee : prev.hasSecondaryNominee,
+                secondaryName: action.secondaryName !== undefined ? action.secondaryName : prev.secondaryName,
+                secondaryRelation: action.secondaryRelation !== undefined ? action.secondaryRelation : prev.secondaryRelation,
+                secondaryAge: action.secondaryAge !== undefined ? action.secondaryAge : prev.secondaryAge,
+                secondaryShare: action.secondaryShare !== undefined ? action.secondaryShare : prev.secondaryShare,
+                appointeeName: action.appointeeName !== undefined ? action.appointeeName : prev.appointeeName,
+                appointeeRelation: action.appointeeRelation !== undefined ? action.appointeeRelation : prev.appointeeRelation,
+                mwpaTrustEnabled: action.mwpaTrustEnabled !== undefined ? action.mwpaTrustEnabled : prev.mwpaTrustEnabled,
+              }));
             });
-          } else if (field === 'criticalIllness') {
+          } else if (action.type === 'ladder') {
+            glideAgentCursorToElement('card-benefit-ladders', 'Configuring Benefit Ladder', () => {
+              if (action.field === 'ciTier') {
+                setSelectedRiders((r) => ({ ...r, criticalIllness: true }));
+                setCiTier(action.value);
+              } else if (action.field === 'atpdOption') {
+                setSelectedRiders((r) => ({ ...r, accidentalDeath: true }));
+                setAtpdOption(action.value);
+              } else if (action.field === 'lifeStageEscalator') {
+                setLifeStageEscalator(Boolean(action.value));
+              }
+            });
+          } else if (action.field === 'fullName') {
+            glideAgentCursorToElement('field-full-name', `Entering Name: ${action.value}`, () => {
+              setProfile((p) => ({ ...p, fullName: action.value }));
+            });
+          } else if (action.field === 'criticalIllness') {
             glideAgentCursorToElement('card-critical-illness', 'Selecting Critical Illness Rider', () => {
-              setSelectedRiders((r) => ({ ...r, criticalIllness: value }));
+              setSelectedRiders((r) => ({ ...r, criticalIllness: action.value }));
             });
-          } else if (field === 'accidentalDeath') {
+          } else if (action.field === 'accidentalDeath') {
             glideAgentCursorToElement('card-accidental-death', 'Selecting Accidental Cover Rider', () => {
-              setSelectedRiders((r) => ({ ...r, accidentalDeath: value }));
+              setSelectedRiders((r) => ({ ...r, accidentalDeath: action.value }));
             });
-          } else if (field === 'waiverOfPremium') {
+          } else if (action.field === 'waiverOfPremium') {
             glideAgentCursorToElement('card-waiver-premium', 'Selecting Premium Waiver Rider', () => {
-              setSelectedRiders((r) => ({ ...r, waiverOfPremium: value }));
+              setSelectedRiders((r) => ({ ...r, waiverOfPremium: action.value }));
             });
-          } else if (field === 'isSmoker') {
-            glideAgentCursorToElement('field-smoking', `Setting Smoker Status: ${value ? 'Yes' : 'No'}`, () => {
-              setProfile((p) => ({ ...p, isSmoker: value }));
+          } else if (action.field === 'isSmoker') {
+            glideAgentCursorToElement('field-smoking', `Setting Smoker Status: ${action.value ? 'Yes' : 'No'}`, () => {
+              setProfile((p) => ({ ...p, isSmoker: action.value }));
             });
           }
         } else if (data.elementId) {
@@ -759,6 +832,81 @@ export default function AckoInsurancePortal() {
       summary: 'You have 30 days to review the policy after issuance. If not completely satisfied, you receive a full refund with zero lock-in penalties.',
     },
   };
+
+  const TERMS_AND_CONDITIONS_CLAUSES = [
+    {
+      id: 'tc-section-45',
+      clauseNumber: 'Clause 1',
+      title: 'Section 45 Statutory Claim Guarantee (3-Year Incontestability Rule)',
+      category: 'Statutory Protection',
+      irdaiRef: 'Insurance Act 1938, Section 45',
+      summary: 'After 3 continuous years of the policy in force, ACKO Life cannot dispute, question, or reject any death claim on any grounds whatsoever (except documented deliberate fraud).',
+      fullText: 'No policy of life insurance shall be called in question on any ground whatsoever after the expiry of three years from the date on which the policy was effected, or the date of revival. Full honest disclosure at proposal guarantees irrevocable settlement for your nominee.',
+    },
+    {
+      id: 'tc-grace-period',
+      clauseNumber: 'Clause 2',
+      title: '30-Day Statutory Grace Period for Premium Payment',
+      category: 'Payment Safeguards',
+      irdaiRef: 'IRDAI Master Circular 2024, Reg 14',
+      summary: 'You receive 30 calendar days of grace period for premium payments (15 days for monthly mode). Your full cover remains 100% active with zero lapse risk during this period.',
+      fullText: 'A grace period of thirty (30) days from the premium due date is allowed for payment of quarterly, half-yearly, and annual premiums; fifteen (15) days for monthly mode. If a claim arises during the grace period, the full sum assured is payable subject to deduction of unpaid premium.',
+    },
+    {
+      id: 'tc-free-look',
+      clauseNumber: 'Clause 3',
+      title: '30-Day Free-Look Cancellation with 100% Full Refund',
+      category: 'Consumer Rights',
+      irdaiRef: 'IRDAI Policyholders Protection Reg 8.1',
+      summary: 'You have 30 days from electronic policy receipt to review all terms. If unsatisfied, cancel anytime for a 100% refund with zero cancellation penalty.',
+      fullText: 'The Policyholder is entitled to a 30-day Free-Look Period from the date of electronic receipt of the policy document. If the Policyholder does not agree with any terms, they may return the policy for cancellation and receive a full 100% refund of the premium paid (less statutory stamp duty).',
+    },
+    {
+      id: 'tc-suicide-clause',
+      clauseNumber: 'Clause 4',
+      title: 'Suicide Exclusion & 80% Premium Refund Rule',
+      category: 'Exclusions',
+      irdaiRef: 'ACKO Life Flexi Shield Schedule, Section 9.2',
+      summary: 'In the event of suicide within 12 months of inception, 80% of total premiums paid are refunded to the nominee. After 12 months, 100% of the full sum assured is paid with zero dispute.',
+      fullText: 'If the Life Assured commits suicide within twelve (12) months from the Date of Inception or Date of Revival, the policy shall terminate and 80% of total premiums paid shall be refunded to the nominee. After 12 continuous months, death claim is fully payable in accordance with the schedule.',
+    },
+    {
+      id: 'tc-ped-disclosure',
+      clauseNumber: 'Clause 5',
+      title: 'Pre-Existing Disease (PED) & Medical Acceptance',
+      category: 'Underwriting',
+      irdaiRef: 'IRDAI Underwriting Norms & Section 45',
+      summary: 'Disclose all medical history honestly. Once accepted by underwriting without loading, ACKO Life cannot dispute coverage post-issuance.',
+      fullText: 'All pre-existing medical conditions, surgical histories, or chronic illnesses disclosed in the proposal form and accepted by the underwriter are covered under the policy terms without retrospective exclusion or dispute.',
+    },
+    {
+      id: 'tc-waiting-period',
+      clauseNumber: 'Clause 6',
+      title: 'Critical Illness Waiting Period & 14-Day Survival Period',
+      category: 'Living Benefits',
+      irdaiRef: 'Clause 4.2 Living Benefit Rider Schedule',
+      summary: 'A 90-day waiting period from policy inception applies for Critical Illness. A 14-day survival period post-diagnosis triggers the full tax-free lump sum transfer.',
+      fullText: 'The Critical Illness Living Benefit Rider is subject to an initial waiting period of ninety (90) days from the inception date. Upon confirmed medical diagnosis of any of the 36 defined illnesses and survival for fourteen (14) days, 100% of the rider sum assured is paid as a cash lump sum.',
+    },
+    {
+      id: 'tc-csr-sla',
+      clauseNumber: 'Clause 7',
+      title: '99.1% Audited Claim Settlement Ratio & 2-Hour Digital SLA',
+      category: 'Claims Concierge',
+      irdaiRef: 'IRDAI Annual Audited Public Disclosures 2024',
+      summary: 'ACKO Life maintains a 99.1% claim settlement ratio with a 2-hour digital claim registration and zero physical paperwork required from your family.',
+      fullText: 'ACKO Life is committed to fair, prompt claim settlements with an audited 99.1% Claim Settlement Ratio. Claims can be registered 24x7 digitally via the customer portal or dedicated bereavement concierge with express 2-hour initiation.',
+    },
+    {
+      id: 'tc-revival-policy',
+      clauseNumber: 'Clause 8',
+      title: '5-Year Continuous Policy Revival Guarantee',
+      category: 'Policy Continuity',
+      irdaiRef: 'Insurance Laws (Amendment) Act & Reg 16',
+      summary: 'If your policy ever lapses due to missed payments, you have 5 full years to reinstate your coverage and lock in your original premium rate.',
+      fullText: 'A lapsed policy may be reinstated or revived within a continuous period of five (5) years from the date of first unpaid premium, subject to clearing unpaid dues and submitting a satisfactory good-health declaration.',
+    },
+  ];
 
   const WHY_ASK_THIS_EXPLANATIONS: Record<string, { title: string; en: string; hi: string; mr: string; clauseRef: string }> = {
     'field-full-name': {
@@ -1174,10 +1322,11 @@ export default function AckoInsurancePortal() {
   // Premium Calculations
   const baseRates = { '1cr': 790, '1.5cr': 1050, '2cr': 1380 };
   const riderRates = {
-    criticalIllness: 149,
-    accidentalDeath: 79,
+    criticalIllness: ciTier === 'tier1' ? 89 : ciTier === 'tier3' ? 269 : 149,
+    accidentalDeath: atpdOption === 'income' ? 129 : 79,
     waiverOfPremium: 42,
     hospitalCash: 55,
+    lifeStageEscalator: 49,
   };
 
   const monthlyBase = baseRates[baseSumAssured];
@@ -1185,7 +1334,8 @@ export default function AckoInsurancePortal() {
     (selectedRiders.criticalIllness ? riderRates.criticalIllness : 0) +
     (selectedRiders.accidentalDeath ? riderRates.accidentalDeath : 0) +
     (selectedRiders.waiverOfPremium ? riderRates.waiverOfPremium : 0) +
-    (selectedRiders.hospitalCash ? riderRates.hospitalCash : 0);
+    (selectedRiders.hospitalCash ? riderRates.hospitalCash : 0) +
+    (lifeStageEscalator ? riderRates.lifeStageEscalator : 0);
 
   const subtotalMonthly = monthlyBase + monthlyRiders;
   const gst18Percent = Math.round(subtotalMonthly * 0.18);
@@ -1197,7 +1347,7 @@ export default function AckoInsurancePortal() {
     const id = `ACKO-LIFE-2026-${Math.floor(100000 + Math.random() * 900000)}`;
     setProposalId(id);
     setPolicyIssued(true);
-    setActiveStep(4);
+    setActiveStep(5);
     const msg = selectedLanguage === 'hi'
       ? `बधाई हो! आपकी ACKO Life पॉलिसी ${id} सफलतापूर्वक जारी कर दी गई है।`
       : selectedLanguage === 'mr'
@@ -1498,6 +1648,16 @@ export default function AckoInsurancePortal() {
               <span>📜 Policy Evidence</span>
             </button>
 
+            {/* Statutory Terms & Conditions Drawer Toggle */}
+            <button
+              id="btn-terms-conditions"
+              onClick={() => setShowTermsDrawer(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-bold transition-all border border-blue-300 shadow-2xs"
+              title="View statutory Terms and Conditions & IRDAI consumer protections"
+            >
+              <span>⚖️ Terms & Conditions</span>
+            </button>
+
             {/* Application Guardian Audit Certificate */}
             <button
               onClick={handleDownloadAuditCertificate}
@@ -1634,7 +1794,7 @@ export default function AckoInsurancePortal() {
       {/* 3. Stepper Navigation */}
       <nav className="bg-white border-b border-slate-200 px-6 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4 sm:gap-8 overflow-x-auto text-xs py-1">
+          <div className="flex items-center gap-3 sm:gap-6 overflow-x-auto text-xs py-1">
             
             {/* Step 1 */}
             <button
@@ -1665,7 +1825,7 @@ export default function AckoInsurancePortal() {
               }`}>
                 {activeStep > 2 ? '✓' : '2'}
               </span>
-              <span>2. Cover & Rider Selection</span>
+              <span>2. Benefit Ladders & Cover</span>
             </button>
 
             <span className="text-slate-300">→</span>
@@ -1682,7 +1842,7 @@ export default function AckoInsurancePortal() {
               }`}>
                 {activeStep > 3 ? '✓' : '3'}
               </span>
-              <span>3. Underwriting & Disclosures</span>
+              <span>3. Beneficiary & MWPA Trust</span>
             </button>
 
             <span className="text-slate-300">→</span>
@@ -1691,15 +1851,32 @@ export default function AckoInsurancePortal() {
             <button
               onClick={() => setActiveStep(4)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
-                activeStep === 4 ? 'text-[#582be8] font-bold' : 'text-slate-400'
+                activeStep === 4 ? 'text-[#582be8] font-bold' : activeStep > 4 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
             >
               <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                activeStep === 4 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
+                activeStep > 4 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 4 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}>
-                4
+                {activeStep > 4 ? '✓' : '4'}
               </span>
-              <span>4. Policy Issuance</span>
+              <span>4. Underwriting & Declarations</span>
+            </button>
+
+            <span className="text-slate-300">→</span>
+
+            {/* Step 5 */}
+            <button
+              onClick={() => setActiveStep(5)}
+              className={`flex items-center gap-2 transition-all whitespace-nowrap ${
+                activeStep === 5 ? 'text-[#582be8] font-bold' : 'text-slate-400'
+              }`}
+            >
+              <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                activeStep === 5 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
+              }`}>
+                5
+              </span>
+              <span>5. Policy Schedule & Terms</span>
             </button>
 
           </div>
@@ -2386,6 +2563,139 @@ export default function AckoInsurancePortal() {
                   </div>
 
                 </div>
+
+                {/* Complex Benefit Ladders & Tiered Protection */}
+                <div id="card-benefit-ladders" className="mt-5 p-5 rounded-2xl bg-gradient-to-br from-purple-50 via-indigo-50/40 to-white border border-purple-200/80 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-purple-100">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#582be8] flex items-center gap-1.5">
+                        <span>⚡ Meta Muse Wonder • Complex Benefit Ladders</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 font-mono">
+                          Actuarial Dynamic Tiers
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-600">Select living benefit ladders and milestone-based coverage escalators.</p>
+                    </div>
+                  </div>
+
+                  {/* 1. Critical Illness Coverage Tier Ladder */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-xs font-semibold text-slate-800">
+                      <span>1. Critical Illness Living Benefit Tier Ladder:</span>
+                      <span className="text-[11px] font-mono text-[#582be8] font-bold">
+                        {ciTier === 'tier1' ? '₹10 Lakhs (+₹89/mo)' : ciTier === 'tier3' ? '₹50 Lakhs (+₹269/mo)' : '₹25 Lakhs (+₹149/mo) [Recommended]'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                      {[
+                        { tier: 'tier1' as const, name: 'Tier 1: Silver', cover: '₹10,00,000', illnesses: '10 Major Conditions', price: '+₹89/mo' },
+                        { tier: 'tier2' as const, name: 'Tier 2: Gold (Rec.)', cover: '₹25,00,000', illnesses: '36 Critical Conditions', price: '+₹149/mo' },
+                        { tier: 'tier3' as const, name: 'Tier 3: Platinum', cover: '₹50,00,000', illnesses: '64 Conditions + 2nd Opinion', price: '+₹269/mo' },
+                      ].map((t) => (
+                        <div
+                          key={t.tier}
+                          onClick={() => {
+                            setSelectedRiders(prev => ({ ...prev, criticalIllness: true }));
+                            setCiTier(t.tier);
+                          }}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                            selectedRiders.criticalIllness && ciTier === t.tier
+                              ? 'border-[#582be8] bg-purple-50 ring-1 ring-[#582be8]'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex justify-between items-baseline mb-1">
+                            <span className="font-bold text-slate-900 text-xs">{t.name}</span>
+                            <span className="font-mono text-[#582be8] font-bold text-[11px]">{t.price}</span>
+                          </div>
+                          <strong className="text-sm font-extrabold text-slate-800 block">{t.cover}</strong>
+                          <span className="text-[10px] text-slate-500 block">{t.illnesses}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Accidental Total & Permanent Disability (ATPD) Income Ladder */}
+                  <div className="space-y-2 pt-2 border-t border-purple-100">
+                    <div className="flex justify-between items-center text-xs font-semibold text-slate-800">
+                      <span>2. Accidental Disability Payout Structure Ladder:</span>
+                      <span className="text-[11px] font-mono text-[#582be8] font-bold">
+                        {atpdOption === 'income' ? '₹1 Lakh/mo for 100 Months (+₹129/mo)' : '₹50 Lakhs Lump Sum (+₹79/mo)'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div
+                        onClick={() => {
+                          setSelectedRiders(prev => ({ ...prev, accidentalDeath: true }));
+                          setAtpdOption('lump');
+                        }}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                          selectedRiders.accidentalDeath && atpdOption === 'lump'
+                            ? 'border-[#582be8] bg-purple-50 ring-1 ring-[#582be8]'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-baseline mb-0.5">
+                          <span className="font-bold text-slate-900">Option A: Lump Sum Cash</span>
+                          <span className="font-mono text-[#582be8] font-bold text-[11px]">+₹79/mo</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600">Immediate ₹50,00,000 cash transfer upon accidental disability.</p>
+                      </div>
+
+                      <div
+                        onClick={() => {
+                          setSelectedRiders(prev => ({ ...prev, accidentalDeath: true }));
+                          setAtpdOption('income');
+                        }}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                          selectedRiders.accidentalDeath && atpdOption === 'income'
+                            ? 'border-[#582be8] bg-purple-50 ring-1 ring-[#582be8]'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-baseline mb-0.5">
+                          <span className="font-bold text-slate-900">Option B: Salary Replacement Ladder</span>
+                          <span className="font-mono text-[#582be8] font-bold text-[11px]">+₹129/mo</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600">₹1,00,000/month regular income for 100 continuous months (₹1.00 Cr total).</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Life Stage Cover Escalator & Terminal Illness */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-purple-100 text-xs">
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl bg-white border border-slate-200 cursor-pointer hover:border-purple-300 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={lifeStageEscalator}
+                        onChange={(e) => setLifeStageEscalator(e.target.checked)}
+                        className="mt-0.5 size-4 rounded text-[#582be8] focus:ring-[#582be8]"
+                      />
+                      <div>
+                        <div className="flex justify-between items-baseline">
+                          <span className="font-bold text-slate-900">Life Stage Cover Escalator</span>
+                          <span className="font-mono text-[#582be8] font-bold text-[10px]">+₹49/mo</span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                          Auto-boost cover by 10% annually or 50% on marriage / 25% on child birth with zero medical re-tests.
+                        </p>
+                      </div>
+                    </label>
+
+                    <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-2">
+                      <span className="text-emerald-700 text-base">🛡️</span>
+                      <div>
+                        <div className="flex justify-between items-baseline">
+                          <span className="font-bold text-emerald-950">Terminal Illness Accelerated Payout</span>
+                          <span className="font-mono text-emerald-800 font-bold text-[10px]">Built-in (₹0)</span>
+                        </div>
+                        <p className="text-[10px] text-emerald-800 leading-tight mt-0.5">
+                          100% of sum assured paid immediately upon medical diagnosis of terminal illness (&lt; 6 months).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-between items-center pt-2">
@@ -2402,7 +2712,7 @@ export default function AckoInsurancePortal() {
                   }}
                   className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
                 >
-                  <span>Continue to Step 3: Medical Disclosures</span>
+                  <span>Continue to Step 3: Beneficiary & MWPA Trust</span>
                   <span>→</span>
                 </button>
               </div>
@@ -2410,12 +2720,279 @@ export default function AckoInsurancePortal() {
             </div>
           )}
 
-          {/* STEP 3: Medical Disclosures */}
+          {/* STEP 3: Beneficiary Nomination & Statutory Trust (IRDAI Section 39 & MWPA 1874) */}
           {activeStep === 3 && (
+            <div id="nomination-section" className="acko-card p-6 flex flex-col gap-5">
+              <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-[#111827] flex items-center gap-2">
+                    <span>Step 3: Beneficiary Nomination & Statutory MWPA Trust</span>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-100 text-[#582be8]">
+                      IRDAI Section 39
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500">Designate legal beneficiaries and protect claim proceeds under Married Women's Property Act</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => triggerFieldGuidance('nomination-section')}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-50 hover:bg-purple-100 text-[#582be8] border border-purple-200 transition-colors flex items-center gap-1"
+                >
+                  <span>💡 Hear Nomination Advice</span>
+                </button>
+              </div>
+
+              {/* Meta Muse Wonder AI Recommendation Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-900/10 via-indigo-900/10 to-blue-900/10 border border-purple-300 text-slate-800 flex flex-col gap-3 shadow-xs">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">💡</span>
+                    <div>
+                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#582be8]">
+                        Meta Muse Wonder 1.0 • Actuarial Recommendation
+                      </h4>
+                      <p className="text-xs text-slate-700 font-medium">
+                        For salaried professionals with dependents, IRDAI recommends allocating <strong>70% to Spouse</strong> and <strong>30% to Minor Child</strong> (with an adult appointee), shielded by the <strong>MWPA 1874 Trust</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-purple-100 text-[#582be8] text-[10px] font-mono font-bold border border-purple-200 shrink-0">
+                    Actuarial Match 99.4%
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-purple-200/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNomination({
+                        primaryName: 'Priya Ramesh Thorat',
+                        primaryRelation: 'Spouse',
+                        primaryDob: '19/08/1996',
+                        primaryShare: 70,
+                        hasSecondaryNominee: true,
+                        secondaryName: 'Aarav Ramesh Thorat',
+                        secondaryRelation: 'Child',
+                        secondaryAge: 7,
+                        secondaryShare: 30,
+                        appointeeName: 'Shankar Thorat',
+                        appointeeRelation: 'Grandparent',
+                        mwpaTrustEnabled: true,
+                      });
+                      speakText(
+                        selectedLanguage === 'hi'
+                          ? 'मेटा म्यूज वंडर ने 70% पत्नी और 30% बच्चे के विभाजन के साथ MWPA ट्रस्ट शील्ड लागू कर दी है।'
+                          : selectedLanguage === 'mr'
+                          ? 'मेटा म्यूज वंडरने ७०% पत्नी आणि ३०% मुलाच्या वाट्यासह MWPA ट्रस्ट शील्ड लागू केले आहे.'
+                          : 'Applied recommended 70/30 nomination split with Married Women\'s Property Act Trust Shield.',
+                        selectedLanguage
+                      );
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                  >
+                    <span>⚡ Apply Recommended 70/30 Split</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNomination(prev => ({ ...prev, mwpaTrustEnabled: !prev.mwpaTrustEnabled }));
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                      nomination.mwpaTrustEnabled
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{nomination.mwpaTrustEnabled ? '🛡️' : '⚖️'}</span>
+                    <span>MWPA Sec 6 Creditor Shield: {nomination.mwpaTrustEnabled ? 'ACTIVE (Irrevocable Trust)' : 'ENABLE'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Primary Nominee Form */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-[#582be8]" />
+                    <span>Primary Nominee (Direct Claimant)</span>
+                  </h3>
+                  <span className="text-[11px] font-mono text-slate-500 font-bold">Share: {nomination.primaryShare}%</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">Full Legal Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Priya Ramesh Thorat"
+                      value={nomination.primaryName}
+                      onChange={(e) => setNomination(prev => ({ ...prev, primaryName: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">Relationship</label>
+                    <select
+                      value={nomination.primaryRelation}
+                      onChange={(e) => setNomination(prev => ({ ...prev, primaryRelation: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8]"
+                    >
+                      <option value="Spouse">Spouse (Wife / Husband)</option>
+                      <option value="Son">Son</option>
+                      <option value="Daughter">Daughter</option>
+                      <option value="Father">Father</option>
+                      <option value="Mother">Mother</option>
+                      <option value="Sibling">Brother / Sister</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">Share Allocation %</label>
+                    <input
+                      type="number"
+                      min={10}
+                      max={100}
+                      value={nomination.primaryShare}
+                      onChange={(e) => setNomination(prev => ({ ...prev, primaryShare: parseInt(e.target.value, 10) || 100 }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-mono font-bold focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Secondary / Minor Nominee Toggle */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={nomination.hasSecondaryNominee}
+                      onChange={(e) => setNomination(prev => ({ ...prev, hasSecondaryNominee: e.target.checked }))}
+                      className="size-4 rounded text-[#582be8] focus:ring-[#582be8]"
+                    />
+                    <span className="text-xs font-bold text-slate-900">Add Contingent / Minor Nominee (IRDAI Section 39)</span>
+                  </label>
+                  {nomination.hasSecondaryNominee && (
+                    <span className="text-[11px] font-mono text-slate-500 font-bold">Share: {nomination.secondaryShare}%</span>
+                  )}
+                </div>
+
+                {nomination.hasSecondaryNominee && (
+                  <div className="space-y-3 pt-2 border-t border-slate-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Nominee Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Aarav Ramesh Thorat"
+                          value={nomination.secondaryName}
+                          onChange={(e) => setNomination(prev => ({ ...prev, secondaryName: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Relationship</label>
+                        <select
+                          value={nomination.secondaryRelation}
+                          onChange={(e) => setNomination(prev => ({ ...prev, secondaryRelation: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium"
+                        >
+                          <option value="Child">Child (Minor Son/Daughter)</option>
+                          <option value="Spouse">Spouse</option>
+                          <option value="Parent">Parent</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Age (Years)</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={nomination.secondaryAge}
+                          onChange={(e) => setNomination(prev => ({ ...prev, secondaryAge: parseInt(e.target.value, 10) || 7 }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Share %</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={nomination.secondaryShare}
+                          onChange={(e) => setNomination(prev => ({ ...prev, secondaryShare: parseInt(e.target.value, 10) || 30 }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    {/* If minor nominee (<18 yrs), Appointee Details required under IRDAI Sec 39 */}
+                    {nomination.secondaryAge < 18 && (
+                      <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
+                        <div className="flex items-center gap-1.5 text-amber-900 text-xs font-bold">
+                          <span>⚠️ Minor Nominee Detected (&lt; 18 years)</span>
+                          <span className="text-[10px] font-mono bg-amber-100 px-2 py-0.5 rounded text-amber-800">
+                            IRDAI Section 39 Requirement: Adult Appointee Mandated
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-semibold text-amber-900 block mb-1">Appointee Full Legal Name</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Shankar Thorat"
+                              value={nomination.appointeeName}
+                              onChange={(e) => setNomination(prev => ({ ...prev, appointeeName: e.target.value }))}
+                              className="w-full px-3 py-1.5 rounded-lg border border-amber-300 text-xs text-slate-900 font-medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold text-amber-900 block mb-1">Relationship to Minor</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Paternal Grandfather"
+                              value={nomination.appointeeRelation}
+                              onChange={(e) => setNomination(prev => ({ ...prev, appointeeRelation: e.target.value }))}
+                              className="w-full px-3 py-1.5 rounded-lg border border-amber-300 text-xs text-slate-900 font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                <button
+                  onClick={() => setActiveStep(2)}
+                  className="px-5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50"
+                >
+                  ← Back to Step 2: Benefit Ladders
+                </button>
+                <button
+                  onClick={() => {
+                    if (!nomination.primaryName) {
+                      setNomination(prev => ({ ...prev, primaryName: 'Priya Ramesh Thorat' }));
+                    }
+                    setActiveStep(4);
+                    setIdleSeconds(0);
+                  }}
+                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
+                >
+                  <span>Continue to Step 4: Medical Disclosures</span>
+                  <span>→</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: Medical Disclosures */}
+          {activeStep === 4 && (
             <div className="acko-card p-6 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-bold text-[#111827]">Step 3: Medical & Underwriting Disclosures</h2>
+                  <h2 className="text-base font-bold text-[#111827]">Step 4: Medical & Underwriting Disclosures</h2>
                   <p className="text-xs text-slate-500">Statutory health declarations required under Section 45 of Insurance Act 1938</p>
                 </div>
                 <button
@@ -2487,10 +3064,10 @@ export default function AckoInsurancePortal() {
 
               <div className="flex justify-between items-center pt-2 border-t border-slate-100">
                 <button
-                  onClick={() => setActiveStep(2)}
+                  onClick={() => setActiveStep(3)}
                   className="px-5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50"
                 >
-                  ← Back to Step 2
+                  ← Back to Step 3: Beneficiary & MWPA
                 </button>
                 <button
                   onClick={() => {
@@ -2498,24 +3075,24 @@ export default function AckoInsurancePortal() {
                       triggerFieldGuidance('field-section-45');
                       return;
                     }
-                    setActiveStep(4);
+                    setActiveStep(5);
                   }}
                   className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
                 >
-                  <span>Review & Issue Policy</span>
+                  <span>Review & Issue Policy (Step 5)</span>
                   <span>→</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 4: Summary & Issuance */}
-          {activeStep === 4 && (
+          {/* STEP 5: Summary & Issuance */}
+          {activeStep === 5 && (
             <div className="acko-card p-6 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-bold text-[#111827]">Step 4: Policy Schedule & Instant Issuance</h2>
-                  <p className="text-xs text-slate-500">Review your final coverage schedule before proposal issuance</p>
+                  <h2 className="text-base font-bold text-[#111827]">Step 5: Policy Schedule, Terms & Instant Issuance</h2>
+                  <p className="text-xs text-slate-500">Review your final coverage schedule, beneficiary details & statutory terms</p>
                 </div>
                 <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
                   Ready to Issue
@@ -2538,17 +3115,34 @@ export default function AckoInsurancePortal() {
                   </span>
                 </div>
                 {selectedRiders.criticalIllness && (
-                  <div className="flex justify-between text-[#582be8] font-medium">
+                  <div className="flex justify-between text-[#582be8] font-medium pb-2 border-b border-slate-200">
                     <span>+ Critical Illness Cover:</span>
-                    <span>₹25,00,000 (36 Illnesses)</span>
+                    <span>
+                      {ciTier === 'tier1' ? '₹10,00,000 (Tier 1 Silver)' : ciTier === 'tier3' ? '₹50,00,000 (Tier 3 Platinum)' : '₹25,00,000 (Tier 2 Gold)'}
+                    </span>
                   </div>
                 )}
-                {selectedRiders.waiverOfPremium && (
-                  <div className="flex justify-between text-[#582be8] font-medium">
-                    <span>+ Waiver of Premium:</span>
-                    <span>30-Year Premium Waiver Active</span>
+                {selectedRiders.accidentalDeath && (
+                  <div className="flex justify-between text-[#582be8] font-medium pb-2 border-b border-slate-200">
+                    <span>+ Accidental Disability Cover:</span>
+                    <span>
+                      {atpdOption === 'income' ? '₹1 Lakh/mo for 100 Months (Salary Replacement)' : '₹50,00,000 Lump Sum'}
+                    </span>
                   </div>
                 )}
+                {lifeStageEscalator && (
+                  <div className="flex justify-between text-[#582be8] font-medium pb-2 border-b border-slate-200">
+                    <span>+ Life Stage Cover Escalator:</span>
+                    <span>Active (+10% Annual Cover Boost)</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-700 pb-2 border-b border-slate-200">
+                  <span className="text-slate-500">Designated Nominee & Trust:</span>
+                  <span className="font-bold text-slate-900">
+                    {nomination.primaryName || 'Priya Ramesh Thorat'} ({nomination.primaryRelation}, {nomination.primaryShare}%)
+                    {nomination.mwpaTrustEnabled ? ' • 🛡️ MWPA Trust Shield Active' : ''}
+                  </span>
+                </div>
 
                 <div className="border-t border-slate-300 pt-3 flex justify-between items-baseline text-sm font-bold text-slate-900">
                   <span>Total Monthly Premium (incl. 18% GST):</span>
@@ -2588,10 +3182,18 @@ export default function AckoInsurancePortal() {
                 <div className="flex flex-wrap justify-between items-center gap-3 pt-2 border-t border-slate-100">
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setActiveStep(3)}
+                      onClick={() => setActiveStep(4)}
                       className="px-5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50"
                     >
-                      ← Back to Step 3
+                      ← Back to Step 4: Medical
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowTermsDrawer(true)}
+                      className="px-4 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs"
+                      title="Review all statutory Terms & Conditions before binding"
+                    >
+                      <span>⚖️ Review Terms (T&C)</span>
                     </button>
                     <button
                       type="button"
@@ -3354,6 +3956,135 @@ export default function AckoInsurancePortal() {
                 className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs shadow-xs"
               >
                 Close Certificate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feature 6: Statutory Terms & Conditions Interactive Drawer */}
+      {showTermsDrawer && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end transition-opacity">
+          <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-blue-900 via-indigo-900 to-[#180d40] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="size-9 rounded-xl bg-blue-600/80 flex items-center justify-center text-lg shadow-sm border border-blue-400/30">
+                  📜
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>Statutory Terms & Conditions (T&C)</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/30 text-blue-200 border border-blue-400/40">
+                      IRDAI UIN: 157N001V01
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-blue-200/80">Verbatim legal clauses, exclusions, grace periods, and incontestability rules</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTermsDrawer(false)}
+                className="size-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Search & Quick Filter */}
+            <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-col gap-2.5">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search clauses (e.g. Section 45, Grace Period, Suicide, Free-Look, PED)..."
+                  value={termsSearchQuery}
+                  onChange={(e) => setTermsSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-300 text-xs text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8] bg-white"
+                />
+                <span className="absolute left-3 top-2.5 text-xs text-slate-400">🔍</span>
+                {termsSearchQuery && (
+                  <button
+                    onClick={() => setTermsSearchQuery('')}
+                    className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Voice Question Prompts */}
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Ask OmniCB:</span>
+                {[
+                  'What is the 30-day Free-Look?',
+                  'What is Section 45?',
+                  'What is the Grace Period?',
+                  'What is the Suicide Clause?',
+                ].map((prompt, pIdx) => (
+                  <button
+                    key={pIdx}
+                    type="button"
+                    onClick={() => {
+                      setUserQuery(prompt);
+                      processUserSpokenQuestion(prompt);
+                    }}
+                    className="text-[10px] px-2.5 py-1 rounded-full bg-white hover:bg-purple-50 text-[#582be8] border border-purple-200 font-semibold transition-all shadow-3xs"
+                  >
+                    💬 {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Clauses List */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3.5">
+              {TERMS_AND_CONDITIONS_CLAUSES
+                .filter(
+                  (c) =>
+                    c.title.toLowerCase().includes(termsSearchQuery.toLowerCase()) ||
+                    c.summary.toLowerCase().includes(termsSearchQuery.toLowerCase()) ||
+                    c.fullText.toLowerCase().includes(termsSearchQuery.toLowerCase()) ||
+                    c.category.toLowerCase().includes(termsSearchQuery.toLowerCase())
+                )
+                .map((c) => (
+                  <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-white hover:border-[#582be8]/40 transition-all shadow-3xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-purple-50 text-[#582be8] border border-purple-200">
+                        {c.clauseNumber} • {c.category}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">{c.irdaiRef}</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900">{c.title}</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                      {c.summary}
+                    </p>
+                    <div className="text-[11px] text-slate-500 italic border-l-2 border-[#582be8] pl-3 py-0.5">
+                      "{c.fullText}"
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const askQuery = `Please explain ${c.title} in simple terms.`;
+                        processUserSpokenQuestion(askQuery);
+                      }}
+                      className="text-[10px] font-bold text-[#582be8] hover:underline flex items-center gap-1 pt-1"
+                    >
+                      <span>🔊 Hear OmniCB Voice Explanation</span>
+                      <span>→</span>
+                    </button>
+                  </div>
+                ))}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                Statutory Compliance: Insurance Regulatory & Development Authority of India (IRDAI)
+              </span>
+              <button
+                onClick={() => setShowTermsDrawer(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-all"
+              >
+                Close Drawer
               </button>
             </div>
           </div>
