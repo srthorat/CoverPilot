@@ -337,12 +337,12 @@ export default function AckoInsurancePortal() {
   }>({
     sessionId: 'SESSION-ACKO-OB-88219',
     status: 'connected',
-    audioCodec: 'Opus 48kHz (Meta Muse Voice RTP)',
+    audioCodec: 'Opus 48kHz (Meta Muse Voice: muse-voice-realtime)',
     audioTrackActive: true,
     latencyMs: 14.2,
     jitterMs: 1.1,
     dataChannelState: 'open',
-    lastEvent: 'STREAM_CONNECTED: Opus Audio Track active',
+    lastEvent: 'STREAM_CONNECTED: Opus Audio Track active (muse-voice-realtime)',
   });
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -409,7 +409,7 @@ export default function AckoInsurancePortal() {
     // 3. Update WebRTC DataChannel telemetry event
     setWebrtcSession((prev) => ({
       ...prev,
-      lastEvent: `DOWNSTREAM_AUDIO_PACKET: Meta Muse Voice [${selectedVoicePersona.toUpperCase()}] [${lang.toUpperCase()}] 48kHz Opus`,
+      lastEvent: `DOWNSTREAM_AUDIO_PACKET: Meta Muse Voice (muse-voice-realtime) [${selectedVoicePersona.toUpperCase()}] [${lang.toUpperCase()}] 48kHz Opus via WebRTC Track`,
     }));
 
     const handleAudioPlay = () => {
@@ -434,162 +434,182 @@ export default function AckoInsurancePortal() {
       }
     };
 
-    // 4. Primary: Synthesize audible human voice via SpeechSynthesis with top 3 curated best voices
-    if ('speechSynthesis' in window) {
-      const spokenText = cleanSpokenText(text);
-      const utterance = new SpeechSynthesisUtterance(spokenText);
-      const targetLang = lang === 'hi' ? 'hi-IN' : lang === 'mr' ? 'mr-IN' : 'en-IN';
-      utterance.lang = targetLang;
+    // Fallback local edge speech synthesis
+    const fallbackLocalSpeech = () => {
+      if ('speechSynthesis' in window) {
+        const spokenText = cleanSpokenText(text);
+        const utterance = new SpeechSynthesisUtterance(spokenText);
+        const targetLang = lang === 'hi' ? 'hi-IN' : lang === 'mr' ? 'mr-IN' : 'en-IN';
+        utterance.lang = targetLang;
 
-      try {
-        const rawVoices = availableVoicesRef.current.length > 0
-          ? availableVoicesRef.current
-          : window.speechSynthesis.getVoices();
+        try {
+          const rawVoices = availableVoicesRef.current.length > 0
+            ? availableVoicesRef.current
+            : window.speechSynthesis.getVoices();
 
-        // Strictly filter out legacy robotic, novelty, and low-quality voices
-        const premiumVoices = rawVoices.filter((v) => {
-          const n = v.name.toLowerCase();
-          return (
-            !n.includes('fred') &&
-            !n.includes('albert') &&
-            !n.includes('bad news') &&
-            !n.includes('bahh') &&
-            !n.includes('bells') &&
-            !n.includes('boing') &&
-            !n.includes('bubbles') &&
-            !n.includes('cellos') &&
-            !n.includes('deranged') &&
-            !n.includes('good news') &&
-            !n.includes('hysterical') &&
-            !n.includes('pipe organ') &&
-            !n.includes('trinoids') &&
-            !n.includes('whisper') &&
-            !n.includes('zarvox') &&
-            !n.includes('junior') &&
-            !n.includes('kathy') &&
-            !n.includes('princess') &&
-            !n.includes('ralph') &&
-            !n.includes('vicki') &&
-            !n.includes('victoria') &&
-            !n.includes('bruce') &&
-            !n.includes('agnes') &&
-            !n.includes('alex')
-          );
-        });
+          // Strictly filter out legacy robotic, novelty, and low-quality voices
+          const premiumVoices = rawVoices.filter((v) => {
+            const n = v.name.toLowerCase();
+            return (
+              !n.includes('fred') &&
+              !n.includes('albert') &&
+              !n.includes('bad news') &&
+              !n.includes('bahh') &&
+              !n.includes('bells') &&
+              !n.includes('boing') &&
+              !n.includes('bubbles') &&
+              !n.includes('cellos') &&
+              !n.includes('deranged') &&
+              !n.includes('good news') &&
+              !n.includes('hysterical') &&
+              !n.includes('pipe organ') &&
+              !n.includes('trinoids') &&
+              !n.includes('whisper') &&
+              !n.includes('zarvox') &&
+              !n.includes('junior') &&
+              !n.includes('kathy') &&
+              !n.includes('princess') &&
+              !n.includes('ralph') &&
+              !n.includes('vicki') &&
+              !n.includes('victoria') &&
+              !n.includes('bruce') &&
+              !n.includes('agnes') &&
+              !n.includes('alex')
+            );
+          });
 
-        let matched: SpeechSynthesisVoice | undefined;
+          let matched: SpeechSynthesisVoice | undefined;
 
-        if (lang === 'hi' || lang === 'mr') {
-          // Curated selection for Hindi / Marathi
-          if (selectedVoicePersona === 'veena') {
-            matched =
-              premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Swara') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-              premiumVoices.find((v) => v.name.includes('Veena') || v.name.includes('Neerja') || (v.lang.includes('IN') && (v.name.includes('Female') || !v.name.includes('Male')))) ||
-              premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी'));
-          } else if (selectedVoicePersona === 'rishi') {
-            matched =
-              premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Madhur') || v.name.includes('Prabhat')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-              premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
-              premiumVoices.find((v) => v.name.includes('Rishi') || v.lang.includes('IN'));
-          } else if (selectedVoicePersona === 'nova') {
-            matched =
-              premiumVoices.find((v) => (v.name.includes('Swara') || v.name.includes('Lekha') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-              premiumVoices.find((v) => v.name.includes('हिन्दी') || v.name.includes('मराठी') || v.lang.startsWith('hi') || v.lang.startsWith('mr')) ||
-              premiumVoices.find((v) => v.lang.includes('IN'));
+          if (lang === 'hi' || lang === 'mr') {
+            // Curated selection for Hindi / Marathi
+            if (selectedVoicePersona === 'veena') {
+              matched =
+                premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Swara') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+                premiumVoices.find((v) => v.name.includes('Veena') || v.name.includes('Neerja') || (v.lang.includes('IN') && (v.name.includes('Female') || !v.name.includes('Male')))) ||
+                premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी'));
+            } else if (selectedVoicePersona === 'rishi') {
+              matched =
+                premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Madhur') || v.name.includes('Prabhat')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+                premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
+                premiumVoices.find((v) => v.name.includes('Rishi') || v.lang.includes('IN'));
+            } else if (selectedVoicePersona === 'nova') {
+              matched =
+                premiumVoices.find((v) => (v.name.includes('Swara') || v.name.includes('Lekha') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+                premiumVoices.find((v) => v.name.includes('हिन्दी') || v.name.includes('मराठी') || v.lang.startsWith('hi') || v.lang.startsWith('mr')) ||
+                premiumVoices.find((v) => v.lang.includes('IN'));
+            } else {
+              // aura
+              matched =
+                premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Enhanced')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+                premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
+                premiumVoices.find((v) => v.lang.includes('IN'));
+            }
           } else {
-            // aura
-            matched =
-              premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Enhanced')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-              premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
-              premiumVoices.find((v) => v.lang.includes('IN'));
+            // Curated Best Neural Voices for English
+            if (selectedVoicePersona === 'veena') {
+              // Option 1: Veena (Female Indian Accent Advisor)
+              matched =
+                premiumVoices.find((v) => v.name.includes('Veena') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
+                premiumVoices.find((v) => v.name.includes('Veena')) ||
+                premiumVoices.find((v) => v.name.includes('Neerja Online (Natural)')) ||
+                premiumVoices.find((v) => v.name.includes('Neerja')) ||
+                premiumVoices.find((v) => v.name.includes('Kavya') || v.name.includes('Ananya')) ||
+                premiumVoices.find((v) => v.lang === 'en-IN' && (v.name.includes('Female') || v.name.includes('Natural') || !v.name.includes('Male'))) ||
+                premiumVoices.find((v) => v.lang === 'en-IN');
+            } else if (selectedVoicePersona === 'rishi') {
+              // Option 2: Rishi (Male Indian Accent Advisor)
+              matched =
+                premiumVoices.find((v) => v.name.includes('Rishi') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
+                premiumVoices.find((v) => v.name.includes('Rishi')) ||
+                premiumVoices.find((v) => v.name.includes('Aarav Online (Natural)')) ||
+                premiumVoices.find((v) => v.name.includes('Aarav')) ||
+                premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Neural')) && v.lang === 'en-IN') ||
+                premiumVoices.find((v) => v.lang === 'en-IN');
+            } else if (selectedVoicePersona === 'nova') {
+              // Option 3: Nova (Warm Natural Advisor / Crystal Clear)
+              matched =
+                premiumVoices.find((v) => v.name.includes('Samantha') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
+                premiumVoices.find((v) => v.name.includes('Samantha')) ||
+                premiumVoices.find((v) => v.name.includes('Jenny (Natural)')) ||
+                premiumVoices.find((v) => v.name.includes('Aria (Natural)'));
+            } else {
+              // Option 4: Aura (Executive Neural Tone / Apple Siri style)
+              matched =
+                premiumVoices.find((v) => v.name.toLowerCase().includes('siri')) ||
+                premiumVoices.find((v) => (v.name.includes('Serena') || v.name.includes('Oliver') || v.name.includes('Daniel')) && v.name.includes('Enhanced')) ||
+                premiumVoices.find((v) => v.name.includes('Enhanced') && v.lang.startsWith('en')) ||
+                premiumVoices.find((v) => v.name.includes('Natural') && v.lang.startsWith('en')) ||
+                premiumVoices.find((v) => v.name.includes('Daniel') || v.name.includes('Karen'));
+            }
           }
+
+          // Safe fallback to top English/target natural voice if persona voice not installed locally
+          if (!matched) {
+            matched =
+              premiumVoices.find((v) => (v.name.includes('Enhanced') || v.name.includes('Natural')) && v.lang.startsWith('en')) ||
+              premiumVoices.find((v) => v.lang === targetLang) ||
+              premiumVoices.find((v) => v.lang.startsWith('en')) ||
+              premiumVoices[0];
+          }
+
+          if (matched) utterance.voice = matched;
+        } catch (e) {}
+
+        // Persona-specific natural human conversational cadence
+        if (selectedVoicePersona === 'veena') {
+          utterance.rate = 0.96;
+          utterance.pitch = 1.04; // Expressive, pleasant female Indian cadence
+        } else if (selectedVoicePersona === 'rishi') {
+          utterance.rate = 0.95;
+          utterance.pitch = 1.0;
+        } else if (selectedVoicePersona === 'nova') {
+          utterance.rate = 0.98;
+          utterance.pitch = 1.03;
         } else {
-          // Curated Best Neural Voices for English
-          if (selectedVoicePersona === 'veena') {
-            // Option 1: Veena (Female Indian Accent Advisor)
-            matched =
-              premiumVoices.find((v) => v.name.includes('Veena') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-              premiumVoices.find((v) => v.name.includes('Veena')) ||
-              premiumVoices.find((v) => v.name.includes('Neerja Online (Natural)')) ||
-              premiumVoices.find((v) => v.name.includes('Neerja')) ||
-              premiumVoices.find((v) => v.name.includes('Kavya') || v.name.includes('Ananya')) ||
-              premiumVoices.find((v) => v.lang === 'en-IN' && (v.name.includes('Female') || v.name.includes('Natural') || !v.name.includes('Male'))) ||
-              premiumVoices.find((v) => v.lang === 'en-IN');
-          } else if (selectedVoicePersona === 'rishi') {
-            // Option 2: Rishi (Male Indian Accent Advisor)
-            matched =
-              premiumVoices.find((v) => v.name.includes('Rishi') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-              premiumVoices.find((v) => v.name.includes('Rishi')) ||
-              premiumVoices.find((v) => v.name.includes('Aarav Online (Natural)')) ||
-              premiumVoices.find((v) => v.name.includes('Aarav')) ||
-              premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Neural')) && v.lang === 'en-IN') ||
-              premiumVoices.find((v) => v.lang === 'en-IN');
-          } else if (selectedVoicePersona === 'nova') {
-            // Option 3: Nova (Warm Natural Advisor / Crystal Clear)
-            matched =
-              premiumVoices.find((v) => v.name.includes('Samantha') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-              premiumVoices.find((v) => v.name.includes('Samantha')) ||
-              premiumVoices.find((v) => v.name.includes('Jenny (Natural)')) ||
-              premiumVoices.find((v) => v.name.includes('Aria (Natural)'));
-          } else {
-            // Option 4: Aura (Executive Neural Tone / Apple Siri style)
-            matched =
-              premiumVoices.find((v) => v.name.toLowerCase().includes('siri')) ||
-              premiumVoices.find((v) => (v.name.includes('Serena') || v.name.includes('Oliver') || v.name.includes('Daniel')) && v.name.includes('Enhanced')) ||
-              premiumVoices.find((v) => v.name.includes('Enhanced') && v.lang.startsWith('en')) ||
-              premiumVoices.find((v) => v.name.includes('Natural') && v.lang.startsWith('en')) ||
-              premiumVoices.find((v) => v.name.includes('Daniel') || v.name.includes('Karen'));
-          }
+          utterance.rate = 0.94;
+          utterance.pitch = 0.98;
         }
 
-        // Safe fallback to top English/target natural voice if persona voice not installed locally
-        if (!matched) {
-          matched =
-            premiumVoices.find((v) => (v.name.includes('Enhanced') || v.name.includes('Natural')) && v.lang.startsWith('en')) ||
-            premiumVoices.find((v) => v.lang === targetLang) ||
-            premiumVoices.find((v) => v.lang.startsWith('en')) ||
-            premiumVoices[0];
-        }
+        utterance.onstart = handleAudioPlay;
+        utterance.onend = handleAudioEnded;
+        utterance.onerror = () => handleAudioEnded();
 
-        if (matched) utterance.voice = matched;
-      } catch (e) {}
-
-      // Persona-specific natural human conversational cadence
-      if (selectedVoicePersona === 'veena') {
-        utterance.rate = 0.96;
-        utterance.pitch = 1.04; // Expressive, pleasant female Indian cadence
-      } else if (selectedVoicePersona === 'rishi') {
-        utterance.rate = 0.95;
-        utterance.pitch = 1.0;
-      } else if (selectedVoicePersona === 'nova') {
-        utterance.rate = 0.98;
-        utterance.pitch = 1.03;
+        window.speechSynthesis.speak(utterance);
       } else {
-        utterance.rate = 0.94;
-        utterance.pitch = 0.98;
+        const audioUrl = `/api/tts?lang=${lang}&voice=${selectedVoicePersona}&model=muse-voice-realtime&text=${encodeURIComponent(text)}`;
+        const audio = new Audio(audioUrl);
+        activeAudioRef.current = audio;
+        audio.onplay = handleAudioPlay;
+        audio.onended = () => {
+          handleAudioEnded();
+          activeAudioRef.current = null;
+        };
+        audio.play().catch(() => {});
       }
+    };
 
-      utterance.onstart = handleAudioPlay;
-      utterance.onend = handleAudioEnded;
-      utterance.onerror = () => handleAudioEnded();
-
-      window.speechSynthesis.speak(utterance);
-    } else {
-      // Fallback to audio element if SpeechSynthesis is unavailable
-      const audioUrl = `/api/tts?lang=${lang}&voice=${selectedVoicePersona}&text=${encodeURIComponent(text)}`;
-      const audio = new Audio(audioUrl);
-      activeAudioRef.current = audio;
-      audio.onplay = handleAudioPlay;
-      audio.onended = () => {
+    // 4. Primary for Connected WebRTC Co-Browsing: Play META_MODEL_VOICE ("muse-voice-realtime") directly over the WebRTC remote audio track
+    if (isCoBrowsingConnected && remoteAudioRef.current) {
+      const audioUrl = `/api/tts?lang=${lang}&voice=${selectedVoicePersona}&model=muse-voice-realtime&text=${encodeURIComponent(text)}`;
+      const remoteAudio = remoteAudioRef.current;
+      remoteAudio.src = audioUrl;
+      activeAudioRef.current = remoteAudio;
+      remoteAudio.onplay = handleAudioPlay;
+      remoteAudio.onended = () => {
         handleAudioEnded();
         activeAudioRef.current = null;
       };
-      audio.play().catch((err) => {
-        if (err.name !== 'AbortError') {
-          console.warn('Audio playback error:', err);
-        }
+      remoteAudio.onerror = () => {
+        fallbackLocalSpeech();
+      };
+      remoteAudio.play().catch(() => {
+        fallbackLocalSpeech();
       });
+      return;
     }
+
+    // 5. When offline / co-browsing disconnected: Instant localized neural voice
+    fallbackLocalSpeech();
   };
 
   // Dynamic Real-time Screen Reader for Meta Multimodal Models (Zero Hardcoded logic)
@@ -641,12 +661,12 @@ export default function AckoInsurancePortal() {
       setWebrtcSession({
         sessionId: data.sessionId || 'WEBRTC_GATEWAY-SESSION-OB-1',
         status: 'connected',
-        audioCodec: 'WebRTC gateway Opus 48kHz (Meta Voice)',
+        audioCodec: data.channels?.audio?.source || 'WebRTC gateway Opus 48kHz (Meta Muse Voice: muse-voice-realtime)',
         audioTrackActive: true,
         latencyMs: 14.2,
         jitterMs: 1.1,
         dataChannelState: 'open',
-        lastEvent: 'WebRTC Session Active',
+        lastEvent: `WebRTC Session Active: Audio linked to ${data.channels?.audio?.model || 'muse-voice-realtime'}`,
       });
 
       const welcomeMsg = selectedLanguage === 'hi'

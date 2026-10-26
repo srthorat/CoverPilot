@@ -19,9 +19,10 @@ export interface WebRTCSessionResponse {
     audio: {
       trackId: string;
       codec: 'opus/48000/2';
-      bitrateKbps: 64;
-      latencyMs: 14;
-      source: 'WebRTC Audio Stream (Meta Muse Voice)';
+      bitrateKbps: number;
+      latencyMs: number;
+      source: string;
+      model: string;
     };
     video: {
       trackId: string;
@@ -78,7 +79,8 @@ export async function POST(req: NextRequest) {
           codec: 'opus/48000/2',
           bitrateKbps: 64,
           latencyMs: 14,
-          source: 'WebRTC Audio Stream (Meta Muse Voice)',
+          source: `WebRTC Audio Stream (Meta Muse Voice - ${process.env.META_MODEL_VOICE || 'muse-voice-realtime'})`,
+          model: process.env.META_MODEL_VOICE || 'muse-voice-realtime',
         },
         video: {
           trackId: `webrtcgw-screenshare-${Date.now()}`,
