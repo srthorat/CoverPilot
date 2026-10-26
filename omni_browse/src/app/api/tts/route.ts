@@ -84,7 +84,9 @@ async function handleTts(text: string, lang: string, voice: string = 'rishi') {
     if (metaApiKey && metaApiKey.length > 5) {
       try {
         const metaVoiceId =
-          voice === 'nova'
+          voice === 'veena'
+            ? 'muse-voice-veena-in'
+            : voice === 'nova'
             ? 'muse-voice-nova'
             : voice === 'aura'
             ? 'muse-voice-aura'

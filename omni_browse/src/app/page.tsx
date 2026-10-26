@@ -137,8 +137,12 @@ export default function AckoInsurancePortal() {
   // Preferred Language: English | Hindi (हिंदी) | Marathi (मराठी)
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi' | 'mr'>('en');
 
-  // Curated 3 Best Neural Voices: 'rishi' (Indian Guide) | 'nova' (Warm Advisor) | 'aura' (Executive AI)
-  const [selectedVoicePersona, setSelectedVoicePersona] = useState<'rishi' | 'nova' | 'aura'>('rishi');
+  // Curated Best Neural Voices:
+  // - 'veena': Female Indian Accent Advisor (Veena / Neerja)
+  // - 'rishi': Male Indian Accent Advisor (Rishi / Aarav)
+  // - 'nova': Warm Natural Advisor (Samantha / Jenny)
+  // - 'aura': Executive AI Tone (Siri / Serena)
+  const [selectedVoicePersona, setSelectedVoicePersona] = useState<'veena' | 'rishi' | 'nova' | 'aura'>('veena');
   const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
 
   // Step 1: Blank initial form (NO prefilled data)
@@ -477,7 +481,12 @@ export default function AckoInsurancePortal() {
 
         if (lang === 'hi' || lang === 'mr') {
           // Curated selection for Hindi / Marathi
-          if (selectedVoicePersona === 'rishi') {
+          if (selectedVoicePersona === 'veena') {
+            matched =
+              premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Swara') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+              premiumVoices.find((v) => v.name.includes('Veena') || v.name.includes('Neerja') || (v.lang.includes('IN') && (v.name.includes('Female') || !v.name.includes('Male')))) ||
+              premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी'));
+          } else if (selectedVoicePersona === 'rishi') {
             matched =
               premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Madhur') || v.name.includes('Prabhat')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
               premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
@@ -486,7 +495,7 @@ export default function AckoInsurancePortal() {
             matched =
               premiumVoices.find((v) => (v.name.includes('Swara') || v.name.includes('Lekha') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
               premiumVoices.find((v) => v.name.includes('हिन्दी') || v.name.includes('मराठी') || v.lang.startsWith('hi') || v.lang.startsWith('mr')) ||
-              premiumVoices.find((v) => v.name.includes('Veena') || v.lang.includes('IN'));
+              premiumVoices.find((v) => v.lang.includes('IN'));
           } else {
             // aura
             matched =
@@ -495,9 +504,19 @@ export default function AckoInsurancePortal() {
               premiumVoices.find((v) => v.lang.includes('IN'));
           }
         } else {
-          // Curated 3 Best Neural Voices for English
-          if (selectedVoicePersona === 'rishi') {
-            // Option 1: Rishi (Indian Accent / Confident Advisor)
+          // Curated Best Neural Voices for English
+          if (selectedVoicePersona === 'veena') {
+            // Option 1: Veena (Female Indian Accent Advisor)
+            matched =
+              premiumVoices.find((v) => v.name.includes('Veena') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
+              premiumVoices.find((v) => v.name.includes('Veena')) ||
+              premiumVoices.find((v) => v.name.includes('Neerja Online (Natural)')) ||
+              premiumVoices.find((v) => v.name.includes('Neerja')) ||
+              premiumVoices.find((v) => v.name.includes('Kavya') || v.name.includes('Ananya')) ||
+              premiumVoices.find((v) => v.lang === 'en-IN' && (v.name.includes('Female') || v.name.includes('Natural') || !v.name.includes('Male'))) ||
+              premiumVoices.find((v) => v.lang === 'en-IN');
+          } else if (selectedVoicePersona === 'rishi') {
+            // Option 2: Rishi (Male Indian Accent Advisor)
             matched =
               premiumVoices.find((v) => v.name.includes('Rishi') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
               premiumVoices.find((v) => v.name.includes('Rishi')) ||
@@ -506,17 +525,14 @@ export default function AckoInsurancePortal() {
               premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Neural')) && v.lang === 'en-IN') ||
               premiumVoices.find((v) => v.lang === 'en-IN');
           } else if (selectedVoicePersona === 'nova') {
-            // Option 2: Nova (Warm Natural Advisor / Crystal Clear)
+            // Option 3: Nova (Warm Natural Advisor / Crystal Clear)
             matched =
               premiumVoices.find((v) => v.name.includes('Samantha') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-              premiumVoices.find((v) => v.name.includes('Veena') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-              premiumVoices.find((v) => v.name.includes('Veena')) ||
-              premiumVoices.find((v) => v.name.includes('Neerja Online (Natural)')) ||
               premiumVoices.find((v) => v.name.includes('Samantha')) ||
               premiumVoices.find((v) => v.name.includes('Jenny (Natural)')) ||
               premiumVoices.find((v) => v.name.includes('Aria (Natural)'));
           } else {
-            // Option 3: Aura (Executive Neural Tone / Apple Siri style)
+            // Option 4: Aura (Executive Neural Tone / Apple Siri style)
             matched =
               premiumVoices.find((v) => v.name.toLowerCase().includes('siri')) ||
               premiumVoices.find((v) => (v.name.includes('Serena') || v.name.includes('Oliver') || v.name.includes('Daniel')) && v.name.includes('Enhanced')) ||
@@ -539,7 +555,10 @@ export default function AckoInsurancePortal() {
       } catch (e) {}
 
       // Persona-specific natural human conversational cadence
-      if (selectedVoicePersona === 'rishi') {
+      if (selectedVoicePersona === 'veena') {
+        utterance.rate = 0.96;
+        utterance.pitch = 1.04; // Expressive, pleasant female Indian cadence
+      } else if (selectedVoicePersona === 'rishi') {
         utterance.rate = 0.95;
         utterance.pitch = 1.0;
       } else if (selectedVoicePersona === 'nova') {
@@ -1689,10 +1708,10 @@ export default function AckoInsurancePortal() {
               </button>
             </div>
 
-            {/* Curated 3 Best Neural Voices */}
+            {/* Curated Best Neural Voices */}
             <div className="flex items-center gap-1 bg-[#2d1b70] p-0.5 rounded-lg border border-purple-400/30">
               <span className="text-[10px] text-purple-300 font-medium px-1 hidden md:inline">🎙️ Voice:</span>
-              {(['rishi', 'nova', 'aura'] as const).map((v) => (
+              {(['veena', 'rishi', 'nova', 'aura'] as const).map((v) => (
                 <button
                   key={v}
                   onClick={() => {
@@ -1703,14 +1722,16 @@ export default function AckoInsurancePortal() {
                     selectedVoicePersona === v ? 'bg-[#582be8] text-white shadow-xs' : 'text-purple-200 hover:text-white'
                   }`}
                   title={
-                    v === 'rishi'
-                      ? 'Rishi (Indian Accent Advisor)'
+                    v === 'veena'
+                      ? 'Veena (Female Indian Accent Advisor)'
+                      : v === 'rishi'
+                      ? 'Rishi (Male Indian Accent Advisor)'
                       : v === 'nova'
                       ? 'Nova (Warm Natural Advisor)'
                       : 'Aura (Executive AI Voice)'
                   }
                 >
-                  {v === 'rishi' ? 'Rishi' : v === 'nova' ? 'Nova' : 'Aura'}
+                  {v === 'veena' ? 'Veena ♀' : v === 'rishi' ? 'Rishi ♂' : v === 'nova' ? 'Nova' : 'Aura'}
                 </button>
               ))}
             </div>
@@ -3526,12 +3547,13 @@ export default function AckoInsurancePortal() {
               </div>
             </div>
 
-            {/* Curated 3 Best Neural Voices */}
+            {/* Curated Best Neural Voices */}
             <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
               <span className="text-slate-600 font-medium">Voice Model:</span>
               <div className="flex gap-1">
                 {[
-                  { id: 'rishi', label: 'Rishi', sub: 'Indian Accent Advisor' },
+                  { id: 'veena', label: 'Veena ♀', sub: 'Female Indian Accent Advisor' },
+                  { id: 'rishi', label: 'Rishi ♂', sub: 'Male Indian Accent Advisor' },
                   { id: 'nova', label: 'Nova', sub: 'Warm Natural Advisor' },
                   { id: 'aura', label: 'Aura', sub: 'Executive AI Tone' },
                 ].map((v) => (
