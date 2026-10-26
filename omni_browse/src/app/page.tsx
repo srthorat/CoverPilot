@@ -1469,7 +1469,7 @@ export default function AckoInsurancePortal() {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
                   <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                  WebRTC 1080p
+                  WebRTC Audio & DOM
                 </span>
                 <button
                   onClick={disconnectCoBrowsingSession}
@@ -1529,15 +1529,15 @@ export default function AckoInsurancePortal() {
                 }`} />
                 <span className="font-bold tracking-wide">
                   {isSharingPaused
-                    ? '⏸️ SCREEN SHARE PAUSED'
+                    ? '⏸️ CO-BROWSING PAUSED'
                     : isScreenSharing
-                    ? '🔴 LIVE SCREEN SHARE (WebRTC 1080p @ 60fps)'
-                    : '⚪ SCREEN SHARE STOPPED'}
+                    ? '🟢 LIVE CO-BROWSING SESSION (Audio-to-Audio + DOM)'
+                    : '⚪ CO-BROWSING DISCONNECTED'}
                 </span>
               </div>
               <span className="text-purple-400 hidden md:inline">|</span>
               <span className="text-[11px] font-mono text-purple-200 hidden md:inline">
-                WebRTC gateway Video API • Opus 48kHz Audio • SAM 3 Video Filter • 14ms Latency
+                Meta Muse Spark 1.3 • Audio-to-Audio Opus 48kHz • Per-Page WebP Snapshots • Sub-5ms DOM Sync
               </span>
             </div>
 
@@ -2700,7 +2700,7 @@ export default function AckoInsurancePortal() {
                     {isCoBrowsingConnected ? (
                       <span className="text-emerald-600 font-bold flex items-center gap-1">
                         <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        WebRTC 1080p
+                        WebRTC Audio & DOM
                       </span>
                     ) : (
                       <span className="text-slate-400">Disconnected</span>
@@ -3169,27 +3169,27 @@ export default function AckoInsurancePortal() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-center text-[10px]">
                     <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700">
-                      <div className="text-emerald-400 font-bold mb-1">1. Viewport Stream</div>
-                      <span>HTML5 Canvas / WebRTC 1080p @ 60fps</span>
+                      <div className="text-emerald-400 font-bold mb-1">1. Audio-to-Audio</div>
+                      <span>WebRTC Opus 48kHz Full-Duplex</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-purple-950 border border-purple-800">
-                      <div className="text-purple-300 font-bold mb-1">2. SAM 3 Filter</div>
-                      <span>40 FPS Video Segmentation & Zero-PII Redaction</span>
+                      <div className="text-purple-300 font-bold mb-1">2. SAM 3.1 & PII Shield</div>
+                      <span>Client-Side Aadhaar/PAN Masking</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700">
-                      <div className="text-amber-300 font-bold mb-1">3. Muse Spark</div>
-                      <span>Keyframe Sampling (1-2 FPS) Cognitive Reasoning</span>
+                      <div className="text-amber-300 font-bold mb-1">3. Muse Spark 1.3</div>
+                      <span>Sub-5ms DOM Reasoning & Co-Browsing</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-[#582be8]/30 border border-purple-500">
-                      <div className="text-white font-bold mb-1">4. Dual-Cursor Control</div>
-                      <span>Sub-pixel Glide & Regional Muse Voice</span>
+                      <div className="text-white font-bold mb-1">4. Dual-Cursor & Visuals</div>
+                      <span>Sub-pixel Glide & Milestone WebP</span>
                     </div>
                   </div>
                   <ul className="list-disc pl-4 space-y-1 text-slate-300 text-[11px] font-sans pt-1">
-                    <li><strong>WebRTC Video Mirror (User ↔ Agent)</strong>: Transmits encrypted 1080p @ 60fps video feed so the agent sees the live screen with sub-20ms latency.</li>
-                    <li><strong>SAM 3 Video Filter</strong>: Analyzes the live video frames to ensure Zero-PII leakage (passwords, Aadhaar, and PAN card numbers are masked client-side before pixels leave the device).</li>
-                    <li><strong>Multimodal Keyframe Sampling</strong>: Feeds keyframes and bounding coordinates to Meta Muse Spark / Llama Vision to interpret user intent.</li>
-                    <li><strong>Dual-Cursor Screen Control</strong>: When granted permission, the agent calculates exact screen coordinates to glide its virtual cursor and demonstrate actions directly on the user's screen.</li>
+                    <li><strong>WebRTC Audio-to-Audio (User ↔ Agent)</strong>: Encrypted two-way 48kHz Opus audio stream with natural barge-in interruption.</li>
+                    <li><strong>Decoupled DOM Engine</strong>: Agent navigates via live DOM coordinates (sub-5ms) instead of bandwidth-heavy continuous video streaming.</li>
+                    <li><strong>Per-Page Milestone Snapshots</strong>: Captures single high-resolution WebP snapshots on step changes for Meta Muse Image / Spark visual layout grounding.</li>
+                    <li><strong>Dual-Cursor Screen Control</strong>: Virtual cursor demonstrates field inputs with immediate emergency user override (ESC).</li>
                   </ul>
                 </div>
               </div>
