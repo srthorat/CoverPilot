@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * Meta Muse Voice / WebRTC Audio Downlink
- * ZERO Google TTS: Generates authentic audio streams locally or connects to Meta Voice API.
+ * Autonomous voice generation locally or via Meta Voice Model API.
  */
 
 // Helper to generate a valid PCM WAV buffer (48kHz, 16-bit mono)
@@ -63,7 +63,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const text = body.text || 'OmniCB Agent speaking.';
     const lang = body.lang || body.language || 'en';
-    return handleTts(text, lang);
+    const voice = body.voice || 'rishi';
+    return handleTts(text, lang, voice);
   } catch (err: any) {
     return new NextResponse('Internal Voice Synthesis Error', { status: 500 });
   }
@@ -72,15 +73,23 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const text = req.nextUrl.searchParams.get('text') || 'OmniCB Agent speaking.';
   const lang = req.nextUrl.searchParams.get('lang') || 'en';
-  return handleTts(text, lang);
+  const voice = req.nextUrl.searchParams.get('voice') || 'rishi';
+  return handleTts(text, lang, voice);
 }
 
-async function handleTts(text: string, lang: string) {
+async function handleTts(text: string, lang: string, voice: string = 'rishi') {
   try {
     // 1. If Meta Model API Key is configured, attempt to stream from Meta Voice
     const metaApiKey = process.env.META_MODEL_API_KEY;
     if (metaApiKey && metaApiKey.length > 5) {
       try {
+        const metaVoiceId =
+          voice === 'nova'
+            ? 'muse-voice-nova'
+            : voice === 'aura'
+            ? 'muse-voice-aura'
+            : 'muse-voice-rishi-in';
+
         const metaRes = await fetch(`${process.env.META_MODEL_BASE_URL || 'https://api.meta.ai/v1'}/audio/speech`, {
           method: 'POST',
           signal: AbortSignal.timeout(1000),
@@ -91,7 +100,7 @@ async function handleTts(text: string, lang: string) {
           body: JSON.stringify({
             model: 'muse-voice-realtime',
             input: text,
-            voice: 'muse-conversational',
+            voice: metaVoiceId,
           }),
         });
 
@@ -111,7 +120,7 @@ async function handleTts(text: string, lang: string) {
       }
     }
 
-    // 2. Native zero-external-dependency PCM audio stream (ZERO Google TTS)
+    // 2. Native high-fidelity PCM audio stream
     const wavBuffer = generatePcmWav(text);
 
     return new NextResponse(new Uint8Array(wavBuffer), {

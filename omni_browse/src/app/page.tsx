@@ -137,6 +137,10 @@ export default function AckoInsurancePortal() {
   // Preferred Language: English | Hindi (हिंदी) | Marathi (मराठी)
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi' | 'mr'>('en');
 
+  // Curated 3 Best Neural Voices: 'rishi' (Indian Guide) | 'nova' (Warm Advisor) | 'aura' (Executive AI)
+  const [selectedVoicePersona, setSelectedVoicePersona] = useState<'rishi' | 'nova' | 'aura'>('rishi');
+  const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+
   // Step 1: Blank initial form (NO prefilled data)
   const [profile, setProfile] = useState({
     fullName: '',
@@ -341,6 +345,38 @@ export default function AckoInsurancePortal() {
   // Active audio element reference to prevent overlapping voices
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Pre-load and cache highest-quality speech synthesis voices
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const loadBestVoices = () => {
+        try {
+          const v = window.speechSynthesis.getVoices();
+          if (v && v.length > 0) {
+            availableVoicesRef.current = v;
+          }
+        } catch (e) {}
+      };
+      loadBestVoices();
+      window.speechSynthesis.onvoiceschanged = loadBestVoices;
+      return () => {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.onvoiceschanged = null;
+        }
+      };
+    }
+  }, []);
+
+  // Sanitize text for ultra-natural spoken prosody (zero asterisks, emojis, or punctuation glitches)
+  const cleanSpokenText = (raw: string): string => {
+    return raw
+      .replace(/[*_#`~]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/₹\s*([0-9,]+)/g, 'Rupees $1')
+      .replace(/[⚖️🛡️✨🪪💰ℹ️📜⚡🎮🎙️💡👉✓•]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
   // Pure WebRTC Conversational Voice Streamer (Audible Human Speech Synthesis)
   const speakText = (text: string, lang: 'en' | 'hi' | 'mr') => {
     if (typeof window === 'undefined') return;
@@ -369,7 +405,7 @@ export default function AckoInsurancePortal() {
     // 3. Update WebRTC DataChannel telemetry event
     setWebrtcSession((prev) => ({
       ...prev,
-      lastEvent: `DOWNSTREAM_AUDIO_PACKET: Meta Muse Voice [${lang.toUpperCase()}] 48kHz Opus`,
+      lastEvent: `DOWNSTREAM_AUDIO_PACKET: Meta Muse Voice [${selectedVoicePersona.toUpperCase()}] [${lang.toUpperCase()}] 48kHz Opus`,
     }));
 
     const handleAudioPlay = () => {
@@ -394,16 +430,20 @@ export default function AckoInsurancePortal() {
       }
     };
 
-    // 4. Primary: Synthesize audible human voice via SpeechSynthesis
+    // 4. Primary: Synthesize audible human voice via SpeechSynthesis with top 3 curated best voices
     if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
+      const spokenText = cleanSpokenText(text);
+      const utterance = new SpeechSynthesisUtterance(spokenText);
       const targetLang = lang === 'hi' ? 'hi-IN' : lang === 'mr' ? 'mr-IN' : 'en-IN';
       utterance.lang = targetLang;
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
 
       try {
-        const voices = window.speechSynthesis.getVoices().filter((v) => {
+        const rawVoices = availableVoicesRef.current.length > 0
+          ? availableVoicesRef.current
+          : window.speechSynthesis.getVoices();
+
+        // Strictly filter out legacy robotic, novelty, and low-quality voices
+        const premiumVoices = rawVoices.filter((v) => {
           const n = v.name.toLowerCase();
           return (
             !n.includes('fred') &&
@@ -420,26 +460,95 @@ export default function AckoInsurancePortal() {
             !n.includes('pipe organ') &&
             !n.includes('trinoids') &&
             !n.includes('whisper') &&
-            !n.includes('zarvox')
+            !n.includes('zarvox') &&
+            !n.includes('junior') &&
+            !n.includes('kathy') &&
+            !n.includes('princess') &&
+            !n.includes('ralph') &&
+            !n.includes('vicki') &&
+            !n.includes('victoria') &&
+            !n.includes('bruce') &&
+            !n.includes('agnes') &&
+            !n.includes('alex')
           );
         });
 
-        // Natural / Neural Voice prioritization
-        const matched =
-          (lang === 'hi' && (voices.find((v) => v.name.includes('हिन्दी') || v.lang.startsWith('hi')) || voices.find((v) => v.lang.includes('IN')))) ||
-          (lang === 'mr' && (voices.find((v) => v.name.includes('मराठी') || v.lang.startsWith('mr')) || voices.find((v) => v.lang.startsWith('hi')) || voices.find((v) => v.lang.includes('IN')))) ||
-          voices.find((v) => (v.name.includes('Natural') || v.name.includes('Enhanced') || v.name.includes('Neural')) && v.lang.startsWith('en')) ||
-          voices.find((v) => (v.name.includes('Samantha') || v.name.includes('Rishi') || v.name.includes('Veena') || v.name.includes('Daniel') || v.name.includes('Karen') || v.name.includes('Siri')) && v.lang.startsWith('en')) ||
-          voices.find((v) => v.lang === targetLang) ||
-          voices.find((v) => v.lang.startsWith('en')) ||
-          voices[0];
+        let matched: SpeechSynthesisVoice | undefined;
+
+        if (lang === 'hi' || lang === 'mr') {
+          // Curated selection for Hindi / Marathi
+          if (selectedVoicePersona === 'rishi') {
+            matched =
+              premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Madhur') || v.name.includes('Prabhat')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+              premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
+              premiumVoices.find((v) => v.name.includes('Rishi') || v.lang.includes('IN'));
+          } else if (selectedVoicePersona === 'nova') {
+            matched =
+              premiumVoices.find((v) => (v.name.includes('Swara') || v.name.includes('Lekha') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+              premiumVoices.find((v) => v.name.includes('हिन्दी') || v.name.includes('मराठी') || v.lang.startsWith('hi') || v.lang.startsWith('mr')) ||
+              premiumVoices.find((v) => v.name.includes('Veena') || v.lang.includes('IN'));
+          } else {
+            // aura
+            matched =
+              premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Enhanced')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
+              premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
+              premiumVoices.find((v) => v.lang.includes('IN'));
+          }
+        } else {
+          // Curated 3 Best Neural Voices for English
+          if (selectedVoicePersona === 'rishi') {
+            // Option 1: Rishi (Indian Accent / Confident Advisor)
+            matched =
+              premiumVoices.find((v) => v.name.includes('Rishi') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
+              premiumVoices.find((v) => v.name.includes('Rishi')) ||
+              premiumVoices.find((v) => v.name.includes('Aarav Online (Natural)')) ||
+              premiumVoices.find((v) => v.name.includes('Aarav')) ||
+              premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Neural')) && v.lang === 'en-IN') ||
+              premiumVoices.find((v) => v.lang === 'en-IN');
+          } else if (selectedVoicePersona === 'nova') {
+            // Option 2: Nova (Warm Natural Advisor / Crystal Clear)
+            matched =
+              premiumVoices.find((v) => v.name.includes('Samantha') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
+              premiumVoices.find((v) => v.name.includes('Veena') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
+              premiumVoices.find((v) => v.name.includes('Veena')) ||
+              premiumVoices.find((v) => v.name.includes('Neerja Online (Natural)')) ||
+              premiumVoices.find((v) => v.name.includes('Samantha')) ||
+              premiumVoices.find((v) => v.name.includes('Jenny (Natural)')) ||
+              premiumVoices.find((v) => v.name.includes('Aria (Natural)'));
+          } else {
+            // Option 3: Aura (Executive Neural Tone / Apple Siri style)
+            matched =
+              premiumVoices.find((v) => v.name.toLowerCase().includes('siri')) ||
+              premiumVoices.find((v) => (v.name.includes('Serena') || v.name.includes('Oliver') || v.name.includes('Daniel')) && v.name.includes('Enhanced')) ||
+              premiumVoices.find((v) => v.name.includes('Enhanced') && v.lang.startsWith('en')) ||
+              premiumVoices.find((v) => v.name.includes('Natural') && v.lang.startsWith('en')) ||
+              premiumVoices.find((v) => v.name.includes('Daniel') || v.name.includes('Karen'));
+          }
+        }
+
+        // Safe fallback to top English/target natural voice if persona voice not installed locally
+        if (!matched) {
+          matched =
+            premiumVoices.find((v) => (v.name.includes('Enhanced') || v.name.includes('Natural')) && v.lang.startsWith('en')) ||
+            premiumVoices.find((v) => v.lang === targetLang) ||
+            premiumVoices.find((v) => v.lang.startsWith('en')) ||
+            premiumVoices[0];
+        }
 
         if (matched) utterance.voice = matched;
       } catch (e) {}
 
-      // Human conversational cadence
-      utterance.rate = 0.96;
-      utterance.pitch = 1.02;
+      // Persona-specific natural human conversational cadence
+      if (selectedVoicePersona === 'rishi') {
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+      } else if (selectedVoicePersona === 'nova') {
+        utterance.rate = 0.98;
+        utterance.pitch = 1.03;
+      } else {
+        utterance.rate = 0.94;
+        utterance.pitch = 0.98;
+      }
 
       utterance.onstart = handleAudioPlay;
       utterance.onend = handleAudioEnded;
@@ -448,7 +557,7 @@ export default function AckoInsurancePortal() {
       window.speechSynthesis.speak(utterance);
     } else {
       // Fallback to audio element if SpeechSynthesis is unavailable
-      const audioUrl = `/api/tts?lang=${lang}&text=${encodeURIComponent(text)}`;
+      const audioUrl = `/api/tts?lang=${lang}&voice=${selectedVoicePersona}&text=${encodeURIComponent(text)}`;
       const audio = new Audio(audioUrl);
       activeAudioRef.current = audio;
       audio.onplay = handleAudioPlay;
@@ -1578,6 +1687,32 @@ export default function AckoInsurancePortal() {
               >
                 मराठी
               </button>
+            </div>
+
+            {/* Curated 3 Best Neural Voices */}
+            <div className="flex items-center gap-1 bg-[#2d1b70] p-0.5 rounded-lg border border-purple-400/30">
+              <span className="text-[10px] text-purple-300 font-medium px-1 hidden md:inline">🎙️ Voice:</span>
+              {(['rishi', 'nova', 'aura'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => {
+                    setSelectedVoicePersona(v);
+                    playChime();
+                  }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                    selectedVoicePersona === v ? 'bg-[#582be8] text-white shadow-xs' : 'text-purple-200 hover:text-white'
+                  }`}
+                  title={
+                    v === 'rishi'
+                      ? 'Rishi (Indian Accent Advisor)'
+                      : v === 'nova'
+                      ? 'Nova (Warm Natural Advisor)'
+                      : 'Aura (Executive AI Voice)'
+                  }
+                >
+                  {v === 'rishi' ? 'Rishi' : v === 'nova' ? 'Nova' : 'Aura'}
+                </button>
+              ))}
             </div>
 
             <span className="text-purple-400">|</span>
@@ -3386,6 +3521,35 @@ export default function AckoInsurancePortal() {
                     }`}
                   >
                     {l === 'en' ? 'English' : l === 'hi' ? 'हिंदी' : 'मराठी'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Curated 3 Best Neural Voices */}
+            <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
+              <span className="text-slate-600 font-medium">Voice Model:</span>
+              <div className="flex gap-1">
+                {[
+                  { id: 'rishi', label: 'Rishi', sub: 'Indian Accent Advisor' },
+                  { id: 'nova', label: 'Nova', sub: 'Warm Natural Advisor' },
+                  { id: 'aura', label: 'Aura', sub: 'Executive AI Tone' },
+                ].map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedVoicePersona(v.id as any);
+                      playChime();
+                    }}
+                    title={v.sub}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                      selectedVoicePersona === v.id
+                        ? 'bg-[#582be8] text-white shadow-xs'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    {v.label}
                   </button>
                 ))}
               </div>
