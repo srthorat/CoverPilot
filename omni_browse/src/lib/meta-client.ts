@@ -76,7 +76,7 @@ export class MetaModelClient {
   async reasonWithMuseSpark(prompt: string, screenState: any, language: 'en' | 'hi' | 'mr' = 'en'): Promise<string> {
     if (this.isLive()) {
       try {
-        const modelName = process.env.META_MODEL_NAME || 'muse-spark-1.3';
+        const modelName = process.env.META_MODEL_SPARK || process.env.META_MODEL_NAME || 'muse-spark-1.3';
         const timeoutMs = parseInt(process.env.META_API_TIMEOUT_MS || '15000', 10);
         const res = await fetch(`${this.baseUrl}/chat/completions`, {
           method: 'POST',
@@ -208,7 +208,7 @@ export class MetaModelClient {
           'Authorization': `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
-          model: req.modelOverride || 'muse-spark-1.3',
+          model: req.modelOverride || process.env.META_MODEL_SPARK || process.env.META_MODEL_NAME || 'muse-spark-1.3',
           reasoning_effort: 'high',
           messages: [
             {

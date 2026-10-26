@@ -50,9 +50,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const requestedSessionId = body.sessionId || `WEBRTC_GATEWAY-SESSION-OB-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    const webrtcgwApiKey = process.env.WEBRTC_GATEWAY_API_KEY || '47189021';
-    const webrtcgwSessionId = `2_MX40NzE4OTAyMX5-MTcyOTk5MjgwMC4wLTEwMjQ-${requestedSessionId}`;
-    const webrtcgwToken = `T1==cGFydG5lcl9pZD00NzE4OTAyMSZzZXNzaW9uX2lkPXNpZy0xMDI0JmNyZWF0ZV90aW1lPTE3Mjk5OTI4MDA=`;
+    const webrtcgwApiKey = process.env.WEBRTC_GATEWAY_API_KEY || process.env.WEBRTC_GATEWAY_APPLICATION_ID || '47189021';
+    const webrtcgwSessionId = process.env.WEBRTC_GATEWAY_SESSION_ID || `2_MX40NzE4OTAyMX5-MTcyOTk5MjgwMC4wLTEwMjQ-${requestedSessionId}`;
+    const webrtcgwToken = process.env.WEBRTC_GATEWAY_TOKEN || `T1==cGFydG5lcl9pZD00NzE4OTAyMSZzZXNzaW9uX2lkPXNpZy0xMDI0JmNyZWF0ZV90aW1lPTE3Mjk5OTI4MDA=`;
 
     const response: WebRTCSessionResponse = {
       sessionId: requestedSessionId,

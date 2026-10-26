@@ -103,7 +103,7 @@ async function handleTts(text: string, lang: string, voice: string = 'rishi') {
             'Authorization': `Bearer ${metaApiKey}`,
           },
           body: JSON.stringify({
-            model: 'muse-voice-realtime',
+            model: process.env.META_MODEL_VOICE || 'muse-voice-realtime',
             input: text,
             voice: metaVoiceId,
           }),
