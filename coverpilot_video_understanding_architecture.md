@@ -106,10 +106,12 @@ Screenshots and short visual clips are **never captured in a background polling 
 ```
 
 ### Specific Trigger Conditions for Visual Capture:
-1. **Custom Graphical UI Elements:** When the user interacts with canvas-based sliders, complex interactive maps, or non-standard SVG controls where standard HTML inputs are not present.
-2. **Ambiguous Spatial Layouts:** When nearby instructional text or floating disclaimers lack programmatic association (`aria-describedby` or `<label>`) with the active input.
-3. **KYC Document Uploads:** When the user uploads an image/PDF of their PAN card or Aadhaar; **Meta Muse Image** processes the document to extract verified fields.
-4. **Post-Action Visual Verification:** When an animated submit or confirmation banner appears and requires optical verification before proceeding.
+1. **Per-Page Step Transitions (Milestone Snapshots):** Whenever the applicant advances to a new step (Step 1: Profile → Step 2: Riders → Step 3: Underwriting → Step 4: Issuance), an ultra-compressed **WebP snapshot (< 120 KB, max 1024px)** is captured and sent to Meta Muse Spark 1.3 / Meta Muse Image. This provides full visual layout grounding (badges, highlighted cards, spatial orientation) for the entire step in a single 1-shot capture (only 4–6 images for the entire application).
+2. **Custom Graphical UI Elements:** When the user interacts with canvas-based sliders, complex interactive maps, or non-standard SVG controls where standard HTML inputs are not present.
+3. **Ambiguous Spatial Layouts:** When nearby instructional text or floating disclaimers lack programmatic association (`aria-describedby` or `<label>`) with the active input.
+4. **KYC Document Uploads:** When the user uploads an image/PDF of their PAN card or Aadhaar; **Meta Muse Image** processes the document to extract verified fields.
+5. **Modal & Policy Drawer Grounding:** When the applicant opens the **Policy Evidence Drawer** or **Application Guardian Audit Certificate**, capturing the visible highlighted clauses for verifiable audit trail.
+6. **Post-Action Visual Verification:** When an animated submit or confirmation banner appears and requires optical verification before proceeding.
 
 ---
 

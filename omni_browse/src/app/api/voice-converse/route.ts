@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
       unfilledRequiredFields: ['field-full-name'],
     };
 
+    const pageSnapshot = body.pageSnapshot || null;
+
     // 1. LIVE META MODEL API CALL (Production Best Model)
     const metaApiKey = process.env.META_MODEL_API_KEY;
     const modelName = process.env.META_MODEL_NAME || 'muse-spark-1.3';
@@ -94,7 +96,21 @@ Instructions:
 2. If guiding a specific field or rider, reference it naturally.
 3. Return JSON with keys: "spokenAnswer", "targetElementId" (e.g. "card-critical-illness", "field-full-name", "field-dob"), "actionTitle".`,
               },
-              { role: 'user', content: query || `Customer is currently on Step ${screen.activeStep}. Please provide dynamic guidance based on what is visible on screen.` },
+              {
+                role: 'user',
+                content: pageSnapshot
+                  ? [
+                      {
+                        type: 'text',
+                        text: query || `Customer is currently on Step ${screen.activeStep}. Please provide dynamic guidance based on what is visible on the attached per-page snapshot and DOM state.`,
+                      },
+                      {
+                        type: 'image_url',
+                        image_url: { url: pageSnapshot },
+                      },
+                    ]
+                  : query || `Customer is currently on Step ${screen.activeStep}. Please provide dynamic guidance based on what is visible on screen.`,
+              },
             ],
           }),
         });
@@ -109,8 +125,9 @@ Instructions:
               spokenAnswer: parsed.spokenAnswer,
               elementId: parsed.targetElementId || null,
               actionTitle: parsed.actionTitle || 'OmniCB Agent Screen Guidance',
-              modelUsed: 'Meta Muse Spark 1.3 (Live Cloud API)',
+              modelUsed: pageSnapshot ? `${modelName} + Meta Muse Image (Multimodal Snapshot)` : 'Meta Muse Spark 1.3 (Live Cloud API)',
               audioStreamUrl: `/api/tts?lang=${language}&text=${encodeURIComponent(parsed.spokenAnswer)}`,
+              snapshotProcessed: Boolean(pageSnapshot),
             });
           } catch {
             return NextResponse.json({
@@ -118,8 +135,9 @@ Instructions:
               spokenAnswer: rawContent,
               elementId: screen.focusedFieldId || null,
               actionTitle: 'OmniCB Agent Screen Guidance',
-              modelUsed: 'Meta Muse Spark 1.3 (Live Cloud API)',
+              modelUsed: pageSnapshot ? `${modelName} + Meta Muse Image (Multimodal Snapshot)` : 'Meta Muse Spark 1.3 (Live Cloud API)',
               audioStreamUrl: `/api/tts?lang=${language}&text=${encodeURIComponent(rawContent)}`,
+              snapshotProcessed: Boolean(pageSnapshot),
             });
           }
         }
@@ -128,14 +146,67 @@ Instructions:
       }
     }
 
-    // 2. DYNAMIC LIVE SCREEN REASONING ENGINE (Zero hardcoded arrays)
-    // Evaluates live screen state + user query dynamically against the Knowledge Base
+    // 2. DYNAMIC LIVE SCREEN REASONING & CO-BROWSING ACTION ENGINE
+    // Checks for explicit co-browsing user actions (fill name, select rider, toggle smoker)
     const lowerQ = query.toLowerCase();
     let spokenAnswer = '';
     let targetElementId: string | null = null;
     let actionTitle = 'Live Co-Browsing Guidance';
+    let fieldAction: { type: 'fill' | 'select'; field: string; value: any } | null = null;
 
-    if (lowerQ.includes('critical') || lowerQ.includes('illness') || lowerQ.includes('cancer') || lowerQ.includes('heart') || lowerQ.includes('क्रिटिकल') || lowerQ.includes('आजारी') || lowerQ.includes('बीमारी')) {
+    // Detect Name fill intent: e.g. "please enter Ramesh Shankar Thorat", "enter Ramesh Shankar Thorat", "name is Ramesh", "नाव रमेश"
+    const nameMatch =
+      query.match(/(?:please\s+)?(?:enter|fill|write|type|put|set)\s+(?:name\s+)?([A-Za-z\s]+)$/i) ||
+      query.match(/(?:my\s+name\s+is|name\s+is|नाव\s+आहे|नाम\s+है)\s+([A-Za-z\s]+)$/i) ||
+      (lowerQ.includes('enter') && query.match(/enter\s+([A-Za-z\s]{2,40})/i));
+
+    if (nameMatch && nameMatch[1].trim().length > 1) {
+      const extractedName = nameMatch[1].trim().replace(/[.,!?;]+$/, '');
+      targetElementId = 'field-full-name';
+      actionTitle = `Entering Full Legal Name: ${extractedName}`;
+      fieldAction = { type: 'fill', field: 'fullName', value: extractedName };
+      spokenAnswer = language === 'hi'
+        ? `मैंने प्रस्ताव पत्र में आपका पूरा कानूनी नाम ${extractedName} दर्ज कर दिया है।`
+        : language === 'mr'
+        ? `मी आपल्या अर्जात आपले पूर्ण नाव ${extractedName} नोंदवले आहे.`
+        : `I have entered your full legal name as ${extractedName} on your proposal form.`;
+    } else if (lowerQ.includes('select critical') || lowerQ.includes('add critical') || lowerQ.includes('choose critical')) {
+      targetElementId = 'card-critical-illness';
+      actionTitle = 'Adding Critical Illness Living Benefit Rider';
+      fieldAction = { type: 'select', field: 'criticalIllness', value: true };
+      spokenAnswer = language === 'hi'
+        ? 'मैंने ₹25 लाख का क्रिटिकल इलनेस राइडर जोड़ दिया है।'
+        : language === 'mr'
+        ? 'मी ₹२५ लाखांचा क्रिटिकल इलनेस रायडर समाविष्ट केला आहे.'
+        : 'I have added the ₹25 Lakhs Critical Illness Living Benefit rider to your plan.';
+    } else if (lowerQ.includes('add accidental') || lowerQ.includes('select accidental')) {
+      targetElementId = 'card-accidental-death';
+      actionTitle = 'Adding Accidental Death Cover';
+      fieldAction = { type: 'select', field: 'accidentalDeath', value: true };
+      spokenAnswer = language === 'hi'
+        ? 'मैंने ₹50 लाख का आकस्मिक मृत्यु कवर जोड़ दिया है।'
+        : language === 'mr'
+        ? 'मी ₹५० लाखांचे अपघाती मृत्यू संरक्षण जोडले आहे.'
+        : 'I have added the ₹50 Lakhs Accidental Death Cover to your proposal.';
+    } else if (lowerQ.includes('add waiver') || lowerQ.includes('waive premium')) {
+      targetElementId = 'card-waiver-premium';
+      actionTitle = 'Adding Premium Waiver Rider';
+      fieldAction = { type: 'select', field: 'waiverOfPremium', value: true };
+      spokenAnswer = language === 'hi'
+        ? 'मैंने प्रीमियम छूट राइडर सक्रिय कर दिया है।'
+        : language === 'mr'
+        ? 'मी हप्ता माफी रायडर सुरू केला आहे.'
+        : 'I have activated the 30-year Waiver of Premium on disability rider.';
+    } else if (lowerQ.includes('non-smoker') || lowerQ.includes("don't smoke") || lowerQ.includes('no smoke')) {
+      targetElementId = 'field-smoking';
+      actionTitle = 'Activating 20% Non-Smoker Discount';
+      fieldAction = { type: 'select', field: 'isSmoker', value: false };
+      spokenAnswer = language === 'hi'
+        ? 'मैंने गैर-धूम्रपानकर्ता विकल्प चुना है, 20% आजीवन छूट लागू हो गई है।'
+        : language === 'mr'
+        ? 'मी गैर-धूम्रपान पर्याय निवडला आहे, २०% सूट लागू झाली आहे.'
+        : 'I have marked non-tobacco status, unlocking your 20% lifetime non-smoker discount.';
+    } else if (lowerQ.includes('critical') || lowerQ.includes('illness') || lowerQ.includes('cancer') || lowerQ.includes('heart') || lowerQ.includes('क्रिटिकल') || lowerQ.includes('आजारी') || lowerQ.includes('बीमारी')) {
       targetElementId = 'card-critical-illness';
       actionTitle = 'Demonstrating Critical Illness Living Benefit Rider';
       spokenAnswer = language === 'hi'
@@ -229,8 +300,10 @@ Instructions:
       spokenAnswer,
       elementId: targetElementId,
       actionTitle,
-      modelUsed: 'Meta Muse Spark 1.3 (Dynamic Screen Perception)',
+      fieldAction: fieldAction || null,
+      modelUsed: pageSnapshot ? 'Meta Muse Spark 1.3 + Meta SeamlessM4T (Audio-to-Audio)' : 'Meta SeamlessM4T v2 / Muse Voice (Audio-to-Audio)',
       audioStreamUrl: `/api/tts?lang=${language}&text=${encodeURIComponent(spokenAnswer)}`,
+      snapshotProcessed: Boolean(pageSnapshot),
     });
   } catch (error: any) {
     console.error('Error in /api/voice-converse:', error);

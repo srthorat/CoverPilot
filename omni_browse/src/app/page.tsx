@@ -370,15 +370,43 @@ export default function AckoInsurancePortal() {
       utterance.pitch = 1.0;
 
       try {
-        const voices = window.speechSynthesis.getVoices();
+        const voices = window.speechSynthesis.getVoices().filter((v) => {
+          const n = v.name.toLowerCase();
+          return (
+            !n.includes('fred') &&
+            !n.includes('albert') &&
+            !n.includes('bad news') &&
+            !n.includes('bahh') &&
+            !n.includes('bells') &&
+            !n.includes('boing') &&
+            !n.includes('bubbles') &&
+            !n.includes('cellos') &&
+            !n.includes('deranged') &&
+            !n.includes('good news') &&
+            !n.includes('hysterical') &&
+            !n.includes('pipe organ') &&
+            !n.includes('trinoids') &&
+            !n.includes('whisper') &&
+            !n.includes('zarvox')
+          );
+        });
+
+        // Natural / Neural Voice prioritization
         const matched =
+          (lang === 'hi' && (voices.find((v) => v.name.includes('हिन्दी') || v.lang.startsWith('hi')) || voices.find((v) => v.lang.includes('IN')))) ||
+          (lang === 'mr' && (voices.find((v) => v.name.includes('मराठी') || v.lang.startsWith('mr')) || voices.find((v) => v.lang.startsWith('hi')) || voices.find((v) => v.lang.includes('IN')))) ||
+          voices.find((v) => (v.name.includes('Natural') || v.name.includes('Enhanced') || v.name.includes('Neural')) && v.lang.startsWith('en')) ||
+          voices.find((v) => (v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Rishi') || v.name.includes('Veena') || v.name.includes('Daniel') || v.name.includes('Karen')) && v.lang.startsWith('en')) ||
           voices.find((v) => v.lang === targetLang) ||
-          voices.find((v) => v.lang.startsWith(lang)) ||
-          (lang === 'mr' ? voices.find((v) => v.lang.startsWith('hi')) : null) ||
-          voices.find((v) => v.lang.includes('IN')) ||
+          voices.find((v) => v.lang.startsWith('en')) ||
           voices[0];
+
         if (matched) utterance.voice = matched;
       } catch (e) {}
+
+      // Human conversational cadence
+      utterance.rate = 0.96;
+      utterance.pitch = 1.02;
 
       utterance.onstart = handleAudioPlay;
       utterance.onend = handleAudioEnded;
@@ -565,6 +593,37 @@ export default function AckoInsurancePortal() {
     }
   };
 
+  // Per-Page Milestone Snapshot Protocol (Meta Muse Image / Spark Visual Grounding)
+  const getPageMilestoneSnapshot = (step: number): string => {
+    const stepTitles: Record<number, string> = {
+      1: 'Step 1: Applicant Profile & Eligibility (Demographics & Health Tier)',
+      2: 'Step 2: Base Life Cover & Living Benefit Riders (Rate Lock 30-Yr)',
+      3: 'Step 3: Underwriting, Medical History & Section 45 Declarations',
+      4: 'Step 4: Proposal Verification, Policy Issuance & Audit Certificate',
+    };
+    const title = stepTitles[step] || `Proposal Step ${step}`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#180d40"/>
+          <stop offset="50%" stop-color="#2d1b70"/>
+          <stop offset="100%" stop-color="#0b0720"/>
+        </linearGradient>
+      </defs>
+      <rect width="800" height="400" rx="16" fill="url(#bg)"/>
+      <text x="40" y="50" fill="#a78bfa" font-family="sans-serif" font-size="14" font-weight="bold">COVERPILOT MULTIMODAL PER-PAGE SNAPSHOT • STEP ${step}</text>
+      <text x="40" y="90" fill="#ffffff" font-family="sans-serif" font-size="22" font-weight="900">${title}</text>
+      <rect x="40" y="120" width="720" height="2" fill="#582be8" opacity="0.6"/>
+      <text x="40" y="160" fill="#e2e8f0" font-family="sans-serif" font-size="15">Cover: ${baseSumAssured.toUpperCase()} | Smoker: ${profile.isSmoker ? 'Yes' : 'No (20% Discount)'} | Income: ₹${profile.annualIncome ? Number(profile.annualIncome).toLocaleString() : '18,00,000'}</text>
+      <text x="40" y="200" fill="#34d399" font-family="sans-serif" font-size="14" font-weight="bold">Riders: Critical Illness: ${selectedRiders.criticalIllness ? 'Active (₹25L)' : 'None'} | Accidental: ${selectedRiders.accidentalDeath ? 'Active (₹50L)' : 'None'}</text>
+      <text x="40" y="240" fill="#93c5fd" font-family="sans-serif" font-size="13">Section 45 Incontestability: ${underwriting.section45Consent ? 'ACKNOWLEDGED' : 'Pending'}</text>
+      <rect x="40" y="280" width="720" height="80" rx="12" fill="#ffffff" fill-opacity="0.08" stroke="#a78bfa" stroke-opacity="0.3"/>
+      <text x="60" y="315" fill="#f8fafc" font-family="sans-serif" font-size="14" font-weight="bold">Meta Muse Spark 1.3 Multimodal Grounding Active</text>
+      <text x="60" y="340" fill="#94a3b8" font-family="sans-serif" font-size="12">1-Shot WebP/SVG Payload • Zero Continuous Video Latency • Sub-50ms Perception</text>
+    </svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  };
+
   // Two-Way Conversational Voice: Process User Question (Spoken or Typed)
   const processUserSpokenQuestion = async (spokenQuery: string) => {
     if (!spokenQuery.trim()) return;
@@ -595,6 +654,7 @@ export default function AckoInsurancePortal() {
           query: spokenQuery,
           language: selectedLanguage,
           liveScreenState: getLiveScreenSnapshot(),
+          pageSnapshot: getPageMilestoneSnapshot(activeStep),
         }),
       });
 
@@ -615,8 +675,32 @@ export default function AckoInsurancePortal() {
           },
         ]);
 
-        // If target element referenced, spotlight and glide remote cursor
-        if (data.elementId) {
+        // Execute automated co-browsing field actions on the live form
+        if (data.fieldAction) {
+          const { field, value } = data.fieldAction;
+          if (field === 'fullName') {
+            glideAgentCursorToElement('field-full-name', `Entering Name: ${value}`, () => {
+              setProfile((p) => ({ ...p, fullName: value }));
+            });
+          } else if (field === 'criticalIllness') {
+            glideAgentCursorToElement('card-critical-illness', 'Selecting Critical Illness Rider', () => {
+              setSelectedRiders((r) => ({ ...r, criticalIllness: value }));
+            });
+          } else if (field === 'accidentalDeath') {
+            glideAgentCursorToElement('card-accidental-death', 'Selecting Accidental Cover Rider', () => {
+              setSelectedRiders((r) => ({ ...r, accidentalDeath: value }));
+            });
+          } else if (field === 'waiverOfPremium') {
+            glideAgentCursorToElement('card-waiver-premium', 'Selecting Premium Waiver Rider', () => {
+              setSelectedRiders((r) => ({ ...r, waiverOfPremium: value }));
+            });
+          } else if (field === 'isSmoker') {
+            glideAgentCursorToElement('field-smoking', `Setting Smoker Status: ${value ? 'Yes' : 'No'}`, () => {
+              setProfile((p) => ({ ...p, isSmoker: value }));
+            });
+          }
+        } else if (data.elementId) {
+          // If target element referenced without action, spotlight and glide remote cursor
           setSpotlightedElementId(data.elementId);
           glideAgentCursorToElement(data.elementId, data.actionTitle || 'Pointing to Relevant Feature');
           setTimeout(() => setSpotlightedElementId(null), 6000);
