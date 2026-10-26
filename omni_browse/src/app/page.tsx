@@ -234,6 +234,12 @@ export default function AckoInsurancePortal() {
   const audioAnalyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
+  // Continuous Co-Browsing Session Controls (Continuous 1080p Video + Continuous Hands-Free Voice)
+  const [continuousVoiceMode, setContinuousVoiceMode] = useState<boolean>(true);
+  const voiceSilenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isContinuousListeningRef = useRef<boolean>(true);
+  const isSpeakingRef = useRef<boolean>(false);
+
   // Observation Timer & Focused Field Tracking
   const [currentFocusedField, setCurrentFocusedField] = useState<string | null>(null);
   const [idleSeconds, setIdleSeconds] = useState<number>(0);
@@ -302,14 +308,17 @@ export default function AckoInsurancePortal() {
   // Active audio element reference to prevent overlapping voices
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Pure Backend WebRTC Voice Streamer: Receives Opus audio packets from backend Meta Muse Voice stream
+  // Pure WebRTC Conversational Voice Streamer (Audible Human Speech Synthesis)
   const speakText = (text: string, lang: 'en' | 'hi' | 'mr') => {
     if (typeof window === 'undefined') return;
 
     // 1. Play immediate pleasant acoustic chime for low-latency feedback
     playChime();
 
-    // 2. Stop any currently playing audio cleanly without throwing AbortError
+    // 2. Stop any currently playing speech or audio
+    if ('speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
     if (remoteAudioRef.current) {
       try {
         remoteAudioRef.current.pause();
@@ -330,24 +339,60 @@ export default function AckoInsurancePortal() {
       lastEvent: `DOWNSTREAM_AUDIO_PACKET: Meta Muse Voice [${lang.toUpperCase()}] 48kHz Opus`,
     }));
 
-    // 4. Stream audio from backend WebRTC audio route directly into WebRTC Remote Audio receiver
-    const audioUrl = `/api/tts?lang=${lang}&text=${encodeURIComponent(text)}`;
-    
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.src = audioUrl;
-      remoteAudioRef.current.onplay = () => setIsSpeaking(true);
-      remoteAudioRef.current.onended = () => setIsSpeaking(false);
-      remoteAudioRef.current.play().catch((err) => {
-        if (err.name !== 'AbortError') {
-          console.warn('WebRTC audio receiver autoplay restriction:', err);
-        }
-      });
+    const handleAudioPlay = () => {
+      setIsSpeaking(true);
+      isSpeakingRef.current = true;
+      // Temporarily pause continuous mic recognition to prevent self-loop echo
+      if (speechRecognitionRef.current) {
+        try { speechRecognitionRef.current.stop(); } catch (e) {}
+      }
+    };
+
+    const handleAudioEnded = () => {
+      setIsSpeaking(false);
+      isSpeakingRef.current = false;
+      // Auto-rearm continuous listening loop in hands-free mode
+      if (isContinuousListeningRef.current) {
+        setTimeout(() => {
+          if (isContinuousListeningRef.current && !isSpeakingRef.current) {
+            startVoiceListening();
+          }
+        }, 500);
+      }
+    };
+
+    // 4. Primary: Synthesize audible human voice via SpeechSynthesis
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      const targetLang = lang === 'hi' ? 'hi-IN' : lang === 'mr' ? 'mr-IN' : 'en-IN';
+      utterance.lang = targetLang;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+
+      try {
+        const voices = window.speechSynthesis.getVoices();
+        const matched =
+          voices.find((v) => v.lang === targetLang) ||
+          voices.find((v) => v.lang.startsWith(lang)) ||
+          (lang === 'mr' ? voices.find((v) => v.lang.startsWith('hi')) : null) ||
+          voices.find((v) => v.lang.includes('IN')) ||
+          voices[0];
+        if (matched) utterance.voice = matched;
+      } catch (e) {}
+
+      utterance.onstart = handleAudioPlay;
+      utterance.onend = handleAudioEnded;
+      utterance.onerror = () => handleAudioEnded();
+
+      window.speechSynthesis.speak(utterance);
     } else {
+      // Fallback to audio element if SpeechSynthesis is unavailable
+      const audioUrl = `/api/tts?lang=${lang}&text=${encodeURIComponent(text)}`;
       const audio = new Audio(audioUrl);
       activeAudioRef.current = audio;
-      audio.onplay = () => setIsSpeaking(true);
+      audio.onplay = handleAudioPlay;
       audio.onended = () => {
-        setIsSpeaking(false);
+        handleAudioEnded();
         activeAudioRef.current = null;
       };
       audio.play().catch((err) => {
@@ -943,6 +988,20 @@ export default function AckoInsurancePortal() {
         if (text) {
           currentTranscriptRef.current = text;
           setVoiceTranscriptLive(text);
+
+          // Continuous Hands-Free VAD: auto-submit after 1.3s pause in speech
+          if (isContinuousListeningRef.current) {
+            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
+            voiceSilenceTimerRef.current = setTimeout(() => {
+              const captured = currentTranscriptRef.current.trim();
+              if (captured && !isSpeakingRef.current) {
+                try { recognition.stop(); } catch (e) {}
+                processUserSpokenQuestion(captured);
+                currentTranscriptRef.current = '';
+                setVoiceTranscriptLive('');
+              }
+            }, 1300);
+          }
         }
       };
 
@@ -964,9 +1023,19 @@ export default function AckoInsurancePortal() {
         
         // AUTO-SUBMIT if any speech was captured when recognition ends!
         const captured = currentTranscriptRef.current.trim();
-        if (captured) {
+        if (captured && !isSpeakingRef.current) {
           processUserSpokenQuestion(captured);
           currentTranscriptRef.current = '';
+          setVoiceTranscriptLive('');
+        }
+
+        // Auto-rearm continuous listening loop in hands-free mode
+        if (isCoBrowsingConnected && isContinuousListeningRef.current && !isSpeakingRef.current) {
+          setTimeout(() => {
+            if (!isSpeakingRef.current) {
+              startVoiceListening();
+            }
+          }, 400);
         }
       };
 
