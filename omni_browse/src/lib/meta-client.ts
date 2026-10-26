@@ -64,8 +64,8 @@ export class MetaModelClient {
   private baseUrl: string;
 
   constructor() {
-    this.apiKey = process.env.META_MODEL_API_KEY || null;
-    this.baseUrl = process.env.META_MODEL_BASE_URL || 'https://api.meta.ai/v1';
+    this.apiKey = process.env.META_MODEL_API_KEY || process.env.META_API_KEY || null;
+    this.baseUrl = process.env.META_MODEL_BASE_URL || process.env.META_API_ENDPOINT || 'https://api.meta.ai/v1';
   }
 
   isLive(): boolean {

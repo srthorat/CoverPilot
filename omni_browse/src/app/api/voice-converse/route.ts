@@ -121,13 +121,14 @@ export async function POST(req: NextRequest) {
     };
 
     // 1. LIVE META MODEL API CALL (If user configured their live key)
-    const metaApiKey = process.env.META_MODEL_API_KEY;
+    const metaApiKey = process.env.META_MODEL_API_KEY || process.env.META_API_KEY;
+    const baseUrl = process.env.META_MODEL_BASE_URL || process.env.META_API_ENDPOINT || 'https://api.meta.ai/v1';
     const modelName = process.env.META_MODEL_NAME || 'muse-spark-1.3';
     const timeoutMs = parseInt(process.env.META_API_TIMEOUT_MS || '15000', 10);
 
     if (metaApiKey && metaApiKey.length > 5) {
       try {
-        const metaRes = await fetch(`${process.env.META_MODEL_BASE_URL || 'https://api.meta.ai/v1'}/chat/completions`, {
+        const metaRes = await fetch(`${baseUrl}/chat/completions`, {
           method: 'POST',
           signal: AbortSignal.timeout(timeoutMs),
           headers: {
@@ -180,7 +181,8 @@ Instructions:
           const data = await metaRes.json();
           const rawContent = data.choices?.[0]?.message?.content || '';
           try {
-            const parsed = JSON.parse(rawContent);
+            const cleanJson = rawContent.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleanJson);
             return NextResponse.json({
               query,
               spokenAnswer: parsed.spokenAnswer,

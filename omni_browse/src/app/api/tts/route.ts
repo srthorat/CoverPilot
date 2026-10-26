@@ -80,7 +80,10 @@ export async function GET(req: NextRequest) {
 async function handleTts(text: string, lang: string, voice: string = 'rishi') {
   try {
     // 1. If Meta Model API Key is configured, attempt to stream from Meta Voice
-    const metaApiKey = process.env.META_MODEL_API_KEY;
+    const metaApiKey = process.env.META_MODEL_API_KEY || process.env.META_API_KEY;
+    const baseUrl = process.env.META_MODEL_BASE_URL || process.env.META_API_ENDPOINT || 'https://api.meta.ai/v1';
+    const timeoutMs = parseInt(process.env.META_API_TIMEOUT_MS || '4000', 10);
+
     if (metaApiKey && metaApiKey.length > 5) {
       try {
         const metaVoiceId =
@@ -92,9 +95,9 @@ async function handleTts(text: string, lang: string, voice: string = 'rishi') {
             ? 'muse-voice-aura'
             : 'muse-voice-rishi-in';
 
-        const metaRes = await fetch(`${process.env.META_MODEL_BASE_URL || 'https://api.meta.ai/v1'}/audio/speech`, {
+        const metaRes = await fetch(`${baseUrl}/audio/speech`, {
           method: 'POST',
-          signal: AbortSignal.timeout(1000),
+          signal: AbortSignal.timeout(timeoutMs),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${metaApiKey}`,
