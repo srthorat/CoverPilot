@@ -389,7 +389,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     sentAt: null,
     step: null,
   });
-  const [showAgentView, setShowAgentView] = useState<boolean>(true);
+  const [showAgentView, setShowAgentView] = useState<boolean>(false);
+  const [showAgentFrameModal, setShowAgentFrameModal] = useState<boolean>(false);
   const [showTaxBreakdownWidget, setShowTaxBreakdownWidget] = useState<boolean>(true);
   const [showSessionControls, setShowSessionControls] = useState<boolean>(false);
   const [activeWhyAskField, setActiveWhyAskField] = useState<string | null>(null);
@@ -1851,6 +1852,21 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   }, []);
 
   const currentGuidanceItem = GUIDANCE_CONTENT[activeGuidanceKey] || GUIDANCE_CONTENT['field-full-name'];
+
+  // Exactly which form details go to Muse Spark (shown in the sidebar widget and the full-size frame modal).
+  const agentDetailLines = [
+    `Step ${activeStep} of 5`,
+    `Cover: ${baseSumAssured === '1cr' ? '₹1 Cr' : baseSumAssured === '1.5cr' ? '₹1.5 Cr' : '₹2 Cr'}`,
+    `Riders: ${[selectedRiders.criticalIllness && 'Critical Illness', selectedRiders.accidentalDeath && 'Accidental', selectedRiders.waiverOfPremium && 'Waiver', selectedRiders.hospitalCash && 'Hospital Cash'].filter(Boolean).join(', ') || 'none'}`,
+    `Name: ${profile.fullName || '—'} · DOB: ${profile.dob || '—'}`,
+    `Income: ${profile.annualIncome ? `₹${Number(profile.annualIncome).toLocaleString('en-IN')}` : '—'} · Pincode: ${profile.pincode || '—'}`,
+    `Nominee: ${nomination.primaryName ? `${nomination.primaryName} (${nomination.primaryShare}%)` : '—'}`,
+  ];
+  const agentFrameLabel = isSharingPaused
+    ? 'paused'
+    : agentView.sentAt
+    ? `updated ${new Date(agentView.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : 'nothing sent yet';
 
   const pageContent = (
     <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
@@ -3917,7 +3933,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             <div className="rounded-xl bg-slate-50 text-slate-800 border border-slate-200 overflow-hidden">
               <button type="button"onClick={() => setShowAgentView((v) => !v)} className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold">
                 <span>What the agent sees</span>
-                <span className="font-normal text-slate-400">{isSharingPaused ? 'paused' : agentView.sentAt ? `updated ${new Date(agentView.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'nothing sent yet'} {showAgentView ? '▾' : '▸'}</span>
+                <span className="font-normal text-slate-400">{agentFrameLabel} {showAgentView ? '▾' : '▸'}</span>
               </button>
               {showAgentView && (
                 <div className="px-3 pb-3 flex flex-col gap-2 text-[11px]">
@@ -3925,8 +3941,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     <div>
                       <div className="text-slate-400 mb-1">Last frame sent{agentView.step ? `(step ${agentView.step})` : ''}</div>
                       {agentView.frameDataUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={agentView.frameDataUrl} alt="The reduced-size frame of this form last sent to the agent"className="w-full rounded-lg border border-slate-200 bg-white" />
+                        <button
+                          type="button"
+                          onClick={() => setShowAgentFrameModal(true)}
+                          title="Open full size"
+                          className="group relative w-full rounded-lg border border-slate-200 bg-white overflow-hidden cursor-zoom-in"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={agentView.frameDataUrl} alt="The reduced-size frame of this form last sent to the agent" className="w-full block" />
+                          <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] font-bold py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            Click to view full size
+                          </span>
+                        </button>
                       ) : (
                         <div className="w-full aspect-[4/3] rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-slate-500">
                           {isCoBrowsingConnected ? 'Sent on step changes' : 'Not connected'}
@@ -3936,12 +3962,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     <div>
                       <div className="text-slate-400 mb-1">Form details sent</div>
                       <ul className="space-y-0.5 text-slate-700">
-                        <li>Step {activeStep} of 5</li>
-                        <li>Cover: {baseSumAssured === '1cr' ? '₹1 Cr' : baseSumAssured === '1.5cr' ? '₹1.5 Cr' : '₹2 Cr'}</li>
-                        <li>Riders: {[selectedRiders.criticalIllness && 'Critical Illness', selectedRiders.accidentalDeath && 'Accidental', selectedRiders.waiverOfPremium && 'Waiver'].filter(Boolean).join(', ') || 'none'}</li>
-                        <li>Name: {profile.fullName || '—'} · DOB: {profile.dob || '—'}</li>
-                        <li>Income: {profile.annualIncome ? `₹${Number(profile.annualIncome).toLocaleString('en-IN')}` : '—'} · Pincode: {profile.pincode || '—'}</li>
-                        <li>Nominee: {nomination.primaryName ? `${nomination.primaryName} (${nomination.primaryShare}%)` : '—'}</li>
+                        {agentDetailLines.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
                         <li className="text-slate-400">Not sent: Aadhaar, PAN and mobile numbers (masked placeholders only)</li>
                       </ul>
                     </div>
@@ -4399,6 +4422,59 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       )}
 
       {/* Feature 5: Application Guardian Audit Certificate Modal */}
+      {/* Full-size view of the last frame sent to Muse Spark */}
+      {showAgentFrameModal && (
+        <div
+          className="fixed inset-0 z-[99998] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowAgentFrameModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">What the agent sees</h3>
+                <p className="text-[11px] text-slate-500">
+                  Reduced-size frame sent to Muse Spark{agentView.step ? ` on step ${agentView.step}` : ''} · {agentFrameLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAgentFrameModal(false)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold"
+              >
+                Close
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_280px]">
+              <div className="min-h-0 overflow-auto bg-slate-100 p-3 flex items-start justify-center">
+                {agentView.frameDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={agentView.frameDataUrl} alt="Full-size view of the frame last sent to the agent" className="max-w-full h-auto rounded-lg border border-slate-200 bg-white shadow" />
+                ) : (
+                  <div className="text-slate-500 text-sm py-20">No frame has been sent yet.</div>
+                )}
+              </div>
+              <div className="border-t lg:border-t-0 lg:border-l border-slate-200 p-4 text-[12px] overflow-auto">
+                <div className="text-slate-400 font-bold uppercase tracking-wider text-[10px] mb-2">Form details sent</div>
+                <ul className="space-y-1 text-slate-700">
+                  {agentDetailLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <div className="mt-3 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] leading-snug">
+                  Not sent: Aadhaar, PAN and mobile numbers. Only masked placeholders leave this device.
+                </div>
+                <p className="mt-3 text-slate-500 text-[11px] leading-snug">
+                  Frames are taken when you change steps, not streamed. Pause sharing stops frames and form details; voice stays on.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAuditCertModal && auditCertData && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-2xl bg-white rounded-3xl shadow-sm border border-slate-200 p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
