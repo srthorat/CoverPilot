@@ -13,7 +13,8 @@
 body {
   background-color: #f8fafc;
   color: #0f172a;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "cv11", "ss01";
   overflow-x: hidden;
   min-height: 100vh;
 }
@@ -28,7 +29,7 @@ body {
 }
 
 .acko-card:hover {
-  box-shadow: 0 10px 25px -5px rgba(88, 43, 232, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 /* OmniCB Guidance Spotlight Ring */
@@ -50,7 +51,7 @@ body {
 .co-browse-spotlight {
   border: 2px solid #582be8 !important;
   animation: acko-beacon 1.8s infinite;
-  background-color: #f5f3ff !important;
+  /* No background override so a selected card keeps its selected colour */
 }
 
 /* Audio waveform for OmniCB Agent */

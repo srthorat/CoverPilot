@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 
+const inter = Inter({ subsets: ['latin', 'latin-ext'], variable: '--font-inter', display: 'swap' });
+
 export const metadata: Metadata = {
-  title: 'OmniBrowse | Autonomous Multimodal Co-Browsing Agent (Meta Hackathon 2026)',
-  description: 'Frontier AI browser navigation powered by Meta Muse Spark 1.3, SAM 3.1 & Meta Model API. Track 1: Indie Developer Track.',
+  title: 'CoverPilot | ACKO Life proposal assistant',
+  description: 'Voice co-browsing assistant for the ACKO Life Flexi Shield proposal, built on the Meta Model API.',
 };
 
 export default function RootLayout({
@@ -12,8 +15,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark h-full">
-      <body className="min-h-full flex flex-col antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+    <html lang="en" className={`h-full ${inter.variable}`}>
+      <body className="min-h-full flex flex-col antialiased selection:bg-purple-200 selection:text-purple-950">
         {children}
       </body>
     </html>

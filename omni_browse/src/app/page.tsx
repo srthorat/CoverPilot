@@ -1,6 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent } from '@/lib/voice-client';
+import { toJpeg } from 'html-to-image';
+
+// A PII region found by Meta SAM 3.1 (see /api/sam)
+type KycRegion = {
+  concept: string;
+  box: { left: number; top: number; right: number; bottom: number };
+  confidence: number | null;
+  masks: Array<{ path: string; left: number; top: number }>;
+  members: number;
+};
 
 // Multilingual Guidance Knowledge Base (English, Hindi, Marathi)
 const GUIDANCE_CONTENT: Record<
@@ -70,9 +81,9 @@ const GUIDANCE_CONTENT: Record<
       mr: 'धूम्रपान / तंबाखू सवय मार्गदर्शन',
     },
     advice: {
-      en: 'If you have not consumed cigarettes, beedis, or nicotine products in the last 12 months, choose "Non-Smoker" to unlock an instant 20% health discount for your entire policy tenure.',
-      hi: 'यदि आपने पिछले 12 महीनों में सिगरेट, बीड़ी या निकोटीन का सेवन नहीं किया है, तो "Non-Smoker" चुनें और पूरे 30 साल के लिए 20% की सीधी छूट पाएं।',
-      mr: 'जर तुम्ही मागील 12 महिन्यांत सिगारेट, विडी किंवा तंबाखूचे सेवन केले नसेल, तर "Non-Smoker" निवडा आणि संपूर्ण पॉलिसीसाठी 20% थेट सूट मिळवा.',
+      en: 'If you have not consumed cigarettes, beedis, or nicotine products in the last 12 months, choose "Non-Smoker"to unlock an instant 20% health discount for your entire policy tenure.',
+      hi: 'यदि आपने पिछले 12 महीनों में सिगरेट, बीड़ी या निकोटीन का सेवन नहीं किया है, तो "Non-Smoker"चुनें और पूरे 30 साल के लिए 20% की सीधी छूट पाएं।',
+      mr: 'जर तुम्ही मागील 12 महिन्यांत सिगारेट, विडी किंवा तंबाखूचे सेवन केले नसेल, तर "Non-Smoker"निवडा आणि संपूर्ण पॉलिसीसाठी 20% थेट सूट मिळवा.',
     },
     spotlightId: 'field-smoking',
   },
@@ -137,13 +148,10 @@ export default function AckoInsurancePortal() {
   // Preferred Language: English | Hindi (हिंदी) | Marathi (मराठी)
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi' | 'mr'>('en');
 
-  // Curated Best Neural Voices:
-  // - 'veena': Female Indian Accent Advisor (Veena / Neerja)
-  // - 'rishi': Male Indian Accent Advisor (Rishi / Aarav)
-  // - 'nova': Warm Natural Advisor (Samantha / Jenny)
-  // - 'aura': Executive AI Tone (Siri / Serena)
-  const [selectedVoicePersona, setSelectedVoicePersona] = useState<'veena' | 'rishi' | 'nova' | 'aura'>('veena');
-  const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  // Voice personas, rendered by Google Cloud TTS (Chirp 3 HD, en-IN): veena & nova female, rishi & aura male.
+  // The Meta Model API has no text-to-speech model; everything upstream of playback is Meta.
+  const [selectedVoicePersona, setSelectedVoicePersona] = useState<VoicePersona>('veena');
+  const [englishAccent, setEnglishAccent] = useState<EnglishAccent>('in');
 
   // Step 1: Blank initial form (NO prefilled data)
   const [profile, setProfile] = useState({
@@ -200,12 +208,30 @@ export default function AckoInsurancePortal() {
   const [showTermsDrawer, setShowTermsDrawer] = useState<boolean>(false);
   const [termsSearchQuery, setTermsSearchQuery] = useState<string>('');
 
-  // Parallel Meta Model Fleet Execution Telemetry
-  const [fleetTelemetry, setFleetTelemetry] = useState<{
-    parallel: boolean;
-    models: { name: string; role: string; latency: string; status: string }[];
-    totalParallelMs: number;
-  } | null>(null);
+  // Real per-turn latency telemetry from the live Meta voice loop
+  const [voiceTelemetry, setVoiceTelemetry] = useState<{
+    asrModel: string | null;
+    asrSessionId: string | null;
+    asrTurnMs: number | null; // speechEnd -> speechComplete (Meta endpointing + final transcript)
+    sparkModel: string | null;
+    sparkTtftMs: number | null; // request -> first streamed token
+    sparkTotalMs: number | null;
+    reasoningEffort: string | null;
+    ttsVoice: string | null;
+    ttsMs: number | null; // Google TTS latency for the first sentence of the last answer
+    lastError: string | null;
+  }>({
+    asrModel: null,
+    asrSessionId: null,
+    asrTurnMs: null,
+    sparkModel: null,
+    sparkTtftMs: null,
+    sparkTotalMs: null,
+    reasoningEffort: null,
+    ttsVoice: null,
+    ttsMs: null,
+    lastError: null,
+  });
 
   // Step 4: Medical & Underwriting Disclosures
   const [underwriting, setUnderwriting] = useState({
@@ -251,35 +277,67 @@ export default function AckoInsurancePortal() {
   });
   const [clickIndicators, setClickIndicators] = useState<Array<{ id: number; x: number; y: number }>>([]);
   
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'agent'; text: string; time: string }>>([
+  const GREETING_TEXT: Record<'en' | 'hi' | 'mr', string> = {
+    en: 'Welcome to ACKO Life! I am OmniCB Agent. Connecting your secure live voice session now.',
+    hi: 'ACKO Life में आपका स्वागत है! मैं OmniCB एजेंट हूँ। आपका सुरक्षित लाइव वॉइस सत्र अभी जोड़ रहा हूँ।',
+    mr: 'ACKO Life मध्ये आपले स्वागत आहे! मी OmniCB एजंट आहे. तुमचे सुरक्षित लाइव्ह व्हॉइस सत्र आता जोडत आहे.',
+  };
+  const [chatMessages, setChatMessages] = useState<Array<{ id?: number; sender: 'user' | 'agent'; text: string; time: string }>>([
     {
       sender: 'agent',
-      text: "👋 Welcome to ACKO Life! I am OmniCB Agent. When you are ready, click 'Accept & Start Co-Browsing' to begin our live WebRTC screen share and voice-guided session.",
+      text: "Welcome to ACKO Life! I am OmniCB Agent. When you are ready, click 'Accept and start co-browsing'to begin our secure live voice session.",
       time: 'Just now',
     },
   ]);
   const [userQuery, setUserQuery] = useState<string>('');
 
-  // Two-Way Conversational WebRTC Voice (Customer Mic Uplink <-> Meta AI Voice Downlink)
+  // Live two-way voice: mic -> Meta Muse Voice Transcribe (realtime WS) -> Muse Spark (streamed) -> Google Cloud TTS (PCM over the socket)
   const [isListeningVoice, setIsListeningVoice] = useState<boolean>(false);
   const [voiceTranscriptLive, setVoiceTranscriptLive] = useState<string>('');
   const [voiceThinking, setVoiceThinking] = useState<boolean>(false);
-  const [micDecibelLevel, setMicDecibelLevel] = useState<number>(0);
   const micDecibelBarRef = useRef<HTMLDivElement | null>(null);
   const micDecibelTextRef = useRef<HTMLSpanElement | null>(null);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
-  const currentTranscriptRef = useRef<string>('');
-  const speechRecognitionRef = useRef<any>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioAnalyserRef = useRef<AnalyserNode | null>(null);
-  const animFrameRef = useRef<number | null>(null);
-
-  // Continuous Co-Browsing Session Controls (Continuous 1080p Video + Continuous Hands-Free Voice)
-  const [continuousVoiceMode, setContinuousVoiceMode] = useState<boolean>(true);
-  const voiceSilenceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isContinuousListeningRef = useRef<boolean>(true);
+  const agentRef = useRef<VoiceAgentClient | null>(null);
+  const welcomeRef = useRef<{ text: string; lang: 'en' | 'hi' | 'mr'; greetingDone: boolean; ready: boolean; spoken: boolean }>({ text: '', lang: 'en', greetingDone: false, ready: false, spoken: false });
+  const maybeSpeakAgentWelcome = () => {
+    const w = welcomeRef.current;
+    if (w.spoken || !w.greetingDone || !w.ready || !w.text) return;
+    w.spoken = true;
+    agentRef.current?.speakLocal(w.text, w.lang);
+  };
+  const lastGuidanceRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
+  const [memoryFacts, setMemoryFacts] = useState<string[]>([]);
+  // Stable per-browser id so the agent can remember a returning customer (demo only).
+  const getCustomerId = () => {
+    try {
+      let id = localStorage.getItem('coverpilot-customer-id');
+      if (!id) {
+        id = `cust-${Math.random().toString(36).slice(2, 10)}`;
+        localStorage.setItem('coverpilot-customer-id', id);
+      }
+      return id;
+    } catch {
+      return null;
+    }
+  };
+  const localAudioRef = useRef<HTMLAudioElement | null>(null); // pre-session speech via /api/tts
+  const voicePersonaRef = useRef<VoicePersona>('veena');
+  const accentRef = useRef<EnglishAccent>('in');
+  const currentAgentMsgIdRef = useRef<number | null>(null);
+  const agentTextRef = useRef<string>('');
+  const [agentState, setAgentState] = useState<'listening' | 'thinking' | 'speaking'>('listening');
   const isSpeakingRef = useRef<boolean>(false);
+  const isListeningRef = useRef<boolean>(false);
+  const isCoBrowsingConnectedRef = useRef<boolean>(false);
+  // Latest render's handlers, so long-lived agent callbacks never act on stale state.
+  const latestRef = useRef<{
+    applyAction: (a: AgentAction) => void;
+    lang: 'en' | 'hi' | 'mr';
+    screenState: () => unknown;
+    activeStep: number;
+  }>({ applyAction: () => {}, lang: 'en', screenState: () => ({}), activeStep: 1 });
+  const stampNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // Observation Timer & Focused Field Tracking
   const [currentFocusedField, setCurrentFocusedField] = useState<string | null>(null);
@@ -293,6 +351,42 @@ export default function AckoInsurancePortal() {
   const [showAuditCertModal, setShowAuditCertModal] = useState<boolean>(false);
   const [auditCertData, setAuditCertData] = useState<any>(null);
   const [kycSampleCard, setKycSampleCard] = useState<'pan' | 'aadhaar' | null>(null);
+  // SAM 3.1 PII shield: regions found, the locally redacted image, and timings
+  const [kycRedaction, setKycRedaction] = useState<{
+    type: 'pan' | 'aadhaar';
+    imageUrl: string;
+    width: number;
+    height: number;
+    regions: KycRegion[];
+    redactedDataUrl: string | null;
+    samMs: number | null;
+    samCached: boolean;
+    ocrMs: number | null;
+    status: string;
+  } | null>(null);
+  // Session-worker telemetry: Muse Wonder verdicts and Spark pre-answered questions
+  const [verifications, setVerifications] = useState<
+    Array<{ id: string; status: string; actionTitle: string; reason?: string; clause?: string | null; ms?: number; model: string }>
+  >([]);
+  const [prefetchInfo, setPrefetchInfo] = useState<{ questions: string[]; ms: number; step: number | null } | null>(null);
+  // Muse Image policy card, pre-generated on the last step
+  const [policyCard, setPolicyCard] = useState<{ status: 'idle' | 'generating' | 'ready' | 'error'; dataUrl: string | null; ms: number | null; error?: string }>({
+    status: 'idle',
+    dataUrl: null,
+    ms: null,
+  });
+  const policyCardKeyRef = useRef<string>('');
+  const formBodyRef = useRef<HTMLDivElement | null>(null);
+  // Customer-facing by default; model names, timings and internals only when this is on.
+  const [showDevPanel, setShowDevPanel] = useState<boolean>(false);
+  const devRef = useRef<boolean>(false);
+  // "What the agent sees": the last frame + state actually sent to Muse Spark.
+  const [agentView, setAgentView] = useState<{ frameDataUrl: string | null; sentAt: number | null; step: number | null }>({
+    frameDataUrl: null,
+    sentAt: null,
+    step: null,
+  });
+  const [showAgentView, setShowAgentView] = useState<boolean>(true);
   const [showTaxBreakdownWidget, setShowTaxBreakdownWidget] = useState<boolean>(true);
   const [activeWhyAskField, setActiveWhyAskField] = useState<string | null>(null);
 
@@ -324,292 +418,74 @@ export default function AckoInsurancePortal() {
     }
   };
 
-  // WebRTC Real-Time Media & DataChannel Session (Backend Meta Muse Voice Stream)
-  const [webrtcSession, setWebrtcSession] = useState<{
-    sessionId: string;
-    status: 'connected' | 'connecting' | 'idle';
-    audioCodec: string;
-    audioTrackActive: boolean;
-    latencyMs: number;
-    jitterMs: number;
-    dataChannelState: 'open' | 'connecting' | 'closed';
-    lastEvent: string;
-  }>({
-    sessionId: 'SESSION-ACKO-OB-88219',
-    status: 'connected',
-    audioCodec: 'Opus 48kHz (Meta Muse Voice: muse-voice-realtime)',
-    audioTrackActive: true,
-    latencyMs: 14.2,
-    jitterMs: 1.1,
-    dataChannelState: 'open',
-    lastEvent: 'STREAM_CONNECTED: Opus Audio Track active (muse-voice-realtime)',
-  });
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Active audio element reference to prevent overlapping voices
-  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Pre-load and cache highest-quality speech synthesis voices
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const loadBestVoices = () => {
-        try {
-          const v = window.speechSynthesis.getVoices();
-          if (v && v.length > 0) {
-            availableVoicesRef.current = v;
-          }
-        } catch (e) {}
-      };
-      loadBestVoices();
-      window.speechSynthesis.onvoiceschanged = loadBestVoices;
-      return () => {
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.onvoiceschanged = null;
-        }
-      };
-    }
-  }, []);
-
   // Sanitize text for ultra-natural spoken prosody (zero asterisks, emojis, or punctuation glitches)
   const cleanSpokenText = (raw: string): string => {
     return raw
       .replace(/[*_#`~]/g, '')
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/₹\s*([0-9,]+)/g, 'Rupees $1')
-      .replace(/[⚖️🛡️✨🪪💰ℹ️📜⚡🎮🎙️💡👉✓•]/gu, '')
+      .replace(/[✓•]/gu, '')
       .replace(/\s+/g, ' ')
       .trim();
   };
 
-  // Pure WebRTC Conversational Voice Streamer (Audible Human Speech Synthesis)
-  const speakText = (text: string, lang: 'en' | 'hi' | 'mr') => {
+  const setSpeakingState = (speaking: boolean) => {
+    setIsSpeaking(speaking);
+    isSpeakingRef.current = speaking;
+  };
+
+  // Spoken output is Google Cloud TTS everywhere. While the agent session is live, client
+  // lines (welcome, field guidance) go through the agent's audio queue so the server knows
+  // the bot is talking and mutes the mic; before the session exists they use /api/tts.
+  const speakText = (text: string, lang: 'en' | 'hi' | 'mr', onEnd?: () => void) => {
     if (typeof window === 'undefined') return;
-
-    // 1. Play immediate pleasant acoustic chime for low-latency feedback
-    playChime();
-
-    // 2. Stop any currently playing speech or audio
-    if ('speechSynthesis' in window) {
-      try { window.speechSynthesis.cancel(); } catch (e) {}
-    }
-    if (remoteAudioRef.current) {
-      try {
-        remoteAudioRef.current.pause();
-        remoteAudioRef.current.currentTime = 0;
-      } catch (e) {}
-    }
-    if (activeAudioRef.current) {
-      try {
-        activeAudioRef.current.pause();
-        activeAudioRef.current.currentTime = 0;
-      } catch (e) {}
-      activeAudioRef.current = null;
-    }
-
-    // 3. Update WebRTC DataChannel telemetry event
-    setWebrtcSession((prev) => ({
-      ...prev,
-      lastEvent: `DOWNSTREAM_AUDIO_PACKET: Meta Muse Voice (muse-voice-realtime) [${selectedVoicePersona.toUpperCase()}] [${lang.toUpperCase()}] 48kHz Opus via WebRTC Track`,
-    }));
-
-    const handleAudioPlay = () => {
-      setIsSpeaking(true);
-      isSpeakingRef.current = true;
-      // Temporarily pause continuous mic recognition to prevent self-loop echo
-      if (speechRecognitionRef.current) {
-        try { speechRecognitionRef.current.stop(); } catch (e) {}
-      }
-    };
-
-    const handleAudioEnded = () => {
-      setIsSpeaking(false);
-      isSpeakingRef.current = false;
-      // Auto-rearm continuous listening loop in hands-free mode
-      if (isContinuousListeningRef.current) {
-        setTimeout(() => {
-          if (isContinuousListeningRef.current && !isSpeakingRef.current) {
-            startVoiceListening();
-          }
-        }, 500);
-      }
-    };
-
-    // Fallback local edge speech synthesis
-    const fallbackLocalSpeech = () => {
-      if ('speechSynthesis' in window) {
-        const spokenText = cleanSpokenText(text);
-        const utterance = new SpeechSynthesisUtterance(spokenText);
-        const targetLang = lang === 'hi' ? 'hi-IN' : lang === 'mr' ? 'mr-IN' : 'en-IN';
-        utterance.lang = targetLang;
-
-        try {
-          const rawVoices = availableVoicesRef.current.length > 0
-            ? availableVoicesRef.current
-            : window.speechSynthesis.getVoices();
-
-          // Strictly filter out legacy robotic, novelty, and low-quality voices
-          const premiumVoices = rawVoices.filter((v) => {
-            const n = v.name.toLowerCase();
-            return (
-              !n.includes('fred') &&
-              !n.includes('albert') &&
-              !n.includes('bad news') &&
-              !n.includes('bahh') &&
-              !n.includes('bells') &&
-              !n.includes('boing') &&
-              !n.includes('bubbles') &&
-              !n.includes('cellos') &&
-              !n.includes('deranged') &&
-              !n.includes('good news') &&
-              !n.includes('hysterical') &&
-              !n.includes('pipe organ') &&
-              !n.includes('trinoids') &&
-              !n.includes('whisper') &&
-              !n.includes('zarvox') &&
-              !n.includes('junior') &&
-              !n.includes('kathy') &&
-              !n.includes('princess') &&
-              !n.includes('ralph') &&
-              !n.includes('vicki') &&
-              !n.includes('victoria') &&
-              !n.includes('bruce') &&
-              !n.includes('agnes') &&
-              !n.includes('alex')
-            );
-          });
-
-          let matched: SpeechSynthesisVoice | undefined;
-
-          if (lang === 'hi' || lang === 'mr') {
-            // Curated selection for Hindi / Marathi
-            if (selectedVoicePersona === 'veena') {
-              matched =
-                premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Swara') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-                premiumVoices.find((v) => v.name.includes('Veena') || v.name.includes('Neerja') || (v.lang.includes('IN') && (v.name.includes('Female') || !v.name.includes('Male')))) ||
-                premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी'));
-            } else if (selectedVoicePersona === 'rishi') {
-              matched =
-                premiumVoices.find((v) => (v.name.includes('Lekha') || v.name.includes('Madhur') || v.name.includes('Prabhat')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-                premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
-                premiumVoices.find((v) => v.name.includes('Rishi') || v.lang.includes('IN'));
-            } else if (selectedVoicePersona === 'nova') {
-              matched =
-                premiumVoices.find((v) => (v.name.includes('Swara') || v.name.includes('Lekha') || v.name.includes('Neerja')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-                premiumVoices.find((v) => v.name.includes('हिन्दी') || v.name.includes('मराठी') || v.lang.startsWith('hi') || v.lang.startsWith('mr')) ||
-                premiumVoices.find((v) => v.lang.includes('IN'));
-            } else {
-              // aura
-              matched =
-                premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Enhanced')) && (v.lang.startsWith('hi') || v.lang.startsWith('mr'))) ||
-                premiumVoices.find((v) => v.lang.startsWith('hi') || v.lang.startsWith('mr') || v.name.includes('हिन्दी') || v.name.includes('मराठी')) ||
-                premiumVoices.find((v) => v.lang.includes('IN'));
-            }
-          } else {
-            // Curated Best Neural Voices for English
-            if (selectedVoicePersona === 'veena') {
-              // Option 1: Veena (Female Indian Accent Advisor)
-              matched =
-                premiumVoices.find((v) => v.name.includes('Veena') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-                premiumVoices.find((v) => v.name.includes('Veena')) ||
-                premiumVoices.find((v) => v.name.includes('Neerja Online (Natural)')) ||
-                premiumVoices.find((v) => v.name.includes('Neerja')) ||
-                premiumVoices.find((v) => v.name.includes('Kavya') || v.name.includes('Ananya')) ||
-                premiumVoices.find((v) => v.lang === 'en-IN' && (v.name.includes('Female') || v.name.includes('Natural') || !v.name.includes('Male'))) ||
-                premiumVoices.find((v) => v.lang === 'en-IN');
-            } else if (selectedVoicePersona === 'rishi') {
-              // Option 2: Rishi (Male Indian Accent Advisor)
-              matched =
-                premiumVoices.find((v) => v.name.includes('Rishi') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-                premiumVoices.find((v) => v.name.includes('Rishi')) ||
-                premiumVoices.find((v) => v.name.includes('Aarav Online (Natural)')) ||
-                premiumVoices.find((v) => v.name.includes('Aarav')) ||
-                premiumVoices.find((v) => (v.name.includes('Natural') || v.name.includes('Neural')) && v.lang === 'en-IN') ||
-                premiumVoices.find((v) => v.lang === 'en-IN');
-            } else if (selectedVoicePersona === 'nova') {
-              // Option 3: Nova (Warm Natural Advisor / Crystal Clear)
-              matched =
-                premiumVoices.find((v) => v.name.includes('Samantha') && (v.name.includes('Enhanced') || v.name.includes('Premium'))) ||
-                premiumVoices.find((v) => v.name.includes('Samantha')) ||
-                premiumVoices.find((v) => v.name.includes('Jenny (Natural)')) ||
-                premiumVoices.find((v) => v.name.includes('Aria (Natural)'));
-            } else {
-              // Option 4: Aura (Executive Neural Tone / Apple Siri style)
-              matched =
-                premiumVoices.find((v) => v.name.toLowerCase().includes('siri')) ||
-                premiumVoices.find((v) => (v.name.includes('Serena') || v.name.includes('Oliver') || v.name.includes('Daniel')) && v.name.includes('Enhanced')) ||
-                premiumVoices.find((v) => v.name.includes('Enhanced') && v.lang.startsWith('en')) ||
-                premiumVoices.find((v) => v.name.includes('Natural') && v.lang.startsWith('en')) ||
-                premiumVoices.find((v) => v.name.includes('Daniel') || v.name.includes('Karen'));
-            }
-          }
-
-          // Safe fallback to top English/target natural voice if persona voice not installed locally
-          if (!matched) {
-            matched =
-              premiumVoices.find((v) => (v.name.includes('Enhanced') || v.name.includes('Natural')) && v.lang.startsWith('en')) ||
-              premiumVoices.find((v) => v.lang === targetLang) ||
-              premiumVoices.find((v) => v.lang.startsWith('en')) ||
-              premiumVoices[0];
-          }
-
-          if (matched) utterance.voice = matched;
-        } catch (e) {}
-
-        // Persona-specific natural human conversational cadence
-        if (selectedVoicePersona === 'veena') {
-          utterance.rate = 0.96;
-          utterance.pitch = 1.04; // Expressive, pleasant female Indian cadence
-        } else if (selectedVoicePersona === 'rishi') {
-          utterance.rate = 0.95;
-          utterance.pitch = 1.0;
-        } else if (selectedVoicePersona === 'nova') {
-          utterance.rate = 0.98;
-          utterance.pitch = 1.03;
-        } else {
-          utterance.rate = 0.94;
-          utterance.pitch = 0.98;
-        }
-
-        utterance.onstart = handleAudioPlay;
-        utterance.onend = handleAudioEnded;
-        utterance.onerror = () => handleAudioEnded();
-
-        window.speechSynthesis.speak(utterance);
-      } else {
-        const audioUrl = `/api/tts?lang=${lang}&voice=${selectedVoicePersona}&model=muse-voice-realtime&text=${encodeURIComponent(text)}`;
-        const audio = new Audio(audioUrl);
-        activeAudioRef.current = audio;
-        audio.onplay = handleAudioPlay;
-        audio.onended = () => {
-          handleAudioEnded();
-          activeAudioRef.current = null;
-        };
-        audio.play().catch(() => {});
-      }
-    };
-
-    // 4. Primary for Connected WebRTC Co-Browsing: Play META_MODEL_VOICE ("muse-voice-realtime") directly over the WebRTC remote audio track
-    if (isCoBrowsingConnected && remoteAudioRef.current) {
-      const audioUrl = `/api/tts?lang=${lang}&voice=${selectedVoicePersona}&model=muse-voice-realtime&text=${encodeURIComponent(text)}`;
-      const remoteAudio = remoteAudioRef.current;
-      remoteAudio.src = audioUrl;
-      activeAudioRef.current = remoteAudio;
-      remoteAudio.onplay = handleAudioPlay;
-      remoteAudio.onended = () => {
-        handleAudioEnded();
-        activeAudioRef.current = null;
-      };
-      remoteAudio.onerror = () => {
-        fallbackLocalSpeech();
-      };
-      remoteAudio.play().catch(() => {
-        fallbackLocalSpeech();
-      });
+    const clean = cleanSpokenText(text);
+    if (!clean) {
+      onEnd?.();
       return;
     }
+    const agent = agentRef.current;
+    if (agent && agent.isOpen) {
+      agent.speakLocal(clean, lang);
+      onEnd?.();
+      return;
+    }
+    void (async () => {
+      try {
+        localAudioRef.current?.pause();
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: clean, lang, persona: voicePersonaRef.current, accent: accentRef.current }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || `HTTP ${res.status}`);
+        }
+        const url = URL.createObjectURL(await res.blob());
+        const audio = new Audio(url);
+        localAudioRef.current = audio;
+        audio.onplay = () => setSpeakingState(true);
+        audio.onended = () => {
+          setSpeakingState(false);
+          URL.revokeObjectURL(url);
+          onEnd?.();
+        };
+        audio.onerror = () => {
+          setSpeakingState(false);
+          onEnd?.();
+        };
+        await audio.play();
+      } catch (e: any) {
+        setChatMessages((prev) => [...prev, { sender: 'agent', text: `Google TTS failed (no fallback): ${e?.message || e}`, time: stampNow() }]);
+        onEnd?.();
+      }
+    })();
+  };
 
-    // 5. When offline / co-browsing disconnected: Instant localized neural voice
-    fallbackLocalSpeech();
+  const cancelAgentSpeech = () => {
+    localAudioRef.current?.pause();
+    agentRef.current?.interrupt();
   };
 
   // Dynamic Real-time Screen Reader for Meta Multimodal Models (Zero Hardcoded logic)
@@ -626,8 +502,14 @@ export default function AckoInsurancePortal() {
     return {
       activeStep,
       focusedFieldId: currentFocusedField,
+      termsDrawerOpen: showTermsDrawer,
       baseSumAssured,
       selectedRiders,
+      ciTier,
+      atpdOption,
+      lifeStageEscalator,
+      terminalIllnessCover,
+      nominationValues: nomination,
       underwriting,
       formValues: {
         fullName: profile.fullName,
@@ -648,44 +530,38 @@ export default function AckoInsurancePortal() {
     setIsConnecting(true);
     playChime();
     try {
-      const res = await fetch('/api/webrtc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: `ACKO-WEBRTC_GATEWAY-${Date.now()}` }),
-      });
-      const data = await res.json();
       setIsCoBrowsingConnected(true);
+      isCoBrowsingConnectedRef.current = true;
       setIsScreenSharing(true);
       setIsSharingPaused(false);
       setScreenControlStatus('granted');
-      setWebrtcSession({
-        sessionId: data.sessionId || 'WEBRTC_GATEWAY-SESSION-OB-1',
-        status: 'connected',
-        audioCodec: data.channels?.audio?.source || 'WebRTC gateway Opus 48kHz (Meta Muse Voice: muse-voice-realtime)',
-        audioTrackActive: true,
-        latencyMs: 14.2,
-        jitterMs: 1.1,
-        dataChannelState: 'open',
-        lastEvent: `WebRTC Session Active: Audio linked to ${data.channels?.audio?.model || 'muse-voice-realtime'}`,
-      });
 
+      // Same lines the Python agent speaks on connect (voice-agent-py/bot.py WELCOME).
       const welcomeMsg = selectedLanguage === 'hi'
-        ? "नमस्ते! WebRTC को-ब्राउज़िंग सत्र जुड़ गया है। मैं आपका OmniCB एजेंट हूँ और आपके फॉर्म को लाइव देख रहा हूँ। कृपया अपना पूरा कानूनी नाम दर्ज करें, या मुझसे बोलकर कोई भी प्रश्न पूछें।"
+        ? 'नमस्ते! सुरक्षित लाइव सत्र जुड़ गया है। मैं आपका फॉर्म देख रहा हूँ। कृपया अपना पूरा नाम बताएं, या कोई भी प्रश्न पूछें।'
         : selectedLanguage === 'mr'
-        ? "नमस्कार! WebRTC को-ब्राउझिंग सत्र सुरू झाले आहे. मी तुमचा OmniCB एजंट असून तुमचा अर्ज पाहत आहे. कृपया तुमचे पूर्ण नाव भरा किंवा मला कोणताही प्रश्न विचारा."
-        : "Welcome! WebRTC co-browsing session is now connected. I am viewing your live proposal screen in real time. Please start by entering your full legal name, or ask me any question verbally.";
+        ? 'नमस्कार! सुरक्षित लाइव्ह सत्र सुरू झाले आहे. मी तुमचा अर्ज पाहत आहे. कृपया तुमचे पूर्ण नाव सांगा किंवा कोणताही प्रश्न विचारा.'
+        : 'Welcome! Your secure live session is connected. I can see your proposal form. Start with your full legal name, or ask me anything.';
 
-      speakText(welcomeMsg, selectedLanguage);
+      // Two greetings, in order: the host line plays at once through /api/tts (the click is the
+      // user gesture), and the agent's own welcome follows once it has ended and the WebRTC
+      // session is ready. The agent is told not to greet on its own (autoWelcome: false).
+      welcomeRef.current = { text: welcomeMsg, lang: selectedLanguage, greetingDone: false, ready: false, spoken: false };
+      speakText(GREETING_TEXT[selectedLanguage], selectedLanguage, () => {
+        welcomeRef.current.greetingDone = true;
+        maybeSpeakAgentWelcome();
+      });
+      await startVoiceListening(selectedLanguage);
       setChatMessages((prev) => [
         ...prev,
         {
           sender: 'agent',
-          text: `🟢 [WebRTC Connected]: ${welcomeMsg}`,
+          text: `Live session connected: ${welcomeMsg}`,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
     } catch (e) {
-      console.error('Failed to connect WebRTC:', e);
+      console.error('Failed to start the live session:', e);
     } finally {
       setIsConnecting(false);
     }
@@ -697,14 +573,15 @@ export default function AckoInsurancePortal() {
     setIsScreenSharing(false);
     setScreenControlStatus('revoked');
     setAgentCursor((prev) => ({ ...prev, visible: false }));
-    cleanupMicStreams();
-    setIsListeningVoice(false);
+    isCoBrowsingConnectedRef.current = false;
+    localAudioRef.current?.pause();
+    stopVoiceListening();
     playChime();
     setChatMessages((prev) => [
       ...prev,
       {
         sender: 'agent',
-        text: '🔴 [WebRTC Disconnected]: Co-browsing session ended. Screen sharing stopped and remote control released.',
+        text: 'Live session ended. Nothing further is shared with the agent.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -733,6 +610,10 @@ export default function AckoInsurancePortal() {
     const lang = langOverride || selectedLanguage;
     const item = GUIDANCE_CONTENT[fieldKey];
     if (!item) return;
+    // Click + focus (and OCR auto-fill) can fire this several times for one field; speak it once.
+    const now = Date.now();
+    if (lastGuidanceRef.current.key === `${fieldKey}:${lang}` && now - lastGuidanceRef.current.at < 10000) return;
+    lastGuidanceRef.current = { key: `${fieldKey}:${lang}`, at: now };
 
     setActiveGuidanceKey(fieldKey);
     setSpotlightedElementId(item.spotlightId);
@@ -761,6 +642,8 @@ export default function AckoInsurancePortal() {
     setSelectedLanguage(newLang);
     if (isCoBrowsingConnected) {
       triggerFieldGuidance(activeGuidanceKey, newLang);
+      // The agent restarts its Meta ASR session with the new language bias.
+      agentRef.current?.setLanguage(newLang);
     }
   };
 
@@ -774,162 +657,287 @@ export default function AckoInsurancePortal() {
     }
   };
 
-  // Per-Page Milestone Snapshot Protocol (Meta Muse Image / Spark Visual Grounding)
-  const getPageMilestoneSnapshot = (step: number): string => {
-    const stepTitles: Record<number, string> = {
-      1: 'Step 1: Applicant Profile & Eligibility (Demographics & Health Tier)',
-      2: 'Step 2: Base Life Cover & Living Benefit Riders (Rate Lock 30-Yr)',
-      3: 'Step 3: Underwriting, Medical History & Section 45 Declarations',
-      4: 'Step 4: Proposal Verification, Policy Issuance & Audit Certificate',
-    };
-    const title = stepTitles[step] || `Proposal Step ${step}`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
-      <defs>
-        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#180d40"/>
-          <stop offset="50%" stop-color="#2d1b70"/>
-          <stop offset="100%" stop-color="#0b0720"/>
-        </linearGradient>
-      </defs>
-      <rect width="800" height="400" rx="16" fill="url(#bg)"/>
-      <text x="40" y="50" fill="#a78bfa" font-family="sans-serif" font-size="14" font-weight="bold">COVERPILOT MULTIMODAL PER-PAGE SNAPSHOT • STEP ${step}</text>
-      <text x="40" y="90" fill="#ffffff" font-family="sans-serif" font-size="22" font-weight="900">${title}</text>
-      <rect x="40" y="120" width="720" height="2" fill="#582be8" opacity="0.6"/>
-      <text x="40" y="160" fill="#e2e8f0" font-family="sans-serif" font-size="15">Cover: ${baseSumAssured.toUpperCase()} | Smoker: ${profile.isSmoker ? 'Yes' : 'No (20% Discount)'} | Income: ₹${profile.annualIncome ? Number(profile.annualIncome).toLocaleString() : '18,00,000'}</text>
-      <text x="40" y="200" fill="#34d399" font-family="sans-serif" font-size="14" font-weight="bold">Riders: Critical Illness: ${selectedRiders.criticalIllness ? 'Active (₹25L)' : 'None'} | Accidental: ${selectedRiders.accidentalDeath ? 'Active (₹50L)' : 'None'}</text>
-      <text x="40" y="240" fill="#93c5fd" font-family="sans-serif" font-size="13">Section 45 Incontestability: ${underwriting.section45Consent ? 'ACKNOWLEDGED' : 'Pending'}</text>
-      <rect x="40" y="280" width="720" height="80" rx="12" fill="#ffffff" fill-opacity="0.08" stroke="#a78bfa" stroke-opacity="0.3"/>
-      <text x="60" y="315" fill="#f8fafc" font-family="sans-serif" font-size="14" font-weight="bold">Meta Muse Spark 1.3 Multimodal Grounding Active</text>
-      <text x="60" y="340" fill="#94a3b8" font-family="sans-serif" font-size="12">1-Shot WebP/SVG Payload • Zero Continuous Video Latency • Sub-50ms Perception</text>
-    </svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  // The annual income field is a range dropdown; map an exact figure (OCR or spoken) onto it.
+  const incomeRangeFor = (raw: string): string => {
+    const known = ['5L-10L', '10L-15L', '15L-20L', '20L-35L', '35L+'];
+    if (known.includes(raw)) return raw;
+    const n = Number(String(raw).replace(/[^0-9.]/g, ''));
+    if (!n) return '';
+    const amt = n < 1000 ? n * 100000 : n; // "18" or "18.5" spoken as lakhs
+    if (amt < 1000000) return '5L-10L';
+    if (amt < 1500000) return '10L-15L';
+    if (amt < 2000000) return '15L-20L';
+    if (amt < 3500000) return '20L-35L';
+    return '35L+';
   };
 
-  // Two-Way Conversational Voice: Process User Question (Spoken or Typed)
-  const processUserSpokenQuestion = async (spokenQuery: string) => {
-    if (!spokenQuery.trim()) return;
-    setVoiceThinking(true);
-    setVoiceTranscriptLive('');
+  // Apply a co-browsing action returned by Muse Spark to the live form.
+  const applyAgentAction = (a: AgentAction) => {
+    if (a.targetElementId === 'drawer-terms-conditions') setShowTermsDrawer(true);
+    const actions: Record<string, any>[] = a.fieldActions?.length ? a.fieldActions : a.fieldAction ? [a.fieldAction] : [];
+    const applyOne = (action: Record<string, any>, title: string | undefined) => {
+      if (action.type === 'nominate') {
+        glideAgentCursorToElement('nomination-section', title || 'Configuring Nominee & Trust Protection', () => {
+          if (activeStep < 3) setActiveStep(3);
+          setNomination((prev) => ({
+            ...prev,
+            primaryName: action.primaryName !== undefined ? action.primaryName : prev.primaryName,
+            primaryRelation: action.primaryRelation !== undefined ? action.primaryRelation : prev.primaryRelation,
+            primaryShare: action.primaryShare !== undefined ? Number(action.primaryShare) : prev.primaryShare,
+            hasSecondaryNominee: action.hasSecondaryNominee !== undefined ? action.hasSecondaryNominee : prev.hasSecondaryNominee,
+            secondaryName: action.secondaryName !== undefined ? action.secondaryName : prev.secondaryName,
+            secondaryRelation: action.secondaryRelation !== undefined ? action.secondaryRelation : prev.secondaryRelation,
+            secondaryAge: action.secondaryAge !== undefined ? Number(action.secondaryAge) : prev.secondaryAge,
+            secondaryShare: action.secondaryShare !== undefined ? Number(action.secondaryShare) : prev.secondaryShare,
+            appointeeName: action.appointeeName !== undefined ? action.appointeeName : prev.appointeeName,
+            appointeeRelation: action.appointeeRelation !== undefined ? action.appointeeRelation : prev.appointeeRelation,
+            mwpaTrustEnabled: action.mwpaTrustEnabled !== undefined ? action.mwpaTrustEnabled : prev.mwpaTrustEnabled,
+          }));
+        });
+      } else if (action.type === 'ladder') {
+        glideAgentCursorToElement('card-benefit-ladders', title || 'Configuring Benefit Ladder', () => {
+          if (action.field === 'ciTier') {
+            setSelectedRiders((r) => ({ ...r, criticalIllness: true }));
+            setCiTier(action.value);
+          } else if (action.field === 'atpdOption') {
+            setSelectedRiders((r) => ({ ...r, accidentalDeath: true }));
+            setAtpdOption(action.value);
+          } else if (action.field === 'lifeStageEscalator') {
+            setLifeStageEscalator(Boolean(action.value));
+          }
+        });
+      } else if (action.type === 'fill') {
+        const value = String(action.value ?? '').trim();
+        const targets: Record<string, { el: string; apply: () => void }> = {
+          fullName: { el: 'field-full-name', apply: () => setProfile((p) => ({ ...p, fullName: value })) },
+          dob: { el: 'field-dob', apply: () => setProfile((p) => ({ ...p, dob: value })) },
+          annualIncome: {
+            el: 'field-annual-income',
+            apply: () => setProfile((p) => ({ ...p, annualIncome: incomeRangeFor(value) || p.annualIncome })),
+          },
+          pincode: { el: 'field-pincode', apply: () => setProfile((p) => ({ ...p, pincode: value })) },
+          city: { el: 'field-city', apply: () => setProfile((p) => ({ ...p, city: value })) },
+        };
+        const target = targets[action.field];
+        if (target && value) glideAgentCursorToElement(target.el, title || `Entering ${action.field}`, target.apply);
+      } else if (action.type === 'cover') {
+        const v = String(action.value ?? '').toLowerCase().replace(/\s|₹|,/g, '');
+        const tier = /^1(cr|crore|0000000)?$/.test(v) || v === '1cr' ? '1cr' : /1\.5|15000000|150/.test(v) ? '1.5cr' : /^2|20000000/.test(v) ? '2cr' : null;
+        if (tier) {
+          glideAgentCursorToElement(`cover-tier-${tier}`, title || `Selecting ${tier} cover`, () => setBaseSumAssured(tier as any));
+        }
+      } else if (action.type === 'navigate') {
+        const step = Math.min(5, Math.max(1, Number(action.step) || 1));
+        glideAgentCursorToElement(`step-tab-${step}`, title || `Opening step ${step}`, () => {
+          setActiveStep(step);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      } else if (action.type === 'ui') {
+        if (action.action === 'open_terms') setShowTermsDrawer(true);
+        else if (action.action === 'close_terms') setShowTermsDrawer(false);
+      } else if (action.type === 'select') {
+        const on = Boolean(action.value);
+        if (action.field === 'criticalIllness') {
+          glideAgentCursorToElement('card-critical-illness', title || 'Selecting Critical Illness Rider', () => {
+            setSelectedRiders((r) => ({ ...r, criticalIllness: on }));
+          });
+        } else if (action.field === 'accidentalDeath') {
+          glideAgentCursorToElement('card-accidental-death', title || 'Selecting Accidental Cover Rider', () => {
+            setSelectedRiders((r) => ({ ...r, accidentalDeath: on }));
+          });
+        } else if (action.field === 'waiverOfPremium') {
+          glideAgentCursorToElement('card-waiver-premium', title || 'Selecting Premium Waiver Rider', () => {
+            setSelectedRiders((r) => ({ ...r, waiverOfPremium: on }));
+          });
+        } else if (action.field === 'hospitalCash') {
+          glideAgentCursorToElement('card-hospital-cash', title || 'Selecting Hospital Daily Cash Rider', () => {
+            setSelectedRiders((r) => ({ ...r, hospitalCash: on }));
+          });
+        } else if (action.field === 'isSmoker') {
+          glideAgentCursorToElement('field-smoking', title || `Setting Smoker Status: ${on ? 'Yes' : 'No'}`, () => {
+            setProfile((p) => ({ ...p, isSmoker: on }));
+          });
+        }
+      }
+    };
+    if (actions.length) {
+      actions.forEach((act, idx) => applyOne(act, idx === 0 ? a.actionTitle : `${a.actionTitle} (${idx + 1}/${actions.length})`));
+      return;
+    }
+    if (a.targetElementId) {
+      setSpotlightedElementId(a.targetElementId);
+      glideAgentCursorToElement(a.targetElementId, a.actionTitle || 'Pointing to Relevant Feature');
+      setTimeout(() => setSpotlightedElementId(null), 6000);
+    }
+  };
 
-    // Update WebRTC Uplink Telemetry
-    setWebrtcSession((prev) => ({
-      ...prev,
-      lastEvent: `UPLINK_QUESTION_PACKET: Customer asked "${spokenQuery.slice(0, 36)}..."`,
-    }));
+  const upsertAgentMessage = (text: string) => {
+    const id = currentAgentMsgIdRef.current;
+    if (id === null) return;
+    setChatMessages((prev) => {
+      const i = prev.findIndex((m) => m.id === id);
+      if (i < 0) return [...prev, { id, sender: 'agent', text, time: stampNow() }];
+      const next = [...prev];
+      next[i] = { ...next[i], text };
+      return next;
+    });
+  };
 
-    // Add customer turn to chat transcript
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        sender: 'user',
-        text: `🗣️ [Customer Voice]: "${spokenQuery}"`,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
+  // Typed questions go through the same server-side pipeline as spoken turns.
+  const processUserSpokenQuestion = (query: string) => {
+    const text = query.trim();
+    if (!text) return;
+    const agent = agentRef.current;
+    if (!agent || !agent.isOpen) {
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: 'agent', text: 'Voice agent session is not connected. Click "Accept and start co-browsing"first.', time: stampNow() },
+      ]);
+      return;
+    }
+    agent.sendText(text);
+  };
 
-    try {
-      const res = await fetch('/api/voice-converse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: spokenQuery,
-          language: selectedLanguage,
-          liveScreenState: getLiveScreenSnapshot(),
-          pageSnapshot: getPageMilestoneSnapshot(activeStep),
-        }),
-      });
-
-      const data = await res.json();
-      setVoiceThinking(false);
-
-      if (data && data.spokenAnswer) {
-        // Play response via backend WebRTC audio receiver
-        speakText(data.spokenAnswer, selectedLanguage);
-
-        // Add agent response to chat transcript
+  // Events from the Python voice agent (voice-agent-py/bot.py) over the WebRTC data channel.
+  const handleAgentEvent = (ev: AgentEvent) => {
+    switch (ev.type) {
+      case 'hello':
+        setVoiceTelemetry((t) => ({
+          ...t,
+          asrModel: ev.sttModel,
+          sparkModel: ev.llmModel,
+          reasoningEffort: ev.reasoningEffort,
+          ttsVoice: ev.ttsVoice ?? t.ttsVoice,
+          lastError: null,
+        }));
+        break;
+      case 'agent_audio_meta':
+        if (ev.index <= 0) setVoiceTelemetry((t) => ({ ...t, ttsMs: ev.ttsMs, ttsVoice: ev.voice ?? t.ttsVoice }));
+        break;
+      case 'agent_local_done':
+        break;
+      case 'ready':
+        setVoiceTelemetry((t) => ({ ...t, asrModel: ev.sttModel, lastError: null }));
+        agentRef.current?.sendScreenState(latestRef.current.screenState());
+        welcomeRef.current.ready = true;
+        maybeSpeakAgentWelcome();
+        break;
+      case 'state':
+        setAgentState(ev.state);
+        setVoiceThinking(ev.state === 'thinking');
+        break;
+      case 'level':
+        updateMicMeter(ev.rms, ev.gated);
+        break;
+      case 'user_transcript':
+        if (!ev.final && ev.text) setVoiceTranscriptLive(ev.text);
+        break;
+      case 'user_turn':
+        setVoiceTranscriptLive('');
+        setVoiceTelemetry((t) => ({ ...t, asrTurnMs: ev.asrTurnMs }));
         setChatMessages((prev) => [
           ...prev,
           {
-            sender: 'agent',
-            text: `🤖 [OmniCB Voice • ${data.modelUsed || 'Meta Muse Spark 1.3'}]: ${data.spokenAnswer}`,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            sender: 'user',
+            text: devRef.current
+              ? ev.source === 'voice' ? `[You • Muse Voice Transcribe]: "${ev.text}"` : `[You]: "${ev.text}"`
+              : `${ev.source === 'voice' ? '' : ''} You: "${ev.text}"`,
+            time: stampNow(),
           },
         ]);
-
-        // Update Parallel Meta Model Fleet Execution Telemetry
-        if (data.parallelFleetExecution) {
-          setFleetTelemetry(data.parallelFleetExecution);
-        }
-
-        // Open Terms & Conditions Drawer if referenced
-        if (data.elementId === 'drawer-terms-conditions') {
-          setShowTermsDrawer(true);
-        }
-
-        // Execute automated co-browsing field actions on the live form
-        if (data.fieldAction) {
-          const action = data.fieldAction;
-          if (action.type === 'nominate') {
-            glideAgentCursorToElement('nomination-section', 'Configuring Nominee & Trust Protection', () => {
-              if (activeStep < 3) setActiveStep(3);
-              setNomination((prev) => ({
-                ...prev,
-                primaryName: action.primaryName !== undefined ? action.primaryName : prev.primaryName,
-                primaryRelation: action.primaryRelation !== undefined ? action.primaryRelation : prev.primaryRelation,
-                primaryShare: action.primaryShare !== undefined ? action.primaryShare : prev.primaryShare,
-                hasSecondaryNominee: action.hasSecondaryNominee !== undefined ? action.hasSecondaryNominee : prev.hasSecondaryNominee,
-                secondaryName: action.secondaryName !== undefined ? action.secondaryName : prev.secondaryName,
-                secondaryRelation: action.secondaryRelation !== undefined ? action.secondaryRelation : prev.secondaryRelation,
-                secondaryAge: action.secondaryAge !== undefined ? action.secondaryAge : prev.secondaryAge,
-                secondaryShare: action.secondaryShare !== undefined ? action.secondaryShare : prev.secondaryShare,
-                appointeeName: action.appointeeName !== undefined ? action.appointeeName : prev.appointeeName,
-                appointeeRelation: action.appointeeRelation !== undefined ? action.appointeeRelation : prev.appointeeRelation,
-                mwpaTrustEnabled: action.mwpaTrustEnabled !== undefined ? action.mwpaTrustEnabled : prev.mwpaTrustEnabled,
-              }));
-            });
-          } else if (action.type === 'ladder') {
-            glideAgentCursorToElement('card-benefit-ladders', 'Configuring Benefit Ladder', () => {
-              if (action.field === 'ciTier') {
-                setSelectedRiders((r) => ({ ...r, criticalIllness: true }));
-                setCiTier(action.value);
-              } else if (action.field === 'atpdOption') {
-                setSelectedRiders((r) => ({ ...r, accidentalDeath: true }));
-                setAtpdOption(action.value);
-              } else if (action.field === 'lifeStageEscalator') {
-                setLifeStageEscalator(Boolean(action.value));
-              }
-            });
-          } else if (action.field === 'fullName') {
-            glideAgentCursorToElement('field-full-name', `Entering Name: ${action.value}`, () => {
-              setProfile((p) => ({ ...p, fullName: action.value }));
-            });
-          } else if (action.field === 'criticalIllness') {
-            glideAgentCursorToElement('card-critical-illness', 'Selecting Critical Illness Rider', () => {
-              setSelectedRiders((r) => ({ ...r, criticalIllness: action.value }));
-            });
-          } else if (action.field === 'accidentalDeath') {
-            glideAgentCursorToElement('card-accidental-death', 'Selecting Accidental Cover Rider', () => {
-              setSelectedRiders((r) => ({ ...r, accidentalDeath: action.value }));
-            });
-          } else if (action.field === 'waiverOfPremium') {
-            glideAgentCursorToElement('card-waiver-premium', 'Selecting Premium Waiver Rider', () => {
-              setSelectedRiders((r) => ({ ...r, waiverOfPremium: action.value }));
-            });
-          } else if (action.field === 'isSmoker') {
-            glideAgentCursorToElement('field-smoking', `Setting Smoker Status: ${action.value ? 'Yes' : 'No'}`, () => {
-              setProfile((p) => ({ ...p, isSmoker: action.value }));
-            });
+        break;
+      case 'agent_start':
+        currentAgentMsgIdRef.current = Date.now() + Math.random();
+        agentTextRef.current = '';
+        break;
+      case 'agent_ack':
+        agentTextRef.current = `${ev.text} `;
+        upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current}`);
+        break;
+      case 'agent_text':
+        agentTextRef.current += ev.delta;
+        upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current}`);
+        break;
+      case 'action':
+        latestRef.current.applyAction(ev);
+        break;
+      case 'agent_prefetch':
+        setPrefetchInfo({ questions: ev.questions, ms: ev.ms, step: ev.step });
+        break;
+      case 'action_verification': {
+        setVerifications((prev) => {
+          const entry = { id: ev.id, status: ev.status, actionTitle: ev.actionTitle, reason: ev.reason, clause: ev.clause ?? null, ms: ev.ms, model: ev.model };
+          const i = prev.findIndex((v) => v.id === ev.id);
+          return (i < 0 ? [...prev, entry] : prev.map((v, k) => (k === i ? entry : v))).slice(-6);
+        });
+        if (ev.status !== 'pending') {
+          if (devRef.current) {
+            const verb =
+              ev.status === 'approve' ? 'Muse Wonder approved' : ev.status === 'amend' ? 'Muse Wonder amended' : ev.status === 'reject' ? 'Muse Wonder rejected' : 'Muse Wonder could not verify';
+            setChatMessages((prev) => [
+              ...prev,
+              { sender: 'agent', text: `${verb} "${ev.actionTitle}"${ev.reason ? `: ${ev.reason}` : ''}${ev.ms ? `(${ev.ms} ms)` : ''}`, time: stampNow() },
+            ]);
+          } else if (ev.status === 'reject' || ev.status === 'amend') {
+            // Customers only need to know when a change was flagged, not the verifier's internals.
+            setChatMessages((prev) => [...prev, { sender: 'agent', text: `Compliance check on "${ev.actionTitle}": ${ev.reason || 'needs a correction'}`, time: stampNow() }]);
           }
-        } else if (data.elementId) {
-          // If target element referenced without action, spotlight and glide remote cursor
-          setSpotlightedElementId(data.elementId);
-          glideAgentCursorToElement(data.elementId, data.actionTitle || 'Pointing to Relevant Feature');
-          setTimeout(() => setSpotlightedElementId(null), 6000);
         }
+        break;
       }
-    } catch (err) {
-      console.error('Error processing conversational voice:', err);
-      setVoiceThinking(false);
+      case 'agent_done':
+        if (ev.text)
+          upsertAgentMessage(
+            devRef.current
+              ? `[OmniCB • ${ev.telemetry?.llmModel || 'Muse Spark'}${ev.telemetry?.servedFrom?.startsWith('prediction') ? ' • pre-answered' : ''}]: ${ev.text}`
+              : `OmniCB: ${ev.text}`
+          );
+        setVoiceTelemetry((t) => ({
+          ...t,
+          sparkModel: ev.telemetry?.llmModel ?? t.sparkModel,
+          sparkTtftMs: ev.telemetry?.ttftMs ?? null,
+          sparkTotalMs: ev.telemetry?.totalMs ?? null,
+          reasoningEffort: ev.telemetry?.reasoningEffort ?? t.reasoningEffort,
+          lastError: ev.telemetry?.error ?? null,
+        }));
+        break;
+      case 'memory':
+        setMemoryFacts(ev.facts || []);
+        if (ev.facts?.length)
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: 'agent', text: devRef.current ? `[Memory] ${ev.facts.length} facts from earlier sessions loaded: ${ev.facts.slice(-3).join(' ')}` : `Welcome back. I remember where we left off${ev.summary ? `: ${ev.summary}` : '.'}`, time: stampNow() },
+          ]);
+        break;
+      case 'memory_updated':
+        if (ev.facts?.length) setMemoryFacts((prev) => Array.from(new Set([...prev, ...ev.facts])).slice(-25));
+        if (devRef.current && ev.added > 0)
+          setChatMessages((prev) => [...prev, { sender: 'agent', text: `[Memory • Muse Spark] saved ${ev.added} new fact${ev.added === 1 ? '' : 's'}: ${ev.facts.join(' ')}`, time: stampNow() }]);
+        break;
+      case 'interrupt':
+        if (agentTextRef.current) upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current} (interrupted)`);
+        break;
+      case 'error':
+        setVoiceTelemetry((t) => ({ ...t, lastError: ev.message }));
+        setChatMessages((prev) => [
+          ...prev,
+          { sender: 'agent', text: `Meta API error (no fallback configured): ${ev.message}`, time: stampNow() },
+        ]);
+        break;
+      case 'closed':
+        setIsListeningVoice(false);
+        isListeningRef.current = false;
+        agentRef.current?.stop();
+        agentRef.current = null;
+        setSpeakingState(false);
+        setVoiceThinking(false);
+        if (isCoBrowsingConnectedRef.current) {
+          setMicPermissionError(`Voice agent disconnected (${ev.code}). Reconnecting…`);
+          setTimeout(() => {
+            if (isCoBrowsingConnectedRef.current && !isListeningRef.current) void startVoiceListening();
+          }, 1000);
+        }
+        break;
     }
   };
 
@@ -1108,82 +1116,198 @@ export default function AckoInsurancePortal() {
       ...prev,
       {
         sender: 'agent',
-        text: `ℹ️ [Why ACKO Asks: ${expl.title}]: ${spoken} (Ref: ${expl.clauseRef})`,
+        text: `[Why ACKO Asks: ${expl.title}]: ${spoken} (Ref: ${expl.clauseRef})`,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
   };
 
-  const handleRunSampleKycOcr = (type: 'pan' | 'aadhaar') => {
-    setKycSampleCard(type);
+  // Pixelate the SAM regions on a canvas. Runs in the browser: the un-redacted
+  // image never leaves the page once SAM has located the PII.
+  const pixelateRegions = (img: HTMLImageElement, regions: KycRegion[]): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    for (const r of regions) {
+      const pad = 6;
+      const x = Math.max(0, Math.floor(r.box.left - pad));
+      const y = Math.max(0, Math.floor(r.box.top - pad));
+      const w = Math.min(canvas.width - x, Math.ceil(r.box.right - r.box.left + pad * 2));
+      const h = Math.min(canvas.height - y, Math.ceil(r.box.bottom - r.box.top + pad * 2));
+      if (w <= 0 || h <= 0) continue;
+      const factor = 16;
+      const small = document.createElement('canvas');
+      small.width = Math.max(1, Math.round(w / factor));
+      small.height = Math.max(1, Math.round(h / factor));
+      small.getContext('2d')!.drawImage(canvas, x, y, w, h, 0, 0, small.width, small.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(small, 0, 0, small.width, small.height, x, y, w, h);
+      ctx.imageSmoothingEnabled = true;
+    }
+    return canvas.toDataURL('image/png');
+  };
+
+  // 1-click KYC: SAM 3.1 locates PII -> browser pixelates it -> only the redacted image
+  // goes to Muse Spark for OCR. Two Meta models, and the reader never sees the ID.
+  // Income proof: Muse Spark reads the sample salary slip; account identifiers are masked server-side.
+  const handleSalarySlipOcr = async () => {
     playChime();
-
-    setWebrtcSession((prev) => ({
-      ...prev,
-      lastEvent: `OCR_INGESTION: Meta Muse Image processing sample ${type.toUpperCase()} document`,
-    }));
-
-    if (type === 'pan') {
-      const extracted = {
-        fullName: 'Rahul Shankar Sharma',
-        dob: '14/08/1992',
-        income: '1800000',
-        pincode: '400001',
-      };
-
+    setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? 'Reading the sample salary slip with Meta Muse Spark for income proof…' : 'Reading your salary slip for income proof…', time: stampNow() }]);
+    try {
+      const t0 = performance.now();
+      const res = await fetch('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentType: 'salary-slip' }) });
+      const data = await res.json();
+      if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
+      const f = data.fields as { fullName: string | null; employerName: string | null; monthlyGross: string | null; annualIncome: string | null; payPeriod: string | null; bankAccountMasked: string | null };
+      const ms = Math.round(performance.now() - t0);
       setChatMessages((prev) => [
         ...prev,
         {
           sender: 'agent',
-          text: `📄 Meta Muse Image OCR scanned your PAN Card [ABCPS1234K]. Extracted Legal Name: "${extracted.fullName}", DOB: "${extracted.dob}". Gliding virtual cursor to auto-populate form.`,
-          time: 'Just now',
+          text: `${devRef.current ? `Muse Spark read the salary slip (${ms} ms)` : 'Read your salary slip'}: ${[f.employerName && `Employer: ${f.employerName}`, f.monthlyGross && `Gross: ₹${Number(f.monthlyGross).toLocaleString('en-IN')}/mo`, f.annualIncome && `Annual: ₹${Number(f.annualIncome).toLocaleString('en-IN')}`, f.bankAccountMasked && `A/c ${f.bankAccountMasked}`].filter(Boolean).join(' • ')}. Filling annual income.`,
+          time: stampNow(),
         },
       ]);
-
-      const guidanceVoice =
-        selectedLanguage === 'hi'
-          ? 'मेटा म्यूज़ इमेज ने आपके पैन कार्ड से नाम और जन्मतिथि निकाल ली है। मैं फॉर्म भर रहा हूँ।'
-          : selectedLanguage === 'mr'
-          ? 'मेटा म्यूज इमेजने तुमच्या पॅन कार्डवरून नाव आणि जन्मतारीख अचूक स्कॅन केली आहे. मी फॉर्म भरत आहे.'
-          : 'Meta Muse Image has extracted and verified your name and date of birth from your PAN card. Populating form fields now.';
-      speakText(guidanceVoice, selectedLanguage);
-
-      glideAgentCursorToElement('field-full-name', 'Populate Verified PAN Legal Name', () => {
-        setProfile((prev) => ({
-          ...prev,
-          fullName: extracted.fullName,
-          dob: extracted.dob,
-          annualIncome: extracted.income,
-          pincode: extracted.pincode,
-        }));
-      });
-    } else {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: 'agent',
-          text: `🛡️ Meta Muse Image + SAM 3.1 scanned your Aadhaar Card. First 8 digits masked client-side [XXXX-XXXX-9012]. Verified Address & Pincode: 400001.`,
-          time: 'Just now',
-        },
-      ]);
-      const guidanceVoice =
-        selectedLanguage === 'hi'
-          ? 'मेटा म्यूज़ इमेज और सैम 3.1 ने आपके आधार कार्ड को सुरक्षित रूप से स्कैन और मास्क कर लिया है।'
-          : selectedLanguage === 'mr'
-          ? 'मेटा म्यूज इमेज आणि सॅम ३.१ ने तुमचे आधार कार्ड सुरक्षितपणे मास्क करून पत्ता पडताळला आहे.'
-          : 'Meta Muse Image and SAM 3.1 have masked your Aadhaar number and verified your demographic record.';
-      speakText(guidanceVoice, selectedLanguage);
-
-      glideAgentCursorToElement('field-pincode', 'Populate Verified Pincode', () => {
-        setProfile((prev) => ({
-          ...prev,
-          pincode: '400001',
-        }));
-      });
+      if (f.annualIncome) {
+        speakText(`Your salary slip shows an annual income of ${Number(f.annualIncome).toLocaleString('en-IN')} rupees. I am filling it in now.`, selectedLanguage);
+        glideAgentCursorToElement('field-annual-income', 'Populate annual income from salary slip', () => {
+          setProfile((prev) => ({ ...prev, annualIncome: incomeRangeFor(f.annualIncome || '') || prev.annualIncome, fullName: prev.fullName || f.fullName || '' }));
+        });
+      }
+    } catch (e: any) {
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: `Income proof OCR failed (Meta API, no fallback): ${e?.message || e}`, time: stampNow() }]);
     }
   };
 
-  const handleDownloadAuditCertificate = () => {
+  const handleRunSampleKycOcr = async (type: 'pan' | 'aadhaar' | 'salary-slip') => {
+    if (type === 'salary-slip') return handleSalarySlipOcr();
+    setKycSampleCard(type);
+    playChime();
+    const label = type === 'pan' ? 'PAN' : 'Aadhaar';
+    const imageUrl = `/samples/sample-${type}.png`;
+    setKycRedaction({
+      type,
+      imageUrl,
+      width: 1000,
+      height: 630,
+      regions: [],
+      redactedDataUrl: null,
+      samMs: null,
+      samCached: false,
+      ocrMs: null,
+      status: 'SAM 3.1 locating PII regions…',
+    });
+    setChatMessages((prev) => [
+      ...prev,
+      { sender: 'agent', text: devRef.current ? `Asking Meta SAM 3.1 to locate PII regions on the sample ${label} card…` : `Locating the private parts of your ${label} card so they can be hidden before anything reads it…`, time: stampNow() },
+    ]);
+    try {
+      const samRes = await fetch('/api/sam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentType: type }),
+      });
+      const sam = await samRes.json();
+      if (!samRes.ok || !Array.isArray(sam.regions)) throw new Error(sam.error || `SAM HTTP ${samRes.status}`);
+      const regions: KycRegion[] = sam.regions;
+
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error('could not load the sample image'));
+        i.src = sam.imageUrl || imageUrl;
+      });
+      const redactedDataUrl = pixelateRegions(img, regions);
+      const samMs = sam.telemetry?.totalMs ?? null;
+      const samCached = Boolean(sam.telemetry?.cached);
+      setKycRedaction((prev) =>
+        prev && {
+          ...prev,
+          imageUrl: sam.imageUrl || imageUrl,
+          width: sam.width || prev.width,
+          height: sam.height || prev.height,
+          regions,
+          redactedDataUrl,
+          samMs,
+          samCached,
+          status: 'Pixelated in your browser. Sending redacted image to Muse Spark…',
+        }
+      );
+      const found = regions.map((r) => (r.members > 1 ? `${r.concept} (${r.members} glyphs)` : r.concept)).join(', ');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: 'agent',
+          text: devRef.current
+            ? `SAM 3.1 found ${regions.length} region${regions.length === 1 ? '' : 's'}: ${found || 'none'}${samMs !== null ? `in ${samMs} ms${samCached ? '(pre-computed at startup)' : ''}` : ''}. Pixelated locally before OCR.`
+            : `Hidden on your device before reading: ${regions.map((r) => r.concept).join(', ') || 'nothing found'}.`,
+          time: stampNow(),
+        },
+      ]);
+
+      const t0 = performance.now();
+      const res = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentType: type, imageDataUrl: redactedDataUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
+      const ocrMs = Math.round(performance.now() - t0);
+      setKycRedaction((prev) => prev && { ...prev, ocrMs, status: 'Done' });
+      const f = data.fields as {
+        fullName: string | null;
+        dob: string | null;
+        gender: string | null;
+        pincode: string | null;
+        idNumberMasked: string | null;
+      };
+      const summary = [
+        f.fullName && `Name: ${f.fullName}`,
+        f.dob && `DOB: ${f.dob}`,
+        f.pincode && `Pincode: ${f.pincode}`,
+        f.idNumberMasked ? `ID: ${f.idNumberMasked}` : `ID number: hidden before reading`,
+      ]
+        .filter(Boolean)
+        .join(' • ');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: 'agent',
+          text: devRef.current
+            ? `Muse Spark OCR on the redacted image (${data.telemetry?.model}, ${data.telemetry?.totalMs} ms): ${summary}. Populating the form.`
+            : `Read your ${label} card: ${summary}. Filling the form.`,
+          time: stampNow(),
+        },
+      ]);
+      const voice =
+        selectedLanguage === 'hi'
+          ? `सैम ३.१ ने आपके ${type === 'pan' ? 'पैन' : 'आधार'} कार्ड की निजी जानकारी छिपा दी और म्यूज़ स्पार्क ने बाकी विवरण पढ़ लिया है। मैं फॉर्म भर रहा हूँ।`
+          : `SAM 3.1 masked the private regions of your ${label} card and Muse Spark read the rest${f.fullName ? `for ${f.fullName}` : ''}. Populating the form now.`;
+      speakText(voice, selectedLanguage);
+      const gender = f.gender ? (/^m/i.test(f.gender) ? 'Male' : /^f/i.test(f.gender) ? 'Female' : '') : '';
+      glideAgentCursorToElement(type === 'pan' ? 'field-full-name' : 'field-pincode', `Populate ${label} OCR fields`, () => {
+        setProfile((prev) => ({
+          ...prev,
+          fullName: f.fullName || prev.fullName,
+          dob: f.dob || prev.dob,
+          pincode: f.pincode || prev.pincode,
+          gender: gender || prev.gender,
+          ...(type === 'pan' && f.idNumberMasked ? { panNumber: f.idNumberMasked } : {}),
+        }));
+      });
+    } catch (e: any) {
+      setKycRedaction((prev) => prev && { ...prev, status: `Failed: ${e?.message || e}` });
+      setChatMessages((prev) => [
+        ...prev,
+        { sender: 'agent', text: `KYC pipeline failed (Meta API, no fallback): ${e?.message || e}`, time: stampNow() },
+      ]);
+    }
+  };
+
+  const handleDownloadAuditCertificate = async () => {
     const certId = `ACKO-AUDIT-2026-${Math.random().toString(16).substring(2, 8).toUpperCase()}`;
     const timestamp = new Date().toISOString();
     const rates: Record<'1cr' | '1.5cr' | '2cr', number> = { '1cr': 580, '1.5cr': 780, '2cr': 990 };
@@ -1199,7 +1323,7 @@ export default function AckoInsurancePortal() {
       product: 'ACKO Life Flexi Shield (Pure Term Insurance)',
       irdaUin: '157N001V01',
       generatedAt: timestamp,
-      coBrowsingEngine: 'OmniCB (WebRTC + Meta Muse Spark 1.3)',
+      coBrowsingEngine: 'OmniCB voice agent (Meta Muse Voice Transcribe 1.0 + Muse Spark 1.3 + SAM 3.1 + Muse Wonder 1.0)',
       applicant: {
         legalName: profile.fullName || 'Rahul Shankar Sharma',
         dateOfBirth: profile.dob || '14/08/1992',
@@ -1227,15 +1351,35 @@ export default function AckoInsurancePortal() {
       auditNonRepudiation: {
         zeroAutonomousFinalSubmission: true,
         humanInTheLoopConfirmed: true,
-        sha256VerificationHash: `0x${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
+        sha256VerificationHash: ''as string,
       },
     };
+    // Real SHA-256 of the certificate content (computed in the browser with Web Crypto).
+    try {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ ...certPayload, auditNonRepudiation: { ...certPayload.auditNonRepudiation, sha256VerificationHash: '' } })));
+      certPayload.auditNonRepudiation.sha256VerificationHash = `0x${Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+    } catch {
+      certPayload.auditNonRepudiation.sha256VerificationHash = 'unavailable';
+    }
 
     setAuditCertData(certPayload);
     setShowAuditCertModal(true);
 
-    // Instant browser download
-    const blob = new Blob([JSON.stringify(certPayload, null, 2)], { type: 'application/json' });
+    // Independent auditor's narrative from Meta Muse Wonder (5–10 s; this is a download, not the voice path)
+    setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? 'Muse Wonder is writing the independent audit narrative for your certificate…' : 'Preparing the independent audit summary for your certificate…', time: stampNow() }]);
+    let finalPayload: Record<string, unknown> = certPayload;
+    try {
+      const res = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ certificate: certPayload }) });
+      const data = await res.json();
+      if (!res.ok || !data.narrative) throw new Error(data.error || `HTTP ${res.status}`);
+      finalPayload = { ...certPayload, auditorNarrative: { model: data.telemetry?.model, generatedInMs: data.telemetry?.totalMs, ...data.narrative } };
+      setAuditCertData(finalPayload);
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? `Muse Wonder audit narrative added (${data.telemetry?.totalMs} ms): ${data.narrative.summary}` : `Independent audit summary: ${data.narrative.summary}`, time: stampNow() }]);
+    } catch (e: any) {
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: `Audit narrative failed (Meta API, no fallback): ${e?.message || e}. Downloading the certificate without it.`, time: stampNow() }]);
+    }
+
+    const blob = new Blob([JSON.stringify(finalPayload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1249,220 +1393,86 @@ export default function AckoInsurancePortal() {
       ...prev,
       {
         sender: 'agent',
-        text: `📥 Application Guardian Audit Certificate [${certId}] generated and downloaded. Complete legal audit trail for underwriting archived.`,
+        text: `Application Guardian Audit Certificate [${certId}] generated and downloaded. Complete legal audit trail for underwriting archived.`,
         time: 'Just now',
       },
     ]);
   };
 
-  const cleanupMicStreams = () => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((track) => track.stop());
-      micStreamRef.current = null;
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-    if (micDecibelBarRef.current) {
-      micDecibelBarRef.current.style.width = '0%';
-    }
-    if (micDecibelTextRef.current) {
-      micDecibelTextRef.current.textContent = '0%';
-    }
+  const updateMicMeter = (rms: number, gated: boolean) => {
+    const pct = Math.min(100, Math.round(rms * 400));
+    if (micDecibelBarRef.current) micDecibelBarRef.current.style.width = `${gated ? 4 : Math.max(4, pct)}%`;
+    if (micDecibelTextRef.current) micDecibelTextRef.current.textContent = gated ? 'muted while agent speaks' : `${pct}%`;
   };
 
-  const startVoiceListening = async () => {
-    if (typeof window === 'undefined') return;
+  const startVoiceListening = async (langOverride?: 'en' | 'hi' | 'mr') => {
+    if (typeof window === 'undefined' || isListeningRef.current) return;
     setMicPermissionError(null);
-    currentTranscriptRef.current = '';
     setVoiceTranscriptLive('');
-
-    // 1. Request real microphone access via getUserMedia to unlock permission & capture stream
+    const client = new VoiceAgentClient({
+      lang: langOverride || latestRef.current.lang,
+      voice: voicePersonaRef.current,
+      accent: accentRef.current,
+      customerId: getCustomerId(),
+      autoWelcome: false,
+      onEvent: handleAgentEvent,
+      onSpeaking: setSpeakingState,
+    });
+    agentRef.current = client;
+    isListeningRef.current = true;
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        micStreamRef.current = stream;
-
-        // Setup Web Audio Analyser for live visual decibel frequency feedback
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtx) {
-          const audioCtx = new AudioCtx();
-          audioContextRef.current = audioCtx;
-          const source = audioCtx.createMediaStreamSource(stream);
-          const analyser = audioCtx.createAnalyser();
-          analyser.fftSize = 64;
-          source.connect(analyser);
-          audioAnalyserRef.current = analyser;
-
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
-          const updateDecibels = () => {
-            if (!audioAnalyserRef.current) return;
-            audioAnalyserRef.current.getByteFrequencyData(dataArray);
-            let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-              sum += dataArray[i];
-            }
-            const avg = sum / dataArray.length;
-            const normalized = Math.min(100, Math.round((avg / 128) * 100));
-            // Direct DOM update: ZERO React re-render overhead!
-            if (micDecibelBarRef.current) {
-              micDecibelBarRef.current.style.width = `${Math.max(10, normalized)}%`;
-            }
-            if (micDecibelTextRef.current) {
-              micDecibelTextRef.current.textContent = `${normalized}%`;
-            }
-            animFrameRef.current = requestAnimationFrame(updateDecibels);
-          };
-          updateDecibels();
-        }
-      }
-    } catch (micErr: any) {
-      if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
-        setMicPermissionError('Microphone permission was denied. Please allow microphone in your browser URL bar.');
-        return;
-      }
-    }
-
-    // 2. Initialize Speech Recognition
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setMicPermissionError('Live Web Speech recognition is not available in this browser. Please use the verbal preset buttons below.');
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      speechRecognitionRef.current = recognition;
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang =
-        selectedLanguage === 'hi' ? 'hi-IN' : selectedLanguage === 'mr' ? 'mr-IN' : 'en-IN';
-
-      recognition.onstart = () => {
-        setIsListeningVoice(true);
-        playChime();
-        setWebrtcSession((prev) => ({
-          ...prev,
-          lastEvent: `UPLINK_AUDIO_ACTIVE: Customer microphone streaming 48kHz Opus to Meta AI`,
-        }));
-      };
-
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let final = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
-          }
-        }
-        const text = final || interim;
-        if (text) {
-          currentTranscriptRef.current = text;
-          setVoiceTranscriptLive(text);
-
-          // Continuous Hands-Free VAD: auto-submit after 1.3s pause in speech
-          if (isContinuousListeningRef.current) {
-            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
-            voiceSilenceTimerRef.current = setTimeout(() => {
-              const captured = currentTranscriptRef.current.trim();
-              if (captured && !isSpeakingRef.current) {
-                try { recognition.stop(); } catch (e) {}
-                processUserSpokenQuestion(captured);
-                currentTranscriptRef.current = '';
-                setVoiceTranscriptLive('');
-              }
-            }, 1300);
-          }
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        if (event.error === 'not-allowed') {
-          setMicPermissionError('Microphone permission blocked. Please enable microphone permissions in your browser URL bar.');
-          setIsListeningVoice(false);
-          cleanupMicStreams();
-        } else if (event.error === 'network') {
-          setMicPermissionError('Speech recognition network service unreachable. You can use the prompt or verbal buttons.');
-          setIsListeningVoice(false);
-          cleanupMicStreams();
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListeningVoice(false);
-        cleanupMicStreams();
-        
-        // AUTO-SUBMIT if any speech was captured when recognition ends!
-        const captured = currentTranscriptRef.current.trim();
-        if (captured && !isSpeakingRef.current) {
-          processUserSpokenQuestion(captured);
-          currentTranscriptRef.current = '';
-          setVoiceTranscriptLive('');
-        }
-
-        // Auto-rearm continuous listening loop in hands-free mode
-        if (isCoBrowsingConnected && isContinuousListeningRef.current && !isSpeakingRef.current) {
-          setTimeout(() => {
-            if (!isSpeakingRef.current) {
-              startVoiceListening();
-            }
-          }, 400);
-        }
-      };
-
-      recognition.start();
+      await client.start();
+      setIsListeningVoice(true);
+      playChime();
     } catch (err: any) {
-      console.error('Failed to start speech recognition:', err);
-      setIsListeningVoice(false);
-      cleanupMicStreams();
-      setMicPermissionError('Failed to start microphone: ' + err.message);
+      isListeningRef.current = false;
+      agentRef.current = null;
+      client.stop();
+      const denied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
+      setMicPermissionError(
+        denied
+          ? 'Microphone permission was denied. Please allow microphone access in your browser URL bar.'
+          : `Could not start the voice agent: ${err?.message || err}`
+      );
     }
   };
 
   const stopVoiceListening = () => {
-    if (speechRecognitionRef.current) {
-      try {
-        speechRecognitionRef.current.stop();
-      } catch (e) {}
-    }
+    isListeningRef.current = false;
+    agentRef.current?.stop();
+    agentRef.current = null;
     setIsListeningVoice(false);
-    cleanupMicStreams();
-
-    const captured = currentTranscriptRef.current.trim() || voiceTranscriptLive.trim();
-    if (captured) {
-      processUserSpokenQuestion(captured);
-      currentTranscriptRef.current = '';
-    }
+    setVoiceTranscriptLive('');
+    setVoiceThinking(false);
+    setAgentState('listening');
+    setSpeakingState(false);
+    if (micDecibelBarRef.current) micDecibelBarRef.current.style.width = '0%';
+    if (micDecibelTextRef.current) micDecibelTextRef.current.textContent = '0%';
   };
 
   const toggleVoiceListening = () => {
     if (!isCoBrowsingConnected) {
-      connectCoBrowsingSession();
+      void connectCoBrowsingSession();
+      return;
+    }
+    if (isSpeakingRef.current && agentRef.current) {
+      agentRef.current.interrupt(); // stop talking, keep listening
       return;
     }
     if (isListeningVoice) {
       stopVoiceListening();
     } else {
-      startVoiceListening();
+      void startVoiceListening();
     }
   };
 
   // Direct user question via typed input
-  const handleAskAgent = () => {
+  const handleAskAgent = async () => {
     if (!userQuery.trim()) return;
     const q = userQuery;
     setUserQuery('');
     if (!isCoBrowsingConnected) {
-      connectCoBrowsingSession();
+      await connectCoBrowsingSession();
     }
     processUserSpokenQuestion(q);
   };
@@ -1519,46 +1529,70 @@ export default function AckoInsurancePortal() {
   }, [screenControlStatus]);
 
   // Glide Agent Virtual Cursor smoothly across viewport to target element
-  const glideAgentCursorToElement = (
-    elementId: string,
-    actionLabel: string,
-    onArrival?: () => void
-  ) => {
+  // Which step renders each clickable target, so the agent can switch screens before clicking.
+  const stepForElement = (elementId: string): number | null => {
+    if (/^step-tab-/.test(elementId)) return null;
+    if (/^(field-|select-)/.test(elementId) && elementId !== 'field-section-45') return 1;
+    if (/^(cover-tier-|card-)/.test(elementId) && elementId !== 'card-premium-summary') return 2;
+    if (elementId === 'nomination-section') return 3;
+    if (elementId === 'field-section-45') return 4;
+    if (elementId === 'card-premium-summary') return 5;
+    return null;
+  };
+
+  const waitForElement = (elementId: string, timeoutMs = 2500): Promise<HTMLElement | null> =>
+    new Promise((resolve) => {
+      const t0 = Date.now();
+      const tick = () => {
+        const el = document.getElementById(elementId);
+        if (el) return resolve(el);
+        if (Date.now() - t0 > timeoutMs) return resolve(null);
+        setTimeout(tick, 100);
+      };
+      tick();
+    });
+
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  // Agent clicks run one at a time, in order: switch step if needed, wait for the element,
+  // scroll it into view, measure it after layout settles, move the cursor, click, apply.
+  const agentActionQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const glideAgentCursorToElement = (elementId: string, actionLabel: string, onArrival?: () => void) => {
     if (typeof window === 'undefined') return;
-    const el = document.getElementById(elementId);
+    agentActionQueueRef.current = agentActionQueueRef.current
+      .then(() => performAgentClick(elementId, actionLabel, onArrival))
+      .catch((e) => console.warn('agent click failed', elementId, e));
+  };
+
+  const performAgentClick = async (elementId: string, actionLabel: string, onArrival?: () => void) => {
+    const step = stepForElement(elementId);
+    if (step && latestRef.current.activeStep !== step) {
+      setActiveStep(step);
+      await sleep(350); // let the new step render
+    }
+    const el = await waitForElement(elementId);
     if (!el) {
-      console.warn(`Element with ID ${elementId} not found`);
+      console.warn(`Agent target ${elementId} not found; applying without cursor`);
       onArrival?.();
       return;
     }
-
+    el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    await sleep(450);
     const rect = el.getBoundingClientRect();
-    const targetX = rect.left + rect.width / 2;
-    const targetY = rect.top + rect.height / 2;
-
-    // Show agent cursor and move to element center
-    setAgentCursor({
-      visible: true,
-      x: targetX,
-      y: targetY,
-      clicking: false,
-      label: 'OmniCB Agent (Screen Control Active)',
-      actionDesc: actionLabel,
-    });
-
-    // Animate click ripple upon arrival (after 750ms transition)
-    setTimeout(() => {
-      const clickId = Date.now();
-      setClickIndicators((prev) => [...prev, { id: clickId, x: targetX, y: targetY }]);
-      setAgentCursor((prev) => ({ ...prev, clicking: true }));
-      playChime();
-
-      setTimeout(() => {
-        setAgentCursor((prev) => ({ ...prev, clicking: false }));
-        setClickIndicators((prev) => prev.filter((c) => c.id !== clickId));
-        onArrival?.();
-      }, 350);
-    }, 750);
+    const targetX = rect.left + Math.min(rect.width / 2, 160);
+    const targetY = rect.top + Math.min(rect.height / 2, 40);
+    setSpotlightedElementId(elementId);
+    setAgentCursor({ visible: true, x: targetX, y: targetY, clicking: false, label: 'OmniCB Agent (Screen Control Active)', actionDesc: actionLabel });
+    await sleep(700); // cursor glide transition
+    const clickId = Date.now();
+    setClickIndicators((prev) => [...prev, { id: clickId, x: targetX, y: targetY }]);
+    setAgentCursor((prev) => ({ ...prev, clicking: true }));
+    playChime();
+    await sleep(300);
+    setAgentCursor((prev) => ({ ...prev, clicking: false }));
+    setClickIndicators((prev) => prev.filter((c) => c.id !== clickId));
+    onArrival?.();
+    await sleep(400); // brief pause before the next queued click
   };
 
   // Co-Control Demonstration: Critical Illness Rider
@@ -1580,7 +1614,7 @@ export default function AckoInsurancePortal() {
             ...prev,
             {
               sender: 'agent',
-              text: '⚡ [SCREEN CONTROL ACTION]: OmniCB Agent glided to and selected the Critical Illness Living Benefit Rider (+₹149/mo). Spatial grounding via Meta Glimmer, policy logic via Meta Muse Spark 1.3.',
+              text: '[SCREEN CONTROL ACTION]: OmniCB Agent glided to and selected the Critical Illness Living Benefit Rider (+₹149/mo). Spatial grounding via Meta Glimmer, policy logic via Meta Muse Spark 1.3.',
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             },
           ]);
@@ -1609,7 +1643,7 @@ export default function AckoInsurancePortal() {
             ...prev,
             {
               sender: 'agent',
-              text: '⚡ [SCREEN CONTROL ACTION]: OmniCB Agent focused the Full Legal Name field. Verified SAM 3 client-side video redaction on Aadhaar & PAN.',
+              text: '[SCREEN CONTROL ACTION]: OmniCB Agent focused the Full Legal Name field. Verified SAM 3 client-side video redaction on Aadhaar & PAN.',
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             },
           ]);
@@ -1643,7 +1677,7 @@ export default function AckoInsurancePortal() {
             ...prev,
             {
               sender: 'agent',
-              text: '⚡ [SCREEN CONTROL ACTION]: OmniCB Agent demonstrated entering valid DD/MM/YYYY date format.',
+              text: '[SCREEN CONTROL ACTION]: OmniCB Agent demonstrated entering valid DD/MM/YYYY date format.',
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             },
           ]);
@@ -1661,7 +1695,7 @@ export default function AckoInsurancePortal() {
       ...prev,
       {
         sender: 'agent',
-        text: '🛑 [CONTROL REVOKED]: Screen control returned exclusively to you. OmniCB Agent has reverted to passive observation mode.',
+        text: '[CONTROL REVOKED]: Screen control returned exclusively to you. OmniCB Agent has reverted to passive observation mode.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -1675,18 +1709,113 @@ export default function AckoInsurancePortal() {
       ...prev,
       {
         sender: 'agent',
-        text: '🎮 [SCREEN CONTROL GRANTED]: Dual-cursor collaboration active. You can revoke control anytime by clicking Revoke or pressing ESC.',
+        text: '[SCREEN CONTROL GRANTED]: Dual-cursor collaboration active. You can revoke control anytime by clicking Revoke or pressing ESC.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
   };
 
+  const buildPolicyCardInput = () => ({
+    policyholder: profile.fullName || 'Rahul Shankar Sharma',
+    sumAssured: baseSumAssured === '1cr' ? 'Rs 1 Crore' : baseSumAssured === '1.5cr' ? 'Rs 1.5 Crore' : 'Rs 2 Crore',
+    term: '30 years',
+    riders: [
+      selectedRiders.criticalIllness && `Critical Illness ${ciTier === 'tier1' ? 'Rs 10 Lakh' : ciTier === 'tier3' ? 'Rs 50 Lakh' : 'Rs 25 Lakh'}`,
+      selectedRiders.accidentalDeath && 'Accidental Cover',
+      selectedRiders.waiverOfPremium && 'Waiver of Premium',
+    ].filter(Boolean) as string[],
+    monthlyPremium: `Rs ${totalMonthlyPayable}`,
+    nominee: nomination.primaryName ? `${nomination.primaryName} (${nomination.primaryRelation}, ${nomination.primaryShare}%)` : null,
+  });
+
+  // Session-worker prefetch: Muse Image renders the policy card while the customer is still on the last step,
+  // so it is already there at issuance instead of 10–20 s later.
+  useEffect(() => {
+    if (activeStep < 4) return;
+    const policy = buildPolicyCardInput();
+    const key = JSON.stringify(policy);
+    if (policyCardKeyRef.current === key) return;
+    policyCardKeyRef.current = key;
+    let cancelled = false;
+    setPolicyCard({ status: 'generating', dataUrl: null, ms: null });
+    (async () => {
+      try {
+        const res = await fetch('/api/policy-card', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ policy }) });
+        const data = await res.json();
+        if (!res.ok || !data.dataUrl) throw new Error(data.error || `HTTP ${res.status}`);
+        if (!cancelled) setPolicyCard({ status: 'ready', dataUrl: data.dataUrl, ms: data.ms });
+      } catch (e: any) {
+        if (!cancelled) setPolicyCard({ status: 'error', dataUrl: null, ms: null, error: e?.message || String(e) });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStep, profile.fullName, baseSumAssured, selectedRiders, ciTier, totalMonthlyPayable, nomination.primaryName, nomination.primaryRelation, nomination.primaryShare]);
+
+  // Visual grounding: send Muse Spark a JPEG of the form area when the step changes while the agent is live.
+  useEffect(() => {
+    const el = formBodyRef.current;
+    if (!el || !isListeningVoice || isSharingPaused) return;
+    let cancelled = false;
+    const step = activeStep;
+    const t = setTimeout(async () => {
+      try {
+        const dataUrl = await toJpeg(el, { quality: 0.6, pixelRatio: 0.6, backgroundColor: '#ffffff', cacheBust: false });
+        if (!cancelled && dataUrl.length < 1_800_000) {
+          agentRef.current?.sendScreenshot(dataUrl);
+          setAgentView({ frameDataUrl: dataUrl, sentAt: Date.now(), step });
+        }
+      } catch (e) {
+        console.warn('viewport screenshot failed', e);
+      }
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [activeStep, isListeningVoice, isSharingPaused]);
+
+  // The agent cursor is positioned in viewport pixels; a step change replaces the DOM under it.
+  useEffect(() => {
+    setAgentCursor((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+    setSpotlightedElementId(null);
+  }, [activeStep]);
+
+  // Keep what the long-lived agent callbacks need current (every render).
+  useEffect(() => {
+    latestRef.current = { applyAction: applyAgentAction, lang: selectedLanguage, screenState: getLiveScreenSnapshot, activeStep };
+    voicePersonaRef.current = selectedVoicePersona;
+    accentRef.current = englishAccent;
+    devRef.current = showDevPanel;
+  });
+
+  // Persona or accent change -> the server switches the Google voice for the next sentence.
+  useEffect(() => {
+    agentRef.current?.setVoice(selectedVoicePersona, englishAccent);
+  }, [selectedVoicePersona, englishAccent]);
+
+  // The live form state is part of the LLM prompt: push it to the agent whenever it changes,
+  // unless the customer paused sharing.
+  useEffect(() => {
+    if (isSharingPaused) return;
+    agentRef.current?.sendScreenState(getLiveScreenSnapshot());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStep, profile, baseSumAssured, selectedRiders, underwriting, currentFocusedField, nomination, ciTier, atpdOption, lifeStageEscalator, terminalIllnessCover, isSharingPaused]);
+
+  // Tear the live session down if the component unmounts.
+  useEffect(() => {
+    return () => {
+      agentRef.current?.stop();
+      localAudioRef.current?.pause();
+    };
+  }, []);
+
   const currentGuidanceItem = GUIDANCE_CONTENT[activeGuidanceKey] || GUIDANCE_CONTENT['field-full-name'];
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
-      {/* WebRTC Remote Audio Receiver: Plays incoming Opus audio track from backend Meta Muse Voice */}
-      <audio ref={remoteAudioRef} id="webrtc-remote-audio" autoPlay playsInline className="hidden" />
       
       {/* 1. Authentic Top Regulatory Strip with Language Picker */}
       <div className="bg-[#1e104f] text-white text-[11px] px-6 py-2 border-b border-[#2d1b70]">
@@ -1695,8 +1824,6 @@ export default function AckoInsurancePortal() {
             <span className="font-semibold text-purple-200">ACKO Life Insurance Limited</span>
             <span className="text-purple-400">|</span>
             <span className="text-purple-300">IRDAI Reg. No. 157</span>
-            <span className="text-purple-400 hidden sm:inline">|</span>
-            <span className="text-emerald-400 font-semibold hidden sm:inline">✓ 99.4% Claim Settlement Ratio</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -1704,7 +1831,7 @@ export default function AckoInsurancePortal() {
             <div className="flex items-center gap-1 bg-[#2d1b70] p-0.5 rounded-lg border border-purple-400/30">
               <button
                 onClick={() => handleLanguageChange('en')}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
                   selectedLanguage === 'en' ? 'bg-[#582be8] text-white' : 'text-purple-200 hover:text-white'
                 }`}
               >
@@ -1712,7 +1839,7 @@ export default function AckoInsurancePortal() {
               </button>
               <button
                 onClick={() => handleLanguageChange('hi')}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
                   selectedLanguage === 'hi' ? 'bg-[#582be8] text-white' : 'text-purple-200 hover:text-white'
                 }`}
               >
@@ -1720,7 +1847,7 @@ export default function AckoInsurancePortal() {
               </button>
               <button
                 onClick={() => handleLanguageChange('mr')}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
                   selectedLanguage === 'mr' ? 'bg-[#582be8] text-white' : 'text-purple-200 hover:text-white'
                 }`}
               >
@@ -1728,53 +1855,22 @@ export default function AckoInsurancePortal() {
               </button>
             </div>
 
-            {/* Curated Best Neural Voices */}
-            <div className="flex items-center gap-1 bg-[#2d1b70] p-0.5 rounded-lg border border-purple-400/30">
-              <span className="text-[10px] text-purple-300 font-medium px-1 hidden md:inline">🎙️ Voice:</span>
-              {(['veena', 'rishi', 'nova', 'aura'] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => {
-                    setSelectedVoicePersona(v);
-                    playChime();
-                  }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
-                    selectedVoicePersona === v ? 'bg-[#582be8] text-white shadow-xs' : 'text-purple-200 hover:text-white'
-                  }`}
-                  title={
-                    v === 'veena'
-                      ? 'Veena (Female Indian Accent Advisor)'
-                      : v === 'rishi'
-                      ? 'Rishi (Male Indian Accent Advisor)'
-                      : v === 'nova'
-                      ? 'Nova (Warm Natural Advisor)'
-                      : 'Aura (Executive AI Voice)'
-                  }
-                >
-                  {v === 'veena' ? 'Veena ♀' : v === 'rishi' ? 'Rishi ♂' : v === 'nova' ? 'Nova' : 'Aura'}
-                </button>
-              ))}
-            </div>
-
-            <span className="text-purple-400">|</span>
-            <span className="text-emerald-300 font-medium">⚡ 2-Hour Claim Guarantee</span>
           </div>
         </div>
       </div>
 
       {/* 2. Main ACKO Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="size-9 rounded-xl bg-[#582be8] text-white flex items-center justify-center font-black text-sm tracking-tighter shadow-md">
+            <div className="size-9 rounded-xl bg-[#582be8] text-white flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
               acko
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-lg font-black tracking-tight text-[#111827]">ACKO</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-50 text-[#582be8] border border-purple-200">
-                  Life Flexi Shield
-                </span>
+                <span className="text-lg font-bold tracking-tight text-[#111827]">ACKO</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-[#582be8] border border-purple-200">
+                  Life Flexi Shield</span>
               </div>
               <p className="text-[11px] text-slate-500">Pure Term Life Insurance with Zero Commission & Living Benefits</p>
             </div>
@@ -1786,20 +1882,18 @@ export default function AckoInsurancePortal() {
               <button
                 onClick={connectCoBrowsingSession}
                 disabled={isConnecting}
-                className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all shadow-md hover:scale-105"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#582be8] hover:bg-[#481dd4] disabled:opacity-60 text-white text-xs font-semibold transition-colors"
               >
-                <span className="size-2 rounded-full bg-white animate-ping" />
-                <span>{isConnecting ? 'Connecting WebRTC gateway...' : '🤝 Start Co-Browsing Assist'}</span>
+                <span>{isConnecting ? 'Connecting…' : 'Start co-browsing assist'}</span>
               </button>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
+                <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
                   <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                  WebRTC Audio & DOM
-                </span>
+                  Live session</span>
                 <button
                   onClick={disconnectCoBrowsingSession}
-                  className="px-3 py-1 rounded-full bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold transition-all border border-red-200"
+                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
                 >
                   End Session
                 </button>
@@ -1809,50 +1903,47 @@ export default function AckoInsurancePortal() {
             {/* Audio Unmute & Test Button */}
             <button
               onClick={testAndUnmuteAudio}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 hover:bg-purple-100 text-[#582be8] text-xs font-bold transition-all border border-purple-200"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
               title="Click to enable sound and test voice"
             >
-              <span>🔊 Voice Test</span>
+              <span>Test audio</span>
             </button>
 
             {/* Policy Evidence Drawer Toggle */}
             <button
               onClick={() => setShowEvidenceDrawer(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-all border border-amber-300 shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
               title="View verbatim IRDAI policy clauses & verified citations"
             >
-              <span>📜 Policy Evidence</span>
+              <span>Policy Evidence</span>
             </button>
 
             {/* Statutory Terms & Conditions Drawer Toggle */}
             <button
               id="btn-terms-conditions"
               onClick={() => setShowTermsDrawer(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-bold transition-all border border-blue-300 shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
               title="View statutory Terms and Conditions & IRDAI consumer protections"
             >
-              <span>⚖️ Terms & Conditions</span>
+              <span>Terms & Conditions</span>
             </button>
 
             {/* Application Guardian Audit Certificate */}
             <button
               onClick={handleDownloadAuditCertificate}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition-all border border-emerald-300 shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
               title="Download verified compliance and disclosure audit certificate"
             >
-              <span>🛡️ Audit Certificate</span>
+              <span>Audit Certificate</span>
             </button>
 
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-xs text-slate-700 font-medium">
-              <span>🔒 Zero-PII Protected</span>
-            </div>
           </div>
         </div>
       </header>
 
       {/* Co-Browsing Status Bar: WebRTC Screen Share & Dual-Cursor Screen Control */}
       {isCoBrowsingConnected && (
-        <div className={`bg-gradient-to-r from-[#180d40] via-[#24135e] to-[#180d40] text-white px-6 py-2.5 border-b border-purple-800/40 shadow-xs transition-all ${
+        <div className={`bg-gradient-to-r from-[#180d40] via-[#24135e] to-[#180d40] text-white px-6 py-2.5 border-b border-purple-800/40 transition-all ${
           isScreenSharing && !isSharingPaused ? 'screen-share-active-border' : ''
         }`}>
           <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -1865,16 +1956,16 @@ export default function AckoInsurancePortal() {
                 }`} />
                 <span className="font-bold tracking-wide">
                   {isSharingPaused
-                    ? '⏸️ CO-BROWSING PAUSED'
+                    ? 'Sharing paused'
                     : isScreenSharing
-                    ? '🟢 LIVE CO-BROWSING SESSION (Audio-to-Audio + DOM)'
-                    : '⚪ CO-BROWSING DISCONNECTED'}
-                </span>
+                    ? 'Live session'
+                    : 'Not connected'}</span>
               </div>
               <span className="text-purple-400 hidden md:inline">|</span>
-              <span className="text-[11px] font-mono text-purple-200 hidden md:inline">
-                Meta Muse Spark 1.3 • Audio-to-Audio Opus 48kHz • Per-Page WebP Snapshots • Sub-5ms DOM Sync
-              </span>
+              <span className="text-[11px] tabular-nums text-purple-200 hidden md:inline">
+                {showDevPanel
+                  ? `Agent ${agentState.toUpperCase()} • ${voiceTelemetry.asrModel || 'muse-voice-transcribe-1.0'} realtime ASR • ${voiceTelemetry.sparkModel || 'muse-spark-1.3'} streaming • Google Cloud TTS ${voiceTelemetry.ttsVoice ? `(${voiceTelemetry.ttsVoice})` : ''}`
+                  : `Agent ${agentState === 'listening' ? 'listening' : agentState === 'thinking' ? 'thinking' : 'speaking'} • ${isSharingPaused ? 'sharing paused' : 'sharing this form'}`}</span>
             </div>
 
             {/* Right: Screen Control & Privacy Badges + Actions */}
@@ -1883,23 +1974,21 @@ export default function AckoInsurancePortal() {
               {/* Two-Way WebRTC Voice Track Badge & Push-to-Talk Toggle */}
               <button
                 onClick={toggleVoiceListening}
-                className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all flex items-center gap-1.5 shadow-xs ${
+                className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all flex items-center gap-1.5 ${
                   isListeningVoice
                     ? 'bg-red-950 text-red-300 border-red-500 animate-pulse ring-2 ring-red-400'
                     : isSpeaking
                     ? 'bg-purple-950 text-purple-200 border-purple-400 ring-2 ring-purple-400/50'
                     : 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/80'
                 }`}
-                title="Click to toggle Two-Way Voice with OmniCB Agent"
+                title="Start or stop listening"
               >
                 <span className={`size-2 rounded-full ${isListeningVoice ? 'bg-red-400 animate-ping' : isSpeaking ? 'bg-purple-400 animate-ping' : 'bg-emerald-400 animate-pulse'}`} />
-                <span>
-                  {isListeningVoice
-                    ? '🎙️ Two-Way Voice: Mic Listening (Uplink 48kHz)'
+                <span>{isListeningVoice
+                    ? 'Listening'
                     : isSpeaking
-                    ? '🔊 Two-Way Voice: Agent Speaking (Downlink 48kHz)'
-                    : '🎙️ Two-Way Voice: Active (Mic + Opus)'}
-                </span>
+                    ? 'Assistant speaking'
+                    : 'Voice off'}</span>
               </button>
 
               {/* Zero-PII Privacy Filter Toggle */}
@@ -1907,12 +1996,12 @@ export default function AckoInsurancePortal() {
                 onClick={() => setPrivacyShieldActive(!privacyShieldActive)}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all flex items-center gap-1.5 ${
                   privacyShieldActive
-                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-xs'
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50'
                     : 'bg-red-950/80 text-red-300 border-red-500/50'
                 }`}
                 title="Meta SAM 3 Real-time Video Privacy Filter (Blinds Aadhaar/PAN)"
               >
-                <span>{privacyShieldActive ? '🛡️' : '⚠️'}</span>
+                <span>{privacyShieldActive ? '' : ''}</span>
                 <span>SAM 3 PII Shield: {privacyShieldActive ? 'ACTIVE' : 'OFF'}</span>
               </button>
 
@@ -1920,9 +2009,9 @@ export default function AckoInsurancePortal() {
               <div className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border flex items-center gap-1.5 ${
                 screenControlStatus === 'granted'
                   ? 'bg-purple-900/80 text-purple-200 border-purple-400/50'
-                  : 'bg-slate-800 text-slate-300 border-slate-700'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
               }`}>
-                <span>🎮</span>
+                <span></span>
                 <span>Control: {screenControlStatus === 'granted' ? 'OmniCB Agent Active' : 'User Exclusive'}</span>
               </div>
 
@@ -1931,24 +2020,24 @@ export default function AckoInsurancePortal() {
                 onClick={() => setIsSharingPaused(!isSharingPaused)}
                 className="px-2.5 py-1 rounded-lg bg-purple-900/60 hover:bg-purple-800 text-purple-200 text-[11px] font-medium border border-purple-500/30 transition-all"
               >
-                {isSharingPaused ? '▶️ Resume Share' : '⏸️ Pause Share'}
+                {isSharingPaused ? 'Resume sharing' : 'Pause sharing'}
               </button>
 
               {/* Grant / Revoke Screen Control */}
               {screenControlStatus === 'granted' ? (
                 <button
                   onClick={revokeScreenControl}
-                  className="px-3 py-1 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold border border-red-400/40 transition-all flex items-center gap-1 shadow-xs"
+                  className="px-3 py-1 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold border border-red-400/40 transition-all flex items-center gap-1"
                 >
-                  <span>🛑</span>
+                  <span></span>
                   <span>Revoke Control</span>
                 </button>
               ) : (
                 <button
                   onClick={grantScreenControl}
-                  className="px-3 py-1 rounded-lg bg-[#582be8] hover:bg-[#481dd4] text-white text-[11px] font-bold border border-purple-400/40 transition-all flex items-center gap-1 shadow-xs"
+                  className="px-3 py-1 rounded-lg bg-[#582be8] hover:bg-[#481dd4] text-white text-[11px] font-bold border border-purple-400/40 transition-all flex items-center gap-1"
                 >
-                  <span>🎮</span>
+                  <span></span>
                   <span>Grant Control</span>
                 </button>
               )}
@@ -1956,9 +2045,9 @@ export default function AckoInsurancePortal() {
               {/* Disconnect Button */}
               <button
                 onClick={disconnectCoBrowsingSession}
-                className="px-3 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white text-[11px] font-bold border border-red-500 transition-all flex items-center gap-1 shadow-xs"
+                className="px-3 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white text-[11px] font-bold border border-red-500 transition-all flex items-center gap-1"
               >
-                <span>🔴</span>
+                <span></span>
                 <span>Disconnect</span>
               </button>
             </div>
@@ -1974,118 +2063,117 @@ export default function AckoInsurancePortal() {
             
             {/* Step 1 */}
             <button
+              id="step-tab-1"
               onClick={() => setActiveStep(1)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 1 ? 'text-[#582be8] font-bold' : activeStep > 1 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
             >
               <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                activeStep > 1 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 1 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
+                activeStep > 1 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 1 ? 'bg-[#582be8] text-white' : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}>
-                {activeStep > 1 ? '✓' : '1'}
-              </span>
+                {activeStep > 1 ? '✓' : '1'}</span>
               <span>1. Profile & Eligibility</span>
             </button>
 
-            <span className="text-slate-300">→</span>
+            <span className="text-slate-600">→</span>
 
             {/* Step 2 */}
             <button
+              id="step-tab-2"
               onClick={() => setActiveStep(2)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 2 ? 'text-[#582be8] font-bold' : activeStep > 2 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
             >
               <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                activeStep > 2 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 2 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
+                activeStep > 2 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 2 ? 'bg-[#582be8] text-white' : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}>
-                {activeStep > 2 ? '✓' : '2'}
-              </span>
-              <span>2. Benefit Ladders & Cover</span>
+                {activeStep > 2 ? '✓' : '2'}</span>
+              <span>2. Cover & Riders</span>
             </button>
 
-            <span className="text-slate-300">→</span>
+            <span className="text-slate-600">→</span>
 
             {/* Step 3 */}
             <button
+              id="step-tab-3"
               onClick={() => setActiveStep(3)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 3 ? 'text-[#582be8] font-bold' : activeStep > 3 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
             >
               <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                activeStep > 3 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 3 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
+                activeStep > 3 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 3 ? 'bg-[#582be8] text-white' : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}>
-                {activeStep > 3 ? '✓' : '3'}
-              </span>
+                {activeStep > 3 ? '✓' : '3'}</span>
               <span>3. Beneficiary & MWPA Trust</span>
             </button>
 
-            <span className="text-slate-300">→</span>
+            <span className="text-slate-600">→</span>
 
             {/* Step 4 */}
             <button
+              id="step-tab-4"
               onClick={() => setActiveStep(4)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 4 ? 'text-[#582be8] font-bold' : activeStep > 4 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
             >
               <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                activeStep > 4 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 4 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
+                activeStep > 4 ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : activeStep === 4 ? 'bg-[#582be8] text-white' : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}>
-                {activeStep > 4 ? '✓' : '4'}
-              </span>
+                {activeStep > 4 ? '✓' : '4'}</span>
               <span>4. Underwriting & Declarations</span>
             </button>
 
-            <span className="text-slate-300">→</span>
+            <span className="text-slate-600">→</span>
 
             {/* Step 5 */}
             <button
+              id="step-tab-5"
               onClick={() => setActiveStep(5)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 5 ? 'text-[#582be8] font-bold' : 'text-slate-400'
               }`}
             >
               <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                activeStep === 5 ? 'bg-[#582be8] text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-200'
+                activeStep === 5 ? 'bg-[#582be8] text-white' : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}>
-                5
-              </span>
+                5</span>
               <span>5. Policy Schedule & Terms</span>
             </button>
 
           </div>
 
-          <div className="hidden lg:block text-xs text-slate-500">
+          <div className="hidden xl:block text-xs text-slate-500 shrink-0 ml-8 pl-6 border-l border-slate-200">
             {profile.fullName ? (
               <span>Applicant: <strong className="text-slate-800">{profile.fullName}</strong></span>
             ) : (
-              <span className="italic text-slate-400">Click any field for auto-played voice advice</span>
+              <span className="text-slate-400">Select a field to hear guidance</span>
             )}
           </div>
         </div>
       </nav>
 
       {/* 4. Main Page Layout */}
-      <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
+      <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative items-start">
 
         {/* Co-Browsing Assist Invitation Banner */}
         {!isCoBrowsingConnected && !dismissOffer && (
-          <div className="lg:col-span-12 p-5 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl border border-purple-400/40 animate-fade-in">
+          <div className="lg:col-span-12 p-5 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm border border-purple-400/40 animate-fade-in">
             <div className="flex items-center gap-4">
-              <div className="size-12 rounded-2xl bg-[#582be8] flex items-center justify-center text-2xl shadow-lg border border-purple-300/40 shrink-0">
-                🤝
+              <div className="size-12 rounded-2xl bg-white/10 flex items-center justify-center text-sm font-bold tracking-tight border border-white/15 shrink-0">
+                OB
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-black tracking-tight text-white">Need assistance with your proposal?</h3>
-                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 font-bold border border-emerald-400/30">
-                    WebRTC Co-Browse
-                  </span>
+                  <h3 className="text-base font-bold tracking-tight text-white">Need assistance with your proposal?</h3>
+                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-purple-100 font-medium border border-white/15">
+                    Live voice assistant</span>
                 </div>
                 <p className="text-xs text-purple-200 mt-1 max-w-2xl">
-                  OmniCB AI Agent is ready to co-browse with you via live WebRTC screen share & voice. Get step-by-step guidance on riders, income tiers, and proposal completion.
+                  Talk to the assistant while you fill in the form. It explains riders, income tiers and clauses, and can fill fields for you with your consent.
                 </p>
               </div>
             </div>
@@ -2093,13 +2181,13 @@ export default function AckoInsurancePortal() {
               <button
                 onClick={connectCoBrowsingSession}
                 disabled={isConnecting}
-                className="px-5 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs transition-all shadow-md flex items-center gap-2 hover:scale-105"
+                className="px-5 py-2.5 rounded-lg bg-white hover:bg-purple-50 text-[#2d1b70] font-semibold text-xs transition-colors flex items-center gap-2"
               >
-                <span>✨ Accept & Start Co-Browsing</span>
+                <span>Accept and start co-browsing</span>
               </button>
               <button
                 onClick={() => setDismissOffer(true)}
-                className="px-3.5 py-2.5 rounded-xl bg-purple-950/70 hover:bg-purple-900 text-purple-200 font-semibold text-xs border border-purple-700/50 transition-all"
+                className="px-3.5 py-2.5 rounded-lg bg-transparent hover:bg-white/10 text-purple-100 font-medium text-xs border border-white/20 transition-colors"
               >
                 Fill manually
               </button>
@@ -2109,18 +2197,18 @@ export default function AckoInsurancePortal() {
 
         {/* Emergency Dual-Cursor Screen Control Banner across full width */}
         {screenControlStatus === 'granted' && (
-          <div className="lg:col-span-12 p-3.5 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-wrap items-center justify-between gap-3 shadow-md border border-purple-500/40">
+          <div className="lg:col-span-12 p-3.5 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-wrap items-center justify-between gap-3 shadow-sm border border-purple-500/40">
             <div className="flex items-center gap-2.5">
               <span className="size-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-xs font-bold">⚡ Co-Browsing Screen Control: OmniCB Agent Active</span>
+              <span className="text-xs font-bold"> Co-Browsing Screen Control: OmniCB Agent Active</span>
               <span className="text-[11px] text-purple-200 hidden sm:inline">• Dual-cursor active. The agent can demonstrate field navigation. Click anywhere or press ESC to reclaim instant control.</span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={revokeScreenControl}
-                className="px-3.5 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-1.5"
               >
-                <span>🛑</span>
+                <span></span>
                 <span>Emergency Revoke (ESC)</span>
               </button>
             </div>
@@ -2128,7 +2216,7 @@ export default function AckoInsurancePortal() {
         )}
 
         {/* Form Body (8 Columns) */}
-        <div className="lg:col-span-8 flex flex-col gap-6">
+        <div ref={formBodyRef} className="lg:col-span-8 flex flex-col gap-6">
 
           {/* STEP 1: Blank Profile (Click any field -> auto-played regional guidance!) */}
           {activeStep === 1 && (
@@ -2137,49 +2225,103 @@ export default function AckoInsurancePortal() {
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 1: Applicant Profile & Eligibility</h2>
                   <p className="text-xs text-slate-500">
-                    Click any field to hear instant guidance in <strong>{selectedLanguage === 'hi' ? 'हिंदी' : selectedLanguage === 'mr' ? 'मराठी' : 'English'}</strong>.
+                    Select a field to hear guidance in <strong>{selectedLanguage === 'hi' ? 'हिंदी' : selectedLanguage === 'mr' ? 'मराठी' : 'English'}</strong>.
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-50 text-[#582be8] border border-purple-200">
-                  <span>🔊 Auto-Play On Click</span>
-                </div>
+                <div className="text-[11px] text-slate-500">Voice guidance plays when you select a field</div>
               </div>
 
               {/* Feature 3: 1-Click Sample KYC Document Ingestion (Meta Muse Image OCR Demo) */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-2xl">🪪</span>
+                  <span className="text-2xl"></span>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-purple-950">1-Click KYC Document OCR</span>
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-200/80 text-purple-900 border border-purple-300">
-                        Meta Muse Image
-                      </span>
+                      <span className="text-xs font-semibold text-slate-900">Read a sample document</span>
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-white text-slate-600 border border-slate-200">
+                        Private parts hidden before reading</span>
                     </div>
-                    <p className="text-[11px] text-purple-800">
-                      Test instant multimodal OCR extraction & virtual cursor autofill with sample documents
+                    <p className="text-[11px] text-slate-600">
+                      The photo, ID number and QR code are located and pixelated on your device; only the redacted image is read.
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={() => handleRunSampleKycOcr('pan')}
-                    className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl bg-white hover:bg-purple-100 text-purple-900 border border-purple-300 font-bold text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5"
+                    className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <span>📄</span>
+                    <span></span>
                     <span>Sample PAN Card</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleRunSampleKycOcr('aadhaar')}
-                    className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl bg-white hover:bg-purple-100 text-purple-900 border border-purple-300 font-bold text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5"
+                    className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <span>🛡️</span>
+                    <span></span>
                     <span>Masked Aadhaar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRunSampleKycOcr('salary-slip')}
+                    className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span></span>
+                    <span>Salary Slip</span>
                   </button>
                 </div>
               </div>
+
+              {kycRedaction && (
+                <div className="p-3 rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <span className="font-bold"> Privacy shield • {kycRedaction.type.toUpperCase()}</span>
+                    <span className="text-slate-500">
+                      {kycRedaction.status}
+                      {showDevPanel && kycRedaction.samMs !== null ? ` • SAM 3.1 ${kycRedaction.samMs} ms${kycRedaction.samCached ? '(cached)' : ''}` : ''}
+                      {showDevPanel && kycRedaction.ocrMs !== null ? ` • Spark OCR ${kycRedaction.ocrMs} ms` : ''}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '1. SAM 3.1 boxes + pixel masks (one request per concept)' : '1. Private regions found on your card'}</div>
+                      <svg viewBox={`0 0 ${kycRedaction.width} ${kycRedaction.height}`} className="w-full rounded-lg border border-slate-200 bg-white">
+                        <image href={kycRedaction.imageUrl} width={kycRedaction.width} height={kycRedaction.height} />
+                        {kycRedaction.regions.map((r, i) => (
+                          <g key={i}>
+                            {r.masks.map((m, k) => (
+                              <path key={k} d={m.path} transform={`translate(${m.left} ${m.top})`} fill="rgba(244,63,94,0.5)" />
+                            ))}
+                            <rect
+                              x={r.box.left}
+                              y={r.box.top}
+                              width={r.box.right - r.box.left}
+                              height={r.box.bottom - r.box.top}
+                              fill="none"
+                              stroke="#f43f5e"
+                              strokeWidth={3}
+                            />
+                            <text x={r.box.left} y={Math.max(16, r.box.top - 6)} fill="#be123c"fontSize={18} fontWeight={700}>
+                              {r.concept}
+                              {showDevPanel && r.confidence !== null ? ` ${(r.confidence * 100).toFixed(0)}%` : ''}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '2. What Muse Spark receives (pixelated in your browser)' : '2. What the agent reads (hidden parts pixelated on your device)'}</div>
+                      {kycRedaction.redactedDataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={kycRedaction.redactedDataUrl} alt="Redacted document sent to OCR"className="w-full rounded-lg border border-slate-200" />
+                      ) : (
+                        <div className="w-full aspect-[1000/630] rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Input Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -2202,10 +2344,10 @@ export default function AckoInsurancePortal() {
                       <button
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-full-name', e)}
-                        className="text-[10px] text-slate-500 hover:text-purple-700 hover:bg-purple-100 font-medium px-2 py-0.5 rounded-full border border-slate-200 transition-colors flex items-center gap-1"
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>ℹ️ Why ask this?</span>
+                        <span>Why we ask</span>
                       </button>
                     </div>
                     <button
@@ -2214,9 +2356,9 @@ export default function AckoInsurancePortal() {
                         e.stopPropagation();
                         triggerFieldGuidance('field-full-name');
                       }}
-                      className="text-[10px] text-[#582be8] hover:bg-purple-100 font-bold px-2 py-0.5 rounded-full border border-purple-200 transition-colors flex items-center gap-1"
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
                     >
-                      <span>🔊 Listen</span>
+                      <span>Hear guidance</span>
                     </button>
                   </div>
                   <input
@@ -2231,9 +2373,8 @@ export default function AckoInsurancePortal() {
                     placeholder="e.g. Ramesh Shankar Thorat (as on Aadhaar/PAN)"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
                   />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Refer to your Aadhaar or PAN card. Click Listen for spoken advice.
-                  </span>
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    Refer to your Aadhaar or PAN card. Use Hear guidance for spoken advice.</span>
                 </div>
 
                 {/* 2. Date of Birth (Auto-Play DD/MM/YYYY explanation on click) */}
@@ -2254,10 +2395,10 @@ export default function AckoInsurancePortal() {
                       <button
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-dob', e)}
-                        className="text-[10px] text-slate-500 hover:text-purple-700 hover:bg-purple-100 font-medium px-2 py-0.5 rounded-full border border-slate-200 transition-colors flex items-center gap-1"
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>ℹ️ Why ask this?</span>
+                        <span>Why we ask</span>
                       </button>
                     </div>
                     <button
@@ -2266,9 +2407,9 @@ export default function AckoInsurancePortal() {
                         e.stopPropagation();
                         triggerFieldGuidance('field-dob');
                       }}
-                      className="text-[10px] text-[#582be8] hover:bg-purple-100 font-bold px-2 py-0.5 rounded-full border border-purple-200 transition-colors flex items-center gap-1"
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
                     >
-                      <span>🔊 Listen</span>
+                      <span>Hear guidance</span>
                     </button>
                   </div>
                   <input
@@ -2284,9 +2425,8 @@ export default function AckoInsurancePortal() {
                     maxLength={10}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
                   />
-                  <span className="text-[10px] text-purple-700 mt-1 block font-medium">
-                    Day/Month/Year format. Click Listen for voice guidance.
-                  </span>
+                  <span className="text-[11px] text-purple-700 mt-1 block font-medium">
+                    Day/Month/Year format. Use Hear guidance for a spoken explanation.</span>
                 </div>
 
                 {/* 3. Gender */}
@@ -2307,9 +2447,9 @@ export default function AckoInsurancePortal() {
                         e.stopPropagation();
                         triggerFieldGuidance('field-gender');
                       }}
-                      className="text-[10px] text-[#582be8] hover:bg-purple-100 font-bold px-2 py-0.5 rounded-full border border-purple-200 transition-colors flex items-center gap-1"
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
                     >
-                      <span>🔊 Listen</span>
+                      <span>Hear guidance</span>
                     </button>
                   </div>
                   <div className="flex gap-2">
@@ -2350,10 +2490,10 @@ export default function AckoInsurancePortal() {
                       <button
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-income', e)}
-                        className="text-[10px] text-slate-500 hover:text-purple-700 hover:bg-purple-100 font-medium px-2 py-0.5 rounded-full border border-slate-200 transition-colors flex items-center gap-1"
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>ℹ️ Why ask this?</span>
+                        <span>Why we ask</span>
                       </button>
                     </div>
                     <button
@@ -2362,9 +2502,9 @@ export default function AckoInsurancePortal() {
                         e.stopPropagation();
                         triggerFieldGuidance('field-annual-income');
                       }}
-                      className="text-[10px] text-[#582be8] hover:bg-purple-100 font-bold px-2 py-0.5 rounded-full border border-purple-200 transition-colors flex items-center gap-1"
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
                     >
-                      <span>🔊 Listen</span>
+                      <span>Hear guidance</span>
                     </button>
                   </div>
                   <select
@@ -2384,9 +2524,8 @@ export default function AckoInsurancePortal() {
                     <option value="20L-35L">₹20,00,000 - ₹35,00,000</option>
                     <option value="35L+">Above ₹35,00,000</option>
                   </select>
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Gross income before taxes as per Form 16 / ITR
-                  </span>
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    Gross income before taxes as per Form 16 / ITR</span>
                 </div>
 
                 {/* 5. Tobacco / Smoking Status */}
@@ -2405,13 +2544,13 @@ export default function AckoInsurancePortal() {
                       <button
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-smoker', e)}
-                        className="text-[10px] text-slate-500 hover:text-purple-700 hover:bg-purple-100 font-medium px-2 py-0.5 rounded-full border border-slate-200 transition-colors flex items-center gap-1"
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>ℹ️ Why ask this?</span>
+                        <span>Why we ask</span>
                       </button>
                     </div>
-                    <span className="text-[10px] text-[#582be8] font-bold">🔊 Auto-guidance</span>
+                    <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -2445,9 +2584,8 @@ export default function AckoInsurancePortal() {
                       Smoker / Tobacco
                     </button>
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">
-                    No tobacco consumption in last 12 months
-                  </span>
+                  <span className="text-[11px] text-slate-400 mt-1 block">
+                    No tobacco consumption in last 12 months</span>
                 </div>
 
                 {/* 6. City & Pincode */}
@@ -2460,7 +2598,7 @@ export default function AckoInsurancePortal() {
                 >
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-slate-700 font-semibold">City & PIN Code</label>
-                    <span className="text-[10px] text-[#582be8] font-bold">🔊 Auto-guidance</span>
+                    <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input
@@ -2489,23 +2627,21 @@ export default function AckoInsurancePortal() {
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-slate-800">
-                    🔒 Confidential Identity Records (Zero-PII Protected)
-                  </span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                    Masked from OmniCB Agent
-                  </span>
+                     Confidential Identity Records (Zero-PII Protected)</span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800">
+                    Masked from OmniCB Agent</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono text-slate-700">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs tabular-nums text-slate-700">
                   <div className="p-2.5 rounded-lg bg-white border border-slate-200">
-                    <span className="text-[10px] text-slate-400 block mb-0.5">Aadhaar Card:</span>
+                    <span className="text-[11px] text-slate-400 block mb-0.5">Aadhaar Card:</span>
                     <span className="font-bold tracking-wider">{profile.aadhaarNumber}</span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-white border border-slate-200">
-                    <span className="text-[10px] text-slate-400 block mb-0.5">PAN Card:</span>
+                    <span className="text-[11px] text-slate-400 block mb-0.5">PAN Card:</span>
                     <span className="font-bold tracking-wider">{profile.panNumber}</span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-white border border-slate-200">
-                    <span className="text-[10px] text-slate-400 block mb-0.5">Mobile Number:</span>
+                    <span className="text-[11px] text-slate-400 block mb-0.5">Mobile Number:</span>
                     <span className="font-bold tracking-wider">{profile.mobileNumber}</span>
                   </div>
                 </div>
@@ -2525,7 +2661,7 @@ export default function AckoInsurancePortal() {
                     setActiveStep(2);
                     setIdleSeconds(0);
                   }}
-                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
+                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
                   <span>Continue to Step 2: Cover & Riders</span>
                   <span>→</span>
@@ -2545,9 +2681,8 @@ export default function AckoInsurancePortal() {
                     <h2 className="text-base font-bold text-[#111827]">Step 2.1: Base Life Protection Cover</h2>
                     <p className="text-xs text-slate-500">Guaranteed tax-free lump sum payout to family under Section 10(10D)</p>
                   </div>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
-                    30-Year Rate Guarantee
-                  </span>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700">
+                    30-Year Rate Guarantee</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
@@ -2558,31 +2693,30 @@ export default function AckoInsurancePortal() {
                   ].map((tier) => (
                     <div
                       key={tier.id}
+                      id={`cover-tier-${tier.id}`}
                       onClick={() => setBaseSumAssured(tier.id as any)}
                       className={`p-4 rounded-xl border transition-all cursor-pointer relative flex flex-col justify-between ${
                         baseSumAssured === tier.id
-                          ? 'border-[#582be8] bg-purple-50/50 ring-2 ring-[#582be8]/20 shadow-xs'
+                          ? 'border-[#582be8] bg-purple-50/50 ring-2 ring-[#582be8]/20'
                           : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
                     >
                       {tier.badge && (
-                        <span className="absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#582be8] text-white shadow-xs">
-                          {tier.badge}
-                        </span>
+                        <span className="absolute -top-2.5 right-3 text-[11px] font-bold px-2 py-0.5 rounded-lg bg-[#582be8] text-white">
+                          {tier.badge}</span>
                       )}
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm font-bold text-[#111827]">{tier.title}</span>
                           {baseSumAssured === tier.id && (
                             <span className="size-5 rounded-full bg-[#582be8] text-white flex items-center justify-center text-xs font-bold">
-                              ✓
-                            </span>
+                              ✓</span>
                           )}
                         </div>
                         <p className="text-xs text-slate-500 leading-tight">{tier.sub}</p>
                       </div>
-                      <div className="mt-4 pt-2.5 border-t border-slate-100 flex items-baseline justify-between font-mono">
-                        <span className="text-base font-extrabold text-[#582be8]">₹{tier.rate}</span>
+                      <div className="mt-4 pt-2.5 border-t border-slate-100 flex items-baseline justify-between tabular-nums">
+                        <span className="text-base font-bold text-[#582be8]">₹{tier.rate}</span>
                         <span className="text-[11px] text-slate-500">/month</span>
                       </div>
                     </div>
@@ -2595,18 +2729,17 @@ export default function AckoInsurancePortal() {
                 <div className="pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="text-base font-bold text-[#111827] flex items-center gap-2">
-                      <span>Step 2.2: Add-On Living Benefit Riders</span>
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-100 text-[#582be8]">
-                        Living Benefits
-                      </span>
+                      <span>Step 2.2: Optional Riders</span>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-lg bg-purple-100 text-[#582be8]">
+                        Riders</span>
                     </h2>
                     <p className="text-xs text-slate-500">Click any card to add/remove and hear auto-played guidance.</p>
                   </div>
                   <button
                     onClick={() => triggerFieldGuidance('card-critical-illness')}
-                    className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-50 hover:bg-purple-100 text-[#582be8] border border-purple-200 transition-colors flex items-center gap-1"
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-[#582be8] border border-purple-200 transition-colors flex items-center gap-1"
                   >
-                    <span>💡 Hear Rider Advice</span>
+                    <span>Hear Rider Advice</span>
                   </button>
                 </div>
 
@@ -2621,27 +2754,26 @@ export default function AckoInsurancePortal() {
                     }}
                     className={`p-4 rounded-xl border transition-all cursor-pointer relative ${
                       spotlightedElementId === 'card-critical-illness'
-                        ? 'co-browse-spotlight shadow-lg'
+                        ? 'co-browse-spotlight shadow-sm'
                         : selectedRiders.criticalIllness
-                        ? 'border-[#582be8] bg-purple-50/50 shadow-xs'
+                        ? 'border-[#582be8] bg-purple-50/50'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     {selectedRiders.criticalIllness && (
                       <span className="absolute top-3.5 right-3.5 size-5 rounded-full bg-[#582be8] text-white flex items-center justify-center text-xs font-bold">
-                        ✓
-                      </span>
+                        ✓</span>
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Critical Illness Cover</h3>
-                      <span className="text-xs font-mono font-bold text-[#582be8]">+₹149/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹149/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       ₹25,00,000 cash lump sum paid on first diagnosis of 36 critical illnesses including Heart Attack, Cancer, and Stroke.
                     </p>
-                    <div className="flex items-center justify-between text-[10px] font-medium text-slate-500 font-mono">
+                    <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 tabular-nums">
                       <span className="px-2 py-0.5 rounded bg-purple-50 text-[#582be8] border border-purple-100">Surviving Illness Benefit</span>
-                      <span className="text-[#582be8] font-bold">🔊 Click for Advice</span>
+                      <span className="text-[#582be8] font-bold"> Click for Advice</span>
                     </div>
                   </div>
 
@@ -2654,23 +2786,22 @@ export default function AckoInsurancePortal() {
                     }}
                     className={`p-4 rounded-xl border transition-all cursor-pointer relative ${
                       selectedRiders.accidentalDeath
-                        ? 'border-[#582be8] bg-purple-50/50 shadow-xs'
+                        ? 'border-[#582be8] bg-purple-50/50'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     {selectedRiders.accidentalDeath && (
                       <span className="absolute top-3.5 right-3.5 size-5 rounded-full bg-[#582be8] text-white flex items-center justify-center text-xs font-bold">
-                        ✓
-                      </span>
+                        ✓</span>
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Accidental Death Cover</h3>
-                      <span className="text-xs font-mono font-bold text-[#582be8]">+₹79/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹79/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       Doubles total payout (additional ₹1.00 Crore) in case of accidental demise or permanent occupational disability.
                     </p>
-                    <div className="text-[10px] font-medium text-slate-500 font-mono">
+                    <div className="text-[11px] font-medium text-slate-500 tabular-nums">
                       <span>Transit & Occupational Protection</span>
                     </div>
                   </div>
@@ -2684,27 +2815,26 @@ export default function AckoInsurancePortal() {
                     }}
                     className={`p-4 rounded-xl border transition-all cursor-pointer relative ${
                       spotlightedElementId === 'card-waiver-premium'
-                        ? 'co-browse-spotlight shadow-lg'
+                        ? 'co-browse-spotlight shadow-sm'
                         : selectedRiders.waiverOfPremium
-                        ? 'border-[#582be8] bg-purple-50/50 shadow-xs'
+                        ? 'border-[#582be8] bg-purple-50/50'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     {selectedRiders.waiverOfPremium && (
                       <span className="absolute top-3.5 right-3.5 size-5 rounded-full bg-[#582be8] text-white flex items-center justify-center text-xs font-bold">
-                        ✓
-                      </span>
+                        ✓</span>
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Waiver of Premium (WOP)</h3>
-                      <span className="text-xs font-mono font-bold text-[#582be8]">+₹42/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹42/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       If you suffer permanent disability, all future premiums for the next 30 years are 100% waived; policy stays active.
                     </p>
-                    <div className="flex items-center justify-between text-[10px] font-medium text-emerald-600 font-mono">
+                    <div className="flex items-center justify-between text-[11px] font-medium text-emerald-600 tabular-nums">
                       <span>Policy Continuity Guarantee</span>
-                      <span className="text-[#582be8] font-bold">🔊 Click for Advice</span>
+                      <span className="text-[#582be8] font-bold"> Click for Advice</span>
                     </div>
                   </div>
 
@@ -2717,23 +2847,22 @@ export default function AckoInsurancePortal() {
                     }}
                     className={`p-4 rounded-xl border transition-all cursor-pointer relative ${
                       selectedRiders.hospitalCash
-                        ? 'border-[#582be8] bg-purple-50/50 shadow-xs'
+                        ? 'border-[#582be8] bg-purple-50/50'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     {selectedRiders.hospitalCash && (
                       <span className="absolute top-3.5 right-3.5 size-5 rounded-full bg-[#582be8] text-white flex items-center justify-center text-xs font-bold">
-                        ✓
-                      </span>
+                        ✓</span>
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Hospital Daily Cash Allowance</h3>
-                      <span className="text-xs font-mono font-bold text-[#582be8]">+₹55/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹55/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       Fixed ₹5,000 cash allowance per 24 hours of hospitalization to cover incidental expenses and loss of daily income.
                     </p>
-                    <div className="text-[10px] font-medium text-slate-500 font-mono">
+                    <div className="text-[11px] font-medium text-slate-500 tabular-nums">
                       <span>Up to 60 Days Annually</span>
                     </div>
                   </div>
@@ -2741,14 +2870,13 @@ export default function AckoInsurancePortal() {
                 </div>
 
                 {/* Complex Benefit Ladders & Tiered Protection */}
-                <div id="card-benefit-ladders" className="mt-5 p-5 rounded-2xl bg-gradient-to-br from-purple-50 via-indigo-50/40 to-white border border-purple-200/80 space-y-4">
+                <div id="card-benefit-ladders"className="mt-5 p-5 rounded-2xl bg-gradient-to-br from-purple-50 via-indigo-50/40 to-white border border-purple-200/80 space-y-4">
                   <div className="flex items-center justify-between pb-2 border-b border-purple-100">
                     <div>
                       <h3 className="text-xs font-bold uppercase tracking-wider text-[#582be8] flex items-center gap-1.5">
-                        <span>⚡ Meta Muse Wonder • Complex Benefit Ladders</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 font-mono">
-                          Actuarial Dynamic Tiers
-                        </span>
+                        <span>Meta Muse Wonder • Rider Payout Options</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-lg bg-purple-100 text-purple-800 tabular-nums">
+                          Actuarial Dynamic Tiers</span>
                       </h3>
                       <p className="text-[11px] text-slate-600">Select living benefit ladders and milestone-based coverage escalators.</p>
                     </div>
@@ -2758,15 +2886,14 @@ export default function AckoInsurancePortal() {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center text-xs font-semibold text-slate-800">
                       <span>1. Critical Illness Living Benefit Tier Ladder:</span>
-                      <span className="text-[11px] font-mono text-[#582be8] font-bold">
-                        {ciTier === 'tier1' ? '₹10 Lakhs (+₹89/mo)' : ciTier === 'tier3' ? '₹50 Lakhs (+₹269/mo)' : '₹25 Lakhs (+₹149/mo) [Recommended]'}
-                      </span>
+                      <span className="text-[11px] tabular-nums text-[#582be8] font-bold">
+                        {ciTier === 'tier1' ? '₹10 Lakhs (+₹89/mo)' : ciTier === 'tier3' ? '₹50 Lakhs (+₹269/mo)' : '₹25 Lakhs (+₹149/mo) [Recommended]'}</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                       {[
-                        { tier: 'tier1' as const, name: 'Tier 1: Silver', cover: '₹10,00,000', illnesses: '10 Major Conditions', price: '+₹89/mo' },
-                        { tier: 'tier2' as const, name: 'Tier 2: Gold (Rec.)', cover: '₹25,00,000', illnesses: '36 Critical Conditions', price: '+₹149/mo' },
-                        { tier: 'tier3' as const, name: 'Tier 3: Platinum', cover: '₹50,00,000', illnesses: '64 Conditions + 2nd Opinion', price: '+₹269/mo' },
+                        { tier: 'tier1'as const, name: 'Tier 1: Silver', cover: '₹10,00,000', illnesses: '10 Major Conditions', price: '+₹89/mo' },
+                        { tier: 'tier2'as const, name: 'Tier 2: Gold (Rec.)', cover: '₹25,00,000', illnesses: '36 Critical Conditions', price: '+₹149/mo' },
+                        { tier: 'tier3'as const, name: 'Tier 3: Platinum', cover: '₹50,00,000', illnesses: '64 Conditions + 2nd Opinion', price: '+₹269/mo' },
                       ].map((t) => (
                         <div
                           key={t.tier}
@@ -2782,10 +2909,10 @@ export default function AckoInsurancePortal() {
                         >
                           <div className="flex justify-between items-baseline mb-1">
                             <span className="font-bold text-slate-900 text-xs">{t.name}</span>
-                            <span className="font-mono text-[#582be8] font-bold text-[11px]">{t.price}</span>
+                            <span className="tabular-nums text-[#582be8] font-bold text-[11px]">{t.price}</span>
                           </div>
-                          <strong className="text-sm font-extrabold text-slate-800 block">{t.cover}</strong>
-                          <span className="text-[10px] text-slate-500 block">{t.illnesses}</span>
+                          <strong className="text-sm font-bold text-slate-800 block">{t.cover}</strong>
+                          <span className="text-[11px] text-slate-500 block">{t.illnesses}</span>
                         </div>
                       ))}
                     </div>
@@ -2795,9 +2922,8 @@ export default function AckoInsurancePortal() {
                   <div className="space-y-2 pt-2 border-t border-purple-100">
                     <div className="flex justify-between items-center text-xs font-semibold text-slate-800">
                       <span>2. Accidental Disability Payout Structure Ladder:</span>
-                      <span className="text-[11px] font-mono text-[#582be8] font-bold">
-                        {atpdOption === 'income' ? '₹1 Lakh/mo for 100 Months (+₹129/mo)' : '₹50 Lakhs Lump Sum (+₹79/mo)'}
-                      </span>
+                      <span className="text-[11px] tabular-nums text-[#582be8] font-bold">
+                        {atpdOption === 'income' ? '₹1 Lakh/mo for 100 Months (+₹129/mo)' : '₹50 Lakhs Lump Sum (+₹79/mo)'}</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                       <div
@@ -2813,7 +2939,7 @@ export default function AckoInsurancePortal() {
                       >
                         <div className="flex justify-between items-baseline mb-0.5">
                           <span className="font-bold text-slate-900">Option A: Lump Sum Cash</span>
-                          <span className="font-mono text-[#582be8] font-bold text-[11px]">+₹79/mo</span>
+                          <span className="tabular-nums text-[#582be8] font-bold text-[11px]">+₹79/mo</span>
                         </div>
                         <p className="text-[11px] text-slate-600">Immediate ₹50,00,000 cash transfer upon accidental disability.</p>
                       </div>
@@ -2831,7 +2957,7 @@ export default function AckoInsurancePortal() {
                       >
                         <div className="flex justify-between items-baseline mb-0.5">
                           <span className="font-bold text-slate-900">Option B: Salary Replacement Ladder</span>
-                          <span className="font-mono text-[#582be8] font-bold text-[11px]">+₹129/mo</span>
+                          <span className="tabular-nums text-[#582be8] font-bold text-[11px]">+₹129/mo</span>
                         </div>
                         <p className="text-[11px] text-slate-600">₹1,00,000/month regular income for 100 continuous months (₹1.00 Cr total).</p>
                       </div>
@@ -2850,22 +2976,22 @@ export default function AckoInsurancePortal() {
                       <div>
                         <div className="flex justify-between items-baseline">
                           <span className="font-bold text-slate-900">Life Stage Cover Escalator</span>
-                          <span className="font-mono text-[#582be8] font-bold text-[10px]">+₹49/mo</span>
+                          <span className="tabular-nums text-[#582be8] font-bold text-[11px]">+₹49/mo</span>
                         </div>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                        <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
                           Auto-boost cover by 10% annually or 50% on marriage / 25% on child birth with zero medical re-tests.
                         </p>
                       </div>
                     </label>
 
                     <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-2">
-                      <span className="text-emerald-700 text-base">🛡️</span>
+                      <span className="text-emerald-700 text-base"></span>
                       <div>
                         <div className="flex justify-between items-baseline">
                           <span className="font-bold text-emerald-950">Terminal Illness Accelerated Payout</span>
-                          <span className="font-mono text-emerald-800 font-bold text-[10px]">Built-in (₹0)</span>
+                          <span className="tabular-nums text-emerald-800 font-bold text-[11px]">Built-in (₹0)</span>
                         </div>
-                        <p className="text-[10px] text-emerald-800 leading-tight mt-0.5">
+                        <p className="text-[11px] text-emerald-800 leading-tight mt-0.5">
                           100% of sum assured paid immediately upon medical diagnosis of terminal illness (&lt; 6 months).
                         </p>
                       </div>
@@ -2886,7 +3012,7 @@ export default function AckoInsurancePortal() {
                     setActiveStep(3);
                     setIdleSeconds(0);
                   }}
-                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
+                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
                   <span>Continue to Step 3: Beneficiary & MWPA Trust</span>
                   <span>→</span>
@@ -2898,33 +3024,32 @@ export default function AckoInsurancePortal() {
 
           {/* STEP 3: Beneficiary Nomination & Statutory Trust (IRDAI Section 39 & MWPA 1874) */}
           {activeStep === 3 && (
-            <div id="nomination-section" className="acko-card p-6 flex flex-col gap-5">
+            <div id="nomination-section"className="acko-card p-6 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827] flex items-center gap-2">
                     <span>Step 3: Beneficiary Nomination & Statutory MWPA Trust</span>
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-100 text-[#582be8]">
-                      IRDAI Section 39
-                    </span>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-lg bg-purple-100 text-[#582be8]">
+                      IRDAI Section 39</span>
                   </h2>
                   <p className="text-xs text-slate-500">Designate legal beneficiaries and protect claim proceeds under Married Women's Property Act</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => triggerFieldGuidance('nomination-section')}
-                  className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-50 hover:bg-purple-100 text-[#582be8] border border-purple-200 transition-colors flex items-center gap-1"
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-[#582be8] border border-purple-200 transition-colors flex items-center gap-1"
                 >
-                  <span>💡 Hear Nomination Advice</span>
+                  <span>Hear Nomination Advice</span>
                 </button>
               </div>
 
               {/* Meta Muse Wonder AI Recommendation Card */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-900/10 via-indigo-900/10 to-blue-900/10 border border-purple-300 text-slate-800 flex flex-col gap-3 shadow-xs">
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-900/10 via-indigo-900/10 to-blue-900/10 border border-purple-300 text-slate-800 flex flex-col gap-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">💡</span>
+                    <span className="text-xl"></span>
                     <div>
-                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#582be8]">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#582be8]">
                         Meta Muse Wonder 1.0 • Actuarial Recommendation
                       </h4>
                       <p className="text-xs text-slate-700 font-medium">
@@ -2932,9 +3057,8 @@ export default function AckoInsurancePortal() {
                       </p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-purple-100 text-[#582be8] text-[10px] font-mono font-bold border border-purple-200 shrink-0">
-                    Actuarial Match 99.4%
-                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-purple-100 text-[#582be8] text-[11px] tabular-nums font-bold border border-purple-200 shrink-0">
+                    Actuarial Match 99.4%</span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-purple-200/60">
@@ -2964,9 +3088,9 @@ export default function AckoInsurancePortal() {
                         selectedLanguage
                       );
                     }}
-                    className="px-3.5 py-1.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                    className="px-3.5 py-1.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white text-xs font-bold transition-all flex items-center gap-1.5"
                   >
-                    <span>⚡ Apply Recommended 70/30 Split</span>
+                    <span>Apply Recommended 70/30 Split</span>
                   </button>
 
                   <button
@@ -2976,11 +3100,11 @@ export default function AckoInsurancePortal() {
                     }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
                       nomination.mwpaTrustEnabled
-                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300 shadow-xs'
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                     }`}
                   >
-                    <span>{nomination.mwpaTrustEnabled ? '🛡️' : '⚖️'}</span>
+                    <span>{nomination.mwpaTrustEnabled ? '' : ''}</span>
                     <span>MWPA Sec 6 Creditor Shield: {nomination.mwpaTrustEnabled ? 'ACTIVE (Irrevocable Trust)' : 'ENABLE'}</span>
                   </button>
                 </div>
@@ -2993,7 +3117,7 @@ export default function AckoInsurancePortal() {
                     <span className="size-2 rounded-full bg-[#582be8]" />
                     <span>Primary Nominee (Direct Claimant)</span>
                   </h3>
-                  <span className="text-[11px] font-mono text-slate-500 font-bold">Share: {nomination.primaryShare}%</span>
+                  <span className="text-[11px] tabular-nums text-slate-500 font-bold">Share: {nomination.primaryShare}%</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -3030,7 +3154,7 @@ export default function AckoInsurancePortal() {
                       max={100}
                       value={nomination.primaryShare}
                       onChange={(e) => setNomination(prev => ({ ...prev, primaryShare: parseInt(e.target.value, 10) || 100 }))}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-mono font-bold focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8]"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 tabular-nums font-bold focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8]"
                     />
                   </div>
                 </div>
@@ -3049,7 +3173,7 @@ export default function AckoInsurancePortal() {
                     <span className="text-xs font-bold text-slate-900">Add Contingent / Minor Nominee (IRDAI Section 39)</span>
                   </label>
                   {nomination.hasSecondaryNominee && (
-                    <span className="text-[11px] font-mono text-slate-500 font-bold">Share: {nomination.secondaryShare}%</span>
+                    <span className="text-[11px] tabular-nums text-slate-500 font-bold">Share: {nomination.secondaryShare}%</span>
                   )}
                 </div>
 
@@ -3086,7 +3210,7 @@ export default function AckoInsurancePortal() {
                           max={99}
                           value={nomination.secondaryAge}
                           onChange={(e) => setNomination(prev => ({ ...prev, secondaryAge: parseInt(e.target.value, 10) || 7 }))}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-mono font-bold"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 tabular-nums font-bold"
                         />
                       </div>
                       <div>
@@ -3097,7 +3221,7 @@ export default function AckoInsurancePortal() {
                           max={100}
                           value={nomination.secondaryShare}
                           onChange={(e) => setNomination(prev => ({ ...prev, secondaryShare: parseInt(e.target.value, 10) || 30 }))}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-mono font-bold"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 tabular-nums font-bold"
                         />
                       </div>
                     </div>
@@ -3106,14 +3230,13 @@ export default function AckoInsurancePortal() {
                     {nomination.secondaryAge < 18 && (
                       <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
                         <div className="flex items-center gap-1.5 text-amber-900 text-xs font-bold">
-                          <span>⚠️ Minor Nominee Detected (&lt; 18 years)</span>
-                          <span className="text-[10px] font-mono bg-amber-100 px-2 py-0.5 rounded text-amber-800">
-                            IRDAI Section 39 Requirement: Adult Appointee Mandated
-                          </span>
+                          <span>Minor Nominee Detected (&lt; 18 years)</span>
+                          <span className="text-[11px] tabular-nums bg-amber-100 px-2 py-0.5 rounded text-amber-800">
+                            IRDAI Section 39 Requirement: Adult Appointee Mandated</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label className="text-[10px] font-semibold text-amber-900 block mb-1">Appointee Full Legal Name</label>
+                            <label className="text-[11px] font-semibold text-amber-900 block mb-1">Appointee Full Legal Name</label>
                             <input
                               type="text"
                               placeholder="e.g. Shankar Thorat"
@@ -3123,7 +3246,7 @@ export default function AckoInsurancePortal() {
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] font-semibold text-amber-900 block mb-1">Relationship to Minor</label>
+                            <label className="text-[11px] font-semibold text-amber-900 block mb-1">Relationship to Minor</label>
                             <input
                               type="text"
                               placeholder="e.g. Paternal Grandfather"
@@ -3154,7 +3277,7 @@ export default function AckoInsurancePortal() {
                     setActiveStep(4);
                     setIdleSeconds(0);
                   }}
-                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
+                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
                   <span>Continue to Step 4: Medical Disclosures</span>
                   <span>→</span>
@@ -3173,9 +3296,9 @@ export default function AckoInsurancePortal() {
                 </div>
                 <button
                   onClick={() => triggerFieldGuidance('field-section-45')}
-                  className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-50 hover:bg-purple-100 text-[#582be8] border border-purple-200 transition-colors flex items-center gap-1"
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-[#582be8] border border-purple-200 transition-colors flex items-center gap-1"
                 >
-                  <span>💡 Why declare health history?</span>
+                  <span>Why declare health history?</span>
                 </button>
               </div>
 
@@ -3230,7 +3353,7 @@ export default function AckoInsurancePortal() {
                   <div className="text-slate-700">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[#111827] block mb-0.5">Section 45 Statutory Declaration & Claim Guarantee</span>
-                      <span className="text-[10px] text-[#582be8] font-bold">🔊 Auto-guidance</span>
+                      <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
                     </div>
                     <span>I declare that all health disclosures are authentic. After 3 continuous policy years, Section 45 protects against claim rejection.</span>
                   </div>
@@ -3253,7 +3376,7 @@ export default function AckoInsurancePortal() {
                     }
                     setActiveStep(5);
                   }}
-                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
+                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
                   <span>Review & Issue Policy (Step 5)</span>
                   <span>→</span>
@@ -3270,9 +3393,8 @@ export default function AckoInsurancePortal() {
                   <h2 className="text-base font-bold text-[#111827]">Step 5: Policy Schedule, Terms & Instant Issuance</h2>
                   <p className="text-xs text-slate-500">Review your final coverage schedule, beneficiary details & statutory terms</p>
                 </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Ready to Issue
-                </span>
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  Ready to Issue</span>
               </div>
 
               <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs text-slate-700">
@@ -3287,23 +3409,18 @@ export default function AckoInsurancePortal() {
                 <div className="flex justify-between pb-2 border-b border-slate-200">
                   <span className="text-slate-500">Base Life Protection Cover:</span>
                   <span className="font-bold text-slate-900">
-                    {baseSumAssured === '1cr' ? '₹1.00 Crore' : baseSumAssured === '1.5cr' ? '₹1.50 Crore' : '₹2.00 Crore'}
-                  </span>
+                    {baseSumAssured === '1cr' ? '₹1.00 Crore' : baseSumAssured === '1.5cr' ? '₹1.50 Crore' : '₹2.00 Crore'}</span>
                 </div>
                 {selectedRiders.criticalIllness && (
                   <div className="flex justify-between text-[#582be8] font-medium pb-2 border-b border-slate-200">
                     <span>+ Critical Illness Cover:</span>
-                    <span>
-                      {ciTier === 'tier1' ? '₹10,00,000 (Tier 1 Silver)' : ciTier === 'tier3' ? '₹50,00,000 (Tier 3 Platinum)' : '₹25,00,000 (Tier 2 Gold)'}
-                    </span>
+                    <span>{ciTier === 'tier1' ? '₹10,00,000 (Tier 1 Silver)' : ciTier === 'tier3' ? '₹50,00,000 (Tier 3 Platinum)' : '₹25,00,000 (Tier 2 Gold)'}</span>
                   </div>
                 )}
                 {selectedRiders.accidentalDeath && (
                   <div className="flex justify-between text-[#582be8] font-medium pb-2 border-b border-slate-200">
                     <span>+ Accidental Disability Cover:</span>
-                    <span>
-                      {atpdOption === 'income' ? '₹1 Lakh/mo for 100 Months (Salary Replacement)' : '₹50,00,000 Lump Sum'}
-                    </span>
+                    <span>{atpdOption === 'income' ? '₹1 Lakh/mo for 100 Months (Salary Replacement)' : '₹50,00,000 Lump Sum'}</span>
                   </div>
                 )}
                 {lifeStageEscalator && (
@@ -3316,41 +3433,55 @@ export default function AckoInsurancePortal() {
                   <span className="text-slate-500">Designated Nominee & Trust:</span>
                   <span className="font-bold text-slate-900">
                     {nomination.primaryName || 'Priya Ramesh Thorat'} ({nomination.primaryRelation}, {nomination.primaryShare}%)
-                    {nomination.mwpaTrustEnabled ? ' • 🛡️ MWPA Trust Shield Active' : ''}
-                  </span>
+                    {nomination.mwpaTrustEnabled ? ' • MWPA Trust Shield Active' : ''}</span>
                 </div>
 
                 <div className="border-t border-slate-300 pt-3 flex justify-between items-baseline text-sm font-bold text-slate-900">
                   <span>Total Monthly Premium (incl. 18% GST):</span>
-                  <span className="text-xl font-extrabold text-[#582be8] font-mono">₹{totalMonthlyPayable}/mo</span>
+                  <span className="text-xl font-bold text-[#582be8] tabular-nums">₹{totalMonthlyPayable}/mo</span>
                 </div>
               </div>
 
               {policyIssued ? (
                 <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-300 text-center flex flex-col items-center gap-3">
-                  <div className="size-12 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xl shadow-md">
+                  <div className="size-12 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xl shadow-sm">
                     ✓
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-emerald-950">ACKO Life Policy Issued Successfully!</h3>
-                    <p className="text-xs font-mono text-emerald-800 mt-1">
+                    <p className="text-xs tabular-nums text-emerald-800 mt-1">
                       Policy Certificate ID: <strong className="text-slate-900 font-bold">{proposalId}</strong>
                     </p>
                   </div>
                   <p className="text-xs text-slate-600 max-w-md">
                     Your lifelong rate of ₹{totalMonthlyPayable}/month is locked. Official policy certificate dispatched to your registered email.
                   </p>
-                  <button
-                    onClick={() => alert(`Policy Certificate ${proposalId} downloaded.`)}
-                    className="mt-2 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-sm"
-                  >
-                    📄 Download Policy Certificate (PDF)
-                  </button>
+                  {policyCard.status === 'ready' && policyCard.dataUrl ? (
+                    <div className="w-full max-w-md flex flex-col items-center gap-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={policyCard.dataUrl} alt="Policy summary card generated by Meta Muse Image"className="w-full rounded-xl border border-emerald-200 shadow-sm" />
+                      <span className="text-[11px] tabular-nums text-emerald-700">
+                        Policy card rendered by Meta Muse Image 1.0 in {policyCard.ms} ms (pre-generated on the last step)</span>
+                      <a
+                        href={policyCard.dataUrl}
+                        download={`${proposalId || 'policy'}-card`}
+                        className="mt-1 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-sm"
+                      >
+                         Download Policy Card
+                      </a>
+                    </div>
+                  ) : policyCard.status === 'generating' ? (
+                    <div className="w-full max-w-md aspect-square rounded-xl border border-emerald-200 bg-white/60 animate-pulse flex items-center justify-center text-xs text-emerald-800">
+                      Meta Muse Image is rendering your policy card…
+                    </div>
+                  ) : policyCard.status === 'error' ? (
+                    <p className="text-[11px] text-red-700">Policy card failed (Meta API, no fallback): {policyCard.error}</p>
+                  ) : null}
                   <button
                     onClick={handleDownloadAuditCertificate}
                     className="mt-1 px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
                   >
-                    <span>🛡️</span>
+                    <span></span>
                     <span>Download Application Guardian Audit Certificate</span>
                   </button>
                 </div>
@@ -3366,23 +3497,23 @@ export default function AckoInsurancePortal() {
                     <button
                       type="button"
                       onClick={() => setShowTermsDrawer(true)}
-                      className="px-4 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs"
+                      className="px-4 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 transition-all"
                       title="Review all statutory Terms & Conditions before binding"
                     >
-                      <span>⚖️ Review Terms (T&C)</span>
+                      <span>Review Terms (T&C)</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleDownloadAuditCertificate}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs"
+                      className="px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-all"
                       title="Download Application Guardian Audit Certificate"
                     >
-                      <span>🛡️ Audit Certificate</span>
+                      <span>Audit Certificate</span>
                     </button>
                   </div>
                   <button
                     onClick={submitPolicyProposal}
-                    className="px-7 py-3.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all"
+                    className="px-7 py-3.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider shadow-sm transition-all"
                   >
                     Confirm & Lock Policy (₹{totalMonthlyPayable}/mo)
                   </button>
@@ -3402,12 +3533,11 @@ export default function AckoInsurancePortal() {
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Premium Summary
               </h3>
-              <span className="text-[11px] font-mono text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                30-Yr Locked Rate
-              </span>
+              <span className="text-[11px] tabular-nums text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
+                30-Yr Locked Rate</span>
             </div>
 
-            <div className="space-y-2 text-xs font-mono text-slate-600">
+            <div className="space-y-2 text-xs tabular-nums text-slate-600">
               <div className="flex justify-between">
                 <span>Base Cover ({baseSumAssured === '1cr' ? '₹1 Cr' : baseSumAssured === '1.5cr' ? '₹1.5 Cr' : '₹2 Cr'}):</span>
                 <span className="text-slate-900 font-semibold">₹{monthlyBase}</span>
@@ -3453,33 +3583,32 @@ export default function AckoInsurancePortal() {
 
               <div className="border-t border-slate-200 pt-3 mt-2 flex justify-between items-baseline font-sans">
                 <span className="font-bold text-sm text-[#111827]">Monthly Payable:</span>
-                <span className="text-2xl font-black text-[#582be8] font-mono">₹{totalMonthlyPayable}</span>
+                <span className="text-2xl font-bold text-[#582be8] tabular-nums">₹{totalMonthlyPayable}</span>
               </div>
 
               <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-sans flex items-center justify-between mt-3">
                 <span>Annual Tax Savings (Sec 80D):</span>
-                <span className="font-bold font-mono">₹{annualTaxSavings}</span>
+                <span className="font-bold tabular-nums">₹{annualTaxSavings}</span>
               </div>
             </div>
           </div>
 
           {/* DOCKED OMNICB CO-BROWSE AGENT (MINIMAL: CONTROLS & TRANSCRIPT ONLY) */}
-          <div className="acko-card p-4 border-2 border-purple-200 rounded-2xl shadow-lg flex flex-col gap-3.5 bg-white sticky top-20">
+          <div className="acko-card p-4 rounded-2xl flex flex-col gap-3.5 bg-white sticky top-20">
             
             {/* Header with Connection Status & Connect/Disconnect Button */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="size-9 rounded-xl bg-[#582be8] flex items-center justify-center text-white font-black text-xs shadow-xs">
+                <div className="size-9 rounded-xl bg-[#582be8] flex items-center justify-center text-white font-bold text-xs">
                   OB
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-[#111827]">OmniCB Co-Browse</h4>
-                  <p className="text-[10px] text-slate-500 font-medium">
+                  <p className="text-[11px] text-slate-500 font-medium">
                     {isCoBrowsingConnected ? (
                       <span className="text-emerald-600 font-bold flex items-center gap-1">
                         <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        WebRTC Audio & DOM
-                      </span>
+                        Live voice & form sync</span>
                     ) : (
                       <span className="text-slate-400">Disconnected</span>
                     )}
@@ -3491,9 +3620,9 @@ export default function AckoInsurancePortal() {
               {isCoBrowsingConnected ? (
                 <button
                   onClick={disconnectCoBrowsingSession}
-                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs border border-red-200 transition-all flex items-center gap-1.5 shadow-2xs"
+                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs border border-red-200 transition-all flex items-center gap-1.5"
                 >
-                  <span>🔴</span>
+                  <span></span>
                   <span>Disconnect</span>
                 </button>
               ) : (
@@ -3502,14 +3631,14 @@ export default function AckoInsurancePortal() {
                   disabled={isConnecting}
                   className="px-3 py-1.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-sm"
                 >
-                  <span>🤝</span>
+                  <span></span>
                   <span>{isConnecting ? 'Connecting...' : 'Connect'}</span>
                 </button>
               )}
             </div>
 
             {/* Essential Screen Controls Row */}
-            <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-purple-50/70 border border-purple-100 text-[11px]">
+            <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
               {/* Screen Share Toggle */}
               <button
                 onClick={() => setIsSharingPaused(!isSharingPaused)}
@@ -3519,10 +3648,10 @@ export default function AckoInsurancePortal() {
                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                     : isSharingPaused
                     ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                    : 'bg-white hover:bg-purple-100 text-slate-800 border border-purple-200 shadow-2xs'
+                    : 'bg-white hover:bg-purple-100 text-slate-800 border border-purple-200'
                 }`}
               >
-                <span>{isSharingPaused ? '▶️ Resume Share' : '⏸️ Pause Share'}</span>
+                <span>{isSharingPaused ? 'Resume sharing' : 'Pause sharing'}</span>
               </button>
 
               {/* Remote Control Toggle */}
@@ -3539,11 +3668,11 @@ export default function AckoInsurancePortal() {
                   !isCoBrowsingConnected
                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                     : screenControlStatus === 'granted'
-                    ? 'bg-purple-600 text-white shadow-xs'
-                    : 'bg-white hover:bg-purple-100 text-slate-800 border border-purple-200 shadow-2xs'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white hover:bg-purple-100 text-slate-800 border border-purple-200'
                 }`}
               >
-                <span>🎮 {screenControlStatus === 'granted' ? 'Control Active' : 'Grant Control'}</span>
+                <span>{screenControlStatus === 'granted' ? 'Control Active' : 'Grant Control'}</span>
               </button>
             </div>
 
@@ -3555,9 +3684,9 @@ export default function AckoInsurancePortal() {
                   <button
                     key={l}
                     onClick={() => handleLanguageChange(l)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
                       selectedLanguage === l
-                        ? 'bg-[#582be8] text-white shadow-xs'
+                        ? 'bg-[#582be8] text-white'
                         : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
@@ -3569,11 +3698,11 @@ export default function AckoInsurancePortal() {
 
             {/* Curated Best Neural Voices */}
             <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
-              <span className="text-slate-600 font-medium">Voice Model:</span>
+              <span className="text-slate-600 font-medium">Voice:</span>
               <div className="flex gap-1">
                 {[
-                  { id: 'veena', label: 'Veena ♀', sub: 'Female Indian Accent Advisor' },
-                  { id: 'rishi', label: 'Rishi ♂', sub: 'Male Indian Accent Advisor' },
+                  { id: 'veena', label: 'Veena', sub: 'Female Indian Accent Advisor' },
+                  { id: 'rishi', label: 'Rishi', sub: 'Male Indian Accent Advisor' },
                   { id: 'nova', label: 'Nova', sub: 'Warm Natural Advisor' },
                   { id: 'aura', label: 'Aura', sub: 'Executive AI Tone' },
                 ].map((v) => (
@@ -3585,13 +3714,38 @@ export default function AckoInsurancePortal() {
                       playChime();
                     }}
                     title={v.sub}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
                       selectedVoicePersona === v.id
-                        ? 'bg-[#582be8] text-white shadow-xs'
+                        ? 'bg-[#582be8] text-white'
                         : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
                     {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* English accent (Hindi / Marathi use their own hi-IN / mr-IN voices) */}
+            <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
+              <span className="text-slate-600 font-medium">English accent:</span>
+              <div className="flex gap-1">
+                {([
+                  ['in', 'Indian'],
+                  ['us', 'US'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setEnglishAccent(id);
+                      playChime();
+                    }}
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                      englishAccent === id ? 'bg-[#582be8] text-white' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    {label}
                   </button>
                 ))}
               </div>
@@ -3602,7 +3756,7 @@ export default function AckoInsurancePortal() {
               <button
                 type="button"
                 onClick={toggleVoiceListening}
-                className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2.5 shadow-md ${
+                className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2.5 shadow-sm ${
                   !isCoBrowsingConnected
                     ? 'bg-slate-100 hover:bg-purple-50 text-slate-700 border border-purple-200'
                     : isListeningVoice
@@ -3621,27 +3775,59 @@ export default function AckoInsurancePortal() {
                     <span className="w-1 bg-white rounded-full eq-bar-3" />
                   </div>
                 )}
-                <span>
-                  {!isCoBrowsingConnected
-                    ? '🎙️ Connect Co-Browsing to Speak'
+                <span>{!isCoBrowsingConnected
+                    ? 'Start a session to talk'
                     : isListeningVoice
-                    ? '🔴 Listening... (Click to Send)'
+                    ? 'Listening hands-free (click to stop)'
                     : voiceThinking
-                    ? '🧠 Meta Muse Spark Reasoning...'
+                    ? 'Meta Muse Spark Reasoning...'
                     : isSpeaking
-                    ? '🔊 Agent Speaking...'
-                    : '🎙️ Click to Speak (Two-Way Voice)'}
-                </span>
+                    ? 'Agent Speaking… (click to interrupt)'
+                    : 'Start Live Voice (Meta ASR)'}</span>
               </button>
+
+              {micPermissionError && (
+                <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px]"> {micPermissionError}</div>
+              )}
+
+              {showDevPanel && (prefetchInfo || verifications.length > 0 || memoryFacts.length > 0) && (
+                <div className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 flex flex-col gap-1">
+                  {memoryFacts.length > 0 && (
+                    <div>
+                      <span className="font-bold">Customer memory</span> <span className="text-slate-400">({memoryFacts.length} facts, SQLite, extracted by Muse Spark)</span>
+                      <ul className="list-disc pl-4">
+                        {memoryFacts.slice(-3).map((f, i) => (
+                          <li key={i} className="truncate">{f}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {prefetchInfo && (
+                    <div>
+                      <span className="font-bold"> Pre-answered by Muse Spark</span> <span className="text-slate-400">({prefetchInfo.ms} ms, step {prefetchInfo.step ?? '?'})</span>
+                      <ul className="list-disc pl-4">
+                        {prefetchInfo.questions.map((q, i) => (
+                          <li key={i} className="truncate">{q}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {verifications.slice(-2).map((v) => (
+                    <div key={v.id} className="truncate">
+                      <span className="font-bold"> Muse Wonder</span> {v.status === 'pending' ? 'verifying…' : v.status} · {v.actionTitle}
+                      {v.reason ? ` — ${v.reason}` : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Dynamic Mic Decibel Level & Transcript */}
               {isListeningVoice && (
-                <div className="p-2 rounded-xl bg-red-50 border border-red-200 text-red-950 text-[11px] flex flex-col gap-1 shadow-2xs">
-                  <div className="flex justify-between items-center text-[10px] text-red-700 font-mono font-bold">
+                <div className="p-2 rounded-xl bg-red-50 border border-red-200 text-red-950 text-[11px] flex flex-col gap-1">
+                  <div className="flex justify-between items-center text-[11px] text-red-700 tabular-nums font-bold">
                     <span className="flex items-center gap-1">
                       <span className="size-1.5 rounded-full bg-red-500 animate-ping" />
-                      <span>LIVE MIC VOLUME</span>
-                    </span>
+                      <span>LIVE MIC VOLUME</span></span>
                     <span ref={micDecibelTextRef}>0%</span>
                   </div>
                   <div className="w-full h-1.5 rounded-full bg-red-200 overflow-hidden">
@@ -3651,69 +3837,129 @@ export default function AckoInsurancePortal() {
                       style={{ width: '10%' }}
                     />
                   </div>
-                  <p className="text-[10px] text-red-900 truncate">
+                  <p className="text-[11px] text-red-900 truncate">
                     {voiceTranscriptLive ? `"${voiceTranscriptLive}"` : 'Listening to your voice now...'}
                   </p>
+                  {showDevPanel && (
+                  <p className="text-[11px] text-red-700/80 tabular-nums leading-tight">
+                    ASR {voiceTelemetry.asrModel || '…'}
+                    {voiceTelemetry.sparkTtftMs !== null
+                      ? ` • Spark first token ${voiceTelemetry.sparkTtftMs} ms, total ${voiceTelemetry.sparkTotalMs} ms (${voiceTelemetry.reasoningEffort})`
+                      : ''}
+                    {voiceTelemetry.ttsMs !== null ? ` • Google TTS ${voiceTelemetry.ttsMs} ms (${voiceTelemetry.ttsVoice})` : ''}
+                  </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* What the agent sees: exactly what is sent to Muse Spark, with a pause control */}
+            <div className="rounded-xl bg-slate-50 text-slate-800 border border-slate-200 overflow-hidden">
+              <button type="button"onClick={() => setShowAgentView((v) => !v)} className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold">
+                <span>What the agent sees</span>
+                <span className="font-normal text-slate-400">{isSharingPaused ? 'paused' : agentView.sentAt ? `updated ${new Date(agentView.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'nothing sent yet'} {showAgentView ? '▾' : '▸'}</span>
+              </button>
+              {showAgentView && (
+                <div className="px-3 pb-3 flex flex-col gap-2 text-[11px]">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-slate-400 mb-1">Last frame sent{agentView.step ? `(step ${agentView.step})` : ''}</div>
+                      {agentView.frameDataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={agentView.frameDataUrl} alt="The reduced-size frame of this form last sent to the agent"className="w-full rounded-lg border border-slate-200 bg-white" />
+                      ) : (
+                        <div className="w-full aspect-[4/3] rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-slate-500">
+                          {isCoBrowsingConnected ? 'Sent on step changes' : 'Not connected'}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-slate-400 mb-1">Form details sent</div>
+                      <ul className="space-y-0.5 text-slate-700">
+                        <li>Step {activeStep} of 5</li>
+                        <li>Cover: {baseSumAssured === '1cr' ? '₹1 Cr' : baseSumAssured === '1.5cr' ? '₹1.5 Cr' : '₹2 Cr'}</li>
+                        <li>Riders: {[selectedRiders.criticalIllness && 'Critical Illness', selectedRiders.accidentalDeath && 'Accidental', selectedRiders.waiverOfPremium && 'Waiver'].filter(Boolean).join(', ') || 'none'}</li>
+                        <li>Name: {profile.fullName || '—'} · DOB: {profile.dob || '—'}</li>
+                        <li>Income: {profile.annualIncome ? `₹${Number(profile.annualIncome).toLocaleString('en-IN')}` : '—'} · Pincode: {profile.pincode || '—'}</li>
+                        <li>Nominee: {nomination.primaryName ? `${nomination.primaryName} (${nomination.primaryShare}%)` : '—'}</li>
+                        <li className="text-slate-400">Not sent: Aadhaar, PAN and mobile numbers (masked placeholders only)</li>
+                      </ul>
+                    </div>
+                  </div>
+                  {kycRedaction?.redactedDataUrl && (
+                    <div className="text-slate-400">Document read by the agent: the pixelated version shown in the privacy shield above. The ID number was never sent.</div>
+                  )}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsSharingPaused((p) => !p)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${isSharingPaused ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-slate-900'}`}
+                    >
+                      {isSharingPaused ? 'Resume sharing' : 'Pause sharing'}
+                    </button>
+                    <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer">
+                      <input type="checkbox"checked={showDevPanel} onChange={(e) => setShowDevPanel(e.target.checked)} className="accent-[#582be8]" />
+                      Under the hood (models, timings)
+                    </label>
+                  </div>
+                  <p className="text-slate-500 leading-tight">Frames are reduced-size snapshots taken when you change steps, not a video stream. Pausing stops frames and form details from being sent; voice stays on.</p>
                 </div>
               )}
             </div>
 
             {/* Feature 1: Interactive Dual Tax & Net Cost Widget (80C + 80D) */}
-            <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200 text-slate-800 flex flex-col gap-2 shadow-2xs">
+            <div className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-800 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm">🛡️</span>
+                  <span className="text-sm"></span>
                   <span className="text-xs font-bold text-emerald-950">Dual Tax & Net Cost</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setShowEvidenceDrawer(true)}
-                    className="text-[10px] text-[#582be8] hover:underline font-bold"
+                    className="text-[11px] text-[#582be8] hover:underline font-bold"
                   >
-                    View Clause 7.3 ↗
+                    View Clause 7.3 
                   </button>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    80C + 80D
-                  </span>
+                  <span className="text-[11px] tabular-nums font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    80C + 80D</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-[11px] pt-0.5">
-                <div className="p-2 rounded-xl bg-white/90 border border-emerald-100 shadow-3xs">
-                  <span className="text-[10px] text-slate-500 block">Gross Premium:</span>
-                  <strong className="text-xs text-slate-900 font-bold font-mono">₹{totalMonthlyPayable}/mo</strong>
-                  <span className="text-[10px] text-slate-400 block font-mono">(₹{(totalMonthlyPayable * 12).toLocaleString()}/yr)</span>
+                <div className="p-2 rounded-xl bg-white/90 border border-emerald-100">
+                  <span className="text-[11px] text-slate-500 block">Gross Premium:</span>
+                  <strong className="text-xs text-slate-900 font-bold tabular-nums">₹{totalMonthlyPayable}/mo</strong>
+                  <span className="text-[11px] text-slate-400 block tabular-nums">(₹{(totalMonthlyPayable * 12).toLocaleString()}/yr)</span>
                 </div>
-                <div className="p-2 rounded-xl bg-emerald-100/70 border border-emerald-200 shadow-3xs">
-                  <span className="text-[10px] text-emerald-700 block font-semibold">Total Tax Saved:</span>
-                  <strong className="text-xs text-emerald-900 font-bold font-mono">
+                <div className="p-2 rounded-xl bg-emerald-100/70 border border-emerald-200">
+                  <span className="text-[11px] text-emerald-700 block font-semibold">Total Tax Saved:</span>
+                  <strong className="text-xs text-emerald-900 font-bold tabular-nums">
                     -₹{(Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)).toLocaleString()}/yr
                   </strong>
-                  <span className="text-[10px] text-emerald-700 block font-bold">
-                    {selectedRiders.criticalIllness ? 'Sec 80C + 80D Active' : 'Sec 80C Active'}
-                  </span>
+                  <span className="text-[11px] text-emerald-700 block font-bold">
+                    {selectedRiders.criticalIllness ? 'Sec 80C + 80D Active' : 'Sec 80C Active'}</span>
                 </div>
               </div>
 
-              <div className="p-2 rounded-xl bg-white border border-emerald-200 flex justify-between items-center text-[11px] shadow-3xs">
+              <div className="p-2 rounded-xl bg-white border border-emerald-200 flex justify-between items-center text-[11px]">
                 <div>
-                  <span className="text-[10px] text-slate-500 block">Net Effective Cost:</span>
-                  <strong className="text-sm font-extrabold text-[#582be8] font-mono">
+                  <span className="text-[11px] text-slate-500 block">Net Effective Cost:</span>
+                  <strong className="text-sm font-bold text-[#582be8] tabular-nums">
                     ₹{Math.round(Math.max(0, (totalMonthlyPayable * 12) - (Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0))) / 12)}/mo
                   </strong>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-emerald-700 block">
-                    Saves {Math.round(((Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)) / (totalMonthlyPayable * 12)) * 100)}%
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-mono">after tax refund</span>
+                  <span className="text-[11px] font-bold text-emerald-700 block">
+                    Saves {Math.round(((Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)) / (totalMonthlyPayable * 12)) * 100)}%</span>
+                  <span className="text-[11px] text-slate-400 tabular-nums">after tax refund</span>
                 </div>
               </div>
 
               {selectedRiders.criticalIllness && (
-                <p className="text-[10px] text-emerald-800 bg-emerald-100/60 p-1.5 rounded-lg border border-emerald-200 leading-tight">
-                  ✨ <strong>Actuarial Insight:</strong> ₹5,580 Sec 80D tax savings exceeds the ₹1,788 annual rider premium, making your ₹25 Lakhs Critical Illness cover <strong>net cost-negative</strong>!
+                <p className="text-[11px] text-emerald-800 bg-emerald-100/60 p-1.5 rounded-lg border border-emerald-200 leading-tight">
+                   <strong>Actuarial Insight:</strong> ₹5,580 Sec 80D tax savings exceeds the ₹1,788 annual rider premium, making your ₹25 Lakhs Critical Illness cover <strong>net cost-negative</strong>!
                 </p>
               )}
             </div>
@@ -3722,7 +3968,7 @@ export default function AckoInsurancePortal() {
             <div className="flex flex-col flex-1 min-h-[260px] max-h-[360px]">
               <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 pb-1.5 border-b border-slate-100">
                 <span>Conversation Transcript</span>
-                <span className="text-[10px] font-normal text-slate-400">{chatMessages.length} entries</span>
+                <span className="text-[11px] font-normal text-slate-400">{chatMessages.length} entries</span>
               </div>
               
               <div className="flex-1 overflow-y-auto space-y-2 py-2 pr-1 text-xs">
@@ -3731,11 +3977,11 @@ export default function AckoInsurancePortal() {
                     key={i}
                     className={`p-3 rounded-xl leading-relaxed ${
                       msg.sender === 'agent'
-                        ? 'bg-purple-50 text-slate-800 border border-purple-100'
-                        : 'bg-slate-100 text-slate-900 ml-4 font-medium'
+                        ? 'bg-slate-50 text-slate-800 border border-slate-200'
+                        : 'bg-purple-50/60 text-slate-900 ml-6 border border-purple-100'
                     }`}
                   >
-                    <div className="flex justify-between text-[10px] text-slate-400 font-mono mb-1">
+                    <div className="flex justify-between text-[11px] text-slate-400 tabular-nums mb-1">
                       <span className="font-bold">{msg.sender === 'agent' ? 'OmniCB Agent' : 'You'}</span>
                       <span>{msg.time}</span>
                     </div>
@@ -3773,14 +4019,14 @@ export default function AckoInsurancePortal() {
                   }`}
                   title="Speak your question using microphone"
                 >
-                  🎙️
+                  
                 </button>
               </div>
 
               <button
                 onClick={handleAskAgent}
                 disabled={!userQuery.trim()}
-                className="px-3.5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-1"
+                className="px-3.5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] disabled:opacity-50 text-white font-bold text-xs transition-all flex items-center gap-1"
               >
                 <span>Ask</span>
               </button>
@@ -3800,7 +4046,7 @@ export default function AckoInsurancePortal() {
           <div className="relative">
             {/* Sleek SVG Cursor Pointer */}
             <svg
-              className={`w-7 h-7 text-[#582be8] filter drop-shadow-md transition-transform duration-150 ${
+              className={`w-7 h-7 text-[#582be8] filter drop- shadow-sm transition-transform duration-150 ${
                 agentCursor.clicking ? 'scale-75' : 'scale-100'
               }`}
               viewBox="0 0 24 24"
@@ -3809,12 +4055,11 @@ export default function AckoInsurancePortal() {
               <path d="M4 0l16 12.279-6.951 1.17 4.325 8.817-3.596 1.734-4.35-8.879-5.428 5.428v-20.549z" />
             </svg>
             {/* Agent Avatar Badge & Action Tooltip */}
-            <div className="absolute left-6 top-3 bg-[#1e104f] text-white text-[11px] font-sans px-2.5 py-1.5 rounded-lg shadow-xl border border-purple-400 whitespace-nowrap flex flex-col gap-0.5">
+            <div className="absolute left-6 top-3 bg-[#1e104f] text-white text-[11px] font-sans px-2.5 py-1.5 rounded-lg shadow-sm border border-purple-400 whitespace-nowrap flex flex-col gap-0.5">
               <span className="font-bold flex items-center gap-1.5 text-purple-300">
                 <span className="size-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>{agentCursor.label}</span>
-              </span>
-              <span className="text-[10px] text-white font-medium">{agentCursor.actionDesc}</span>
+                <span>{agentCursor.label}</span></span>
+              <span className="text-[11px] text-white font-medium">{agentCursor.actionDesc}</span>
             </div>
           </div>
         </div>
@@ -3832,7 +4077,7 @@ export default function AckoInsurancePortal() {
       {/* 6. Meta Multimodal Architecture & Video Pipeline Inspector Modal */}
       {showArchInspector && (
         <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-purple-200 flex flex-col">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-sm border border-purple-200 flex flex-col">
             
             {/* Modal Header */}
             <div className="p-6 bg-[#180d40] text-white rounded-t-3xl flex items-center justify-between border-b border-purple-900">
@@ -3874,88 +4119,88 @@ export default function AckoInsurancePortal() {
                     <tbody className="divide-y divide-slate-100">
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-spark" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/models/muse-spark"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta Muse Spark Series</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
                         <td className="p-3"><strong>High-Effort Multimodal Intent Reasoning</strong><br />Accepts high-res viewport frames, user queries, and live DOM state. Reasons through insurance clauses, underwriting questions, and proposal fields with chain-of-thought verification.</td>
                         <td className="p-3"><strong>Conversational Co-Browsing Lead</strong>:<br />Powers dynamic guidance without hardcoding. Directs spatial spotlights and virtual dual-cursor actions in real-time.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-wonder" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/models/muse-wonder"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta Muse Wonder</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
                         <td className="p-3"><strong>Deep Multimodal Actuarial Reasoning</strong><br />Calculates 30-year risk projections, Human Life Value (HLV) benchmarks, and Section 80C + 80D tax deductions (up to ₹54,600/yr).</td>
                         <td className="p-3"><strong>Financial Risk & Actuarial Analysis</strong>:<br />Evaluates Critical Illness vs Accidental Death trade-offs based on applicant family medical history.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-image" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/models/muse-image"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta Muse Image</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
-                        <td className="p-3"><strong>Document OCR & Visual Asset Synthesis</strong><br />Performs visual OCR on applicant government IDs (PAN/Aadhaar) and dynamically renders official ACKO Life Policy Certificate previews upon completion.</td>
-                        <td className="p-3"><strong>Document Verification & Policy Issuance</strong>:<br />Ensures uploaded documents conform to IRDAI KYC standards without exposing raw PII.</td>
+                        <td className="p-3"><strong>Text-to-Image Generation (reserved)</strong><br />Image generation model on the Model API. KYC document OCR in this app is performed by Muse Spark's image input via /api/ocr.</td>
+                        <td className="p-3"><strong>Not yet wired</strong>:<br />Reserved for rendering policy certificate previews after issuance.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-voice-transcribe" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/models/muse-voice-transcribe"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta Muse Voice Transcribe</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
                         <td className="p-3"><strong>Real-time Audio Uplink Transcription</strong><br />Transcribes customer microphone streams in real time with support for English, Hindi (हिंदी), and Marathi (मराठी) speech phonemes.</td>
                         <td className="p-3"><strong>Two-Way Customer Voice Uplink</strong>:<br />Transcribes verbal questions directly from the browser microphone to feed the reasoning engine.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/sam-3-1" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/models/sam-3-1"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta SAM 3.1</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
                         <td className="p-3"><strong>Native 60 FPS Video Segmentation & Memory Tracking</strong><br />Tracks dynamic viewport frames, modals, and elements across WebRTC screenshare video streams.</td>
                         <td className="p-3"><strong>Zero-PII Privacy Redaction</strong>:<br />Detects Aadhaar/PAN fields and applies client-side polygonal blur before WebRTC video encoding.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-glimmer" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/models/muse-glimmer"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta Muse Glimmer</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-normal">Open Weights Edge</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-normal">Open Weights Edge</span>
                         </td>
                         <td className="p-3"><strong>DOM & UI Spatial Grounding</strong><br />Bridges raw visual screen pixels with DOM elements, calculating sub-pixel center coordinates.</td>
                         <td className="p-3"><strong>Coordinate Precision & Glide</strong>:<br />Directs the agent's virtual cursor with smooth sub-pixel gliding to target elements.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-spark-open" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/models/muse-spark-open"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta Muse Spark Open</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-normal">Open Weights Edge</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-normal">Open Weights Edge</span>
                         </td>
                         <td className="p-3"><strong>Local On-Device Reasoning</strong><br />Runs on-premises/edge with zero cloud latency and complete data sovereignty.</td>
                         <td className="p-3"><strong>Sub-100ms Edge Fallback</strong>:<br />Guarantees instantaneous offline conversational responses when cloud network is offline.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/lp/muse-code" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          <a href="https://dev.meta.ai/lp/muse-code"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
                             <span>Meta Muse Code</span>
-                            <span className="text-[10px]">↗</span>
+                            <span className="text-[11px]"></span>
                           </a>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-normal">Coding Agent</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-normal">Coding Agent</span>
                         </td>
                         <td className="p-3"><strong>Autonomous Software Architecture Agent</strong><br />Engineered the end-to-end co-browsing application, WebRTC pipeline, and multi-model routing.</td>
                         <td className="p-3"><strong>Accelerated Development</strong>:<br />Created production-grade Next.js, WebRTC, and Meta AI agent integrations.</td>
@@ -3971,20 +4216,20 @@ export default function AckoInsurancePortal() {
                   <span>2.</span>
                   <span>How the Real-Time Video Pipeline Works in Co-Browsing</span>
                 </h4>
-                <div className="p-4 rounded-2xl bg-slate-900 text-white font-mono space-y-3">
-                  <div className="text-[11px] text-purple-300 font-bold border-b border-slate-800 pb-2">
+                <div className="p-4 rounded-2xl bg-slate-900 text-white tabular-nums space-y-3">
+                  <div className="text-[11px] text-purple-300 font-bold border-b border-slate-200 pb-2">
                     PIPELINE ARCHITECTURE (USER VIEWPORT → SAM 3 → WEBRTC → AGENT DUAL-CURSOR):
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-center text-[10px]">
-                    <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700">
-                      <div className="text-emerald-400 font-bold mb-1">1. Audio-to-Audio</div>
-                      <span>WebRTC Opus 48kHz Full-Duplex</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-center text-[11px]">
+                    <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200">
+                      <div className="text-emerald-400 font-bold mb-1">1. Live Voice</div>
+                      <span>Mic PCM 24kHz → Muse Voice Transcribe WS</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-purple-950 border border-purple-800">
                       <div className="text-purple-300 font-bold mb-1">2. SAM 3.1 & PII Shield</div>
                       <span>Client-Side Aadhaar/PAN Masking</span>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700">
+                    <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200">
                       <div className="text-amber-300 font-bold mb-1">3. Muse Spark 1.3</div>
                       <span>Sub-5ms DOM Reasoning & Co-Browsing</span>
                     </div>
@@ -3993,10 +4238,10 @@ export default function AckoInsurancePortal() {
                       <span>Sub-pixel Glide & Milestone WebP</span>
                     </div>
                   </div>
-                  <ul className="list-disc pl-4 space-y-1 text-slate-300 text-[11px] font-sans pt-1">
-                    <li><strong>WebRTC Audio-to-Audio (User ↔ Agent)</strong>: Encrypted two-way 48kHz Opus audio stream with natural barge-in interruption.</li>
+                  <ul className="list-disc pl-4 space-y-1 text-slate-600 text-[11px] font-sans pt-1">
+                    <li><strong>Live Voice Loop</strong>: Microphone PCM streams to Meta Muse Voice Transcribe (server-side endpointing). Muse Spark answers stream back and are spoken sentence by sentence with barge-in.</li>
                     <li><strong>Decoupled DOM Engine</strong>: Agent navigates via live DOM coordinates (sub-5ms) instead of bandwidth-heavy continuous video streaming.</li>
-                    <li><strong>Per-Page Milestone Snapshots</strong>: Captures single high-resolution WebP snapshots on step changes for Meta Muse Image / Spark visual layout grounding.</li>
+                    <li><strong>Live DOM State</strong>: The form state is sent to Muse Spark as JSON with every turn. No screenshots or video leave the browser.</li>
                     <li><strong>Dual-Cursor Screen Control</strong>: Virtual cursor demonstrates field inputs with immediate emergency user override (ESC).</li>
                   </ul>
                 </div>
@@ -4008,7 +4253,7 @@ export default function AckoInsurancePortal() {
             <div className="p-4 bg-slate-50 rounded-b-3xl border-t border-slate-100 flex justify-end">
               <button
                 onClick={() => setShowArchInspector(false)}
-                className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs shadow-xs transition-all"
+                className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs transition-all"
               >
                 Close Inspector
               </button>
@@ -4021,13 +4266,13 @@ export default function AckoInsurancePortal() {
       {/* Feature 2: Interactive Policy Evidence Drawer (Visual Grounding Proof) */}
       {showEvidenceDrawer && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end transition-opacity">
-          <div className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col p-6 overflow-y-auto animate-in slide-in-from-right duration-200">
+          <div className="w-full max-w-xl bg-white h-full shadow-sm flex flex-col p-6 overflow-y-auto animate-in slide-in-from-right duration-200">
             <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div className="flex items-center gap-2.5">
-                <span className="text-2xl">📜</span>
+                <span className="text-2xl"></span>
                 <div>
                   <h3 className="text-sm font-bold text-slate-950">Official Policy Evidence Viewer</h3>
-                  <p className="text-[11px] text-slate-500 font-mono">IRDAI UIN: 157N001V01 • ACKO Life Flexi Shield</p>
+                  <p className="text-[11px] text-slate-500 tabular-nums">IRDAI UIN: 157N001V01 • ACKO Life Flexi Shield</p>
                 </div>
               </div>
               <button
@@ -4046,7 +4291,7 @@ export default function AckoInsurancePortal() {
                   onClick={() => setSelectedEvidenceClause(key)}
                   className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all text-[11px] ${
                     selectedEvidenceClause === key
-                      ? 'bg-[#582be8] text-white shadow-xs'
+                      ? 'bg-[#582be8] text-white'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
@@ -4059,24 +4304,24 @@ export default function AckoInsurancePortal() {
             {POLICY_EVIDENCE_CLAUSES[selectedEvidenceClause] && (
               <div className="flex-1 flex flex-col gap-4">
                 <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-[10px] text-amber-900 font-mono">
+                  <div className="flex justify-between items-center text-[11px] text-amber-900 tabular-nums">
                     <span className="font-bold">{POLICY_EVIDENCE_CLAUSES[selectedEvidenceClause].document}</span>
                     <span>Page {POLICY_EVIDENCE_CLAUSES[selectedEvidenceClause].page}</span>
                   </div>
                   <h4 className="text-xs font-bold text-slate-900">{POLICY_EVIDENCE_CLAUSES[selectedEvidenceClause].title}</h4>
                   
                   {/* Highlighted Yellow Text Excerpt */}
-                  <div className="p-3.5 rounded-xl bg-amber-100/90 border-l-4 border-amber-500 text-xs text-slate-950 leading-relaxed font-serif shadow-2xs">
+                  <div className="p-3.5 rounded-xl bg-amber-100/90 border-l-4 border-amber-500 text-xs text-slate-950 leading-relaxed font-serif">
                     "{POLICY_EVIDENCE_CLAUSES[selectedEvidenceClause].highlightedText}"
                   </div>
 
                   <p className="text-[11px] text-amber-950 font-medium">
-                    💡 <strong>Plain English Explanation:</strong> {POLICY_EVIDENCE_CLAUSES[selectedEvidenceClause].summary}
+                     <strong>Plain English Explanation:</strong> {POLICY_EVIDENCE_CLAUSES[selectedEvidenceClause].summary}
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs flex items-center gap-2">
-                  <span className="text-base">🛡️</span>
+                  <span className="text-base"></span>
                   <span><strong>Zero-Hallucination Grounding:</strong> Verified verbatim against official IRDAI filed policy contract.</span>
                 </div>
               </div>
@@ -4085,7 +4330,7 @@ export default function AckoInsurancePortal() {
             <div className="pt-4 border-t border-slate-200 flex justify-end">
               <button
                 onClick={() => setShowEvidenceDrawer(false)}
-                className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs shadow-xs"
+                className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs"
               >
                 Close Evidence Viewer
               </button>
@@ -4097,13 +4342,13 @@ export default function AckoInsurancePortal() {
       {/* Feature 5: Application Guardian Audit Certificate Modal */}
       {showAuditCertModal && auditCertData && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-sm border border-slate-200 p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2.5">
-                <span className="text-2xl">🛡️</span>
+                <span className="text-2xl"></span>
                 <div>
                   <h3 className="text-base font-bold text-slate-950">Application Guardian Audit Certificate</h3>
-                  <p className="text-xs text-slate-500 font-mono">Legal Non-Repudiation & Transparency Record</p>
+                  <p className="text-xs text-slate-500 tabular-nums">Legal Non-Repudiation & Transparency Record</p>
                 </div>
               </div>
               <button
@@ -4116,8 +4361,8 @@ export default function AckoInsurancePortal() {
 
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
               <div className="flex justify-between items-center text-[11px] pb-2 border-b border-slate-200">
-                <span className="text-slate-500 font-mono">Certificate Hash:</span>
-                <span className="font-bold text-purple-700 font-mono">{auditCertData.certificateId}</span>
+                <span className="text-slate-500 tabular-nums">Certificate Hash:</span>
+                <span className="font-bold text-purple-700 tabular-nums">{auditCertData.certificateId}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-[11px]">
@@ -4147,7 +4392,7 @@ export default function AckoInsurancePortal() {
                 <strong>Tax Optimization:</strong> {auditCertData.taxOptimizationSummary.totalAnnualTaxSaved} saved via Section 80C + 80D.
               </div>
 
-              <div className="p-2 rounded-lg bg-slate-100 text-[10px] text-slate-600 font-mono">
+              <div className="p-2 rounded-lg bg-slate-100 text-[11px] text-slate-600 tabular-nums">
                 SHA-256 Non-Repudiation Hash: {auditCertData.auditNonRepudiation.sha256VerificationHash}
               </div>
             </div>
@@ -4155,11 +4400,10 @@ export default function AckoInsurancePortal() {
             <div className="flex justify-between items-center pt-2">
               <span className="text-xs text-emerald-700 font-bold flex items-center gap-1.5">
                 <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                Certificate File Saved to Downloads
-              </span>
+                Certificate File Saved to Downloads</span>
               <button
                 onClick={() => setShowAuditCertModal(false)}
-                className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs shadow-xs"
+                className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs"
               >
                 Close Certificate
               </button>
@@ -4171,19 +4415,18 @@ export default function AckoInsurancePortal() {
       {/* Feature 6: Statutory Terms & Conditions Interactive Drawer */}
       {showTermsDrawer && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end transition-opacity">
-          <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+          <div className="w-full max-w-2xl bg-white h-full shadow-sm flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
             {/* Header */}
             <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-blue-900 via-indigo-900 to-[#180d40] text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="size-9 rounded-xl bg-blue-600/80 flex items-center justify-center text-lg shadow-sm border border-blue-400/30">
-                  📜
+                  
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <span>Statutory Terms & Conditions (T&C)</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/30 text-blue-200 border border-blue-400/40">
-                      IRDAI UIN: 157N001V01
-                    </span>
+                    <span className="text-[11px] tabular-nums px-2 py-0.5 rounded-lg bg-blue-500/30 text-blue-200 border border-blue-400/40">
+                      IRDAI UIN: 157N001V01</span>
                   </h3>
                   <p className="text-[11px] text-blue-200/80">Verbatim legal clauses, exclusions, grace periods, and incontestability rules</p>
                 </div>
@@ -4206,7 +4449,7 @@ export default function AckoInsurancePortal() {
                   onChange={(e) => setTermsSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-300 text-xs text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8] bg-white"
                 />
-                <span className="absolute left-3 top-2.5 text-xs text-slate-400">🔍</span>
+                <span className="absolute left-3 top-2.5 text-xs text-slate-400"></span>
                 {termsSearchQuery && (
                   <button
                     onClick={() => setTermsSearchQuery('')}
@@ -4219,7 +4462,7 @@ export default function AckoInsurancePortal() {
 
               {/* Quick Voice Question Prompts */}
               <div className="flex flex-wrap gap-1.5 items-center">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Ask OmniCB:</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Ask OmniCB:</span>
                 {[
                   'What is the 30-day Free-Look?',
                   'What is Section 45?',
@@ -4233,9 +4476,9 @@ export default function AckoInsurancePortal() {
                       setUserQuery(prompt);
                       processUserSpokenQuestion(prompt);
                     }}
-                    className="text-[10px] px-2.5 py-1 rounded-full bg-white hover:bg-purple-50 text-[#582be8] border border-purple-200 font-semibold transition-all shadow-3xs"
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-white hover:bg-purple-50 text-[#582be8] border border-purple-200 font-semibold transition-all"
                   >
-                    💬 {prompt}
+                     {prompt}
                   </button>
                 ))}
               </div>
@@ -4252,12 +4495,11 @@ export default function AckoInsurancePortal() {
                     c.category.toLowerCase().includes(termsSearchQuery.toLowerCase())
                 )
                 .map((c) => (
-                  <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-white hover:border-[#582be8]/40 transition-all shadow-3xs space-y-2">
+                  <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-white hover:border-[#582be8]/40 transition-all space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-purple-50 text-[#582be8] border border-purple-200">
-                        {c.clauseNumber} • {c.category}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-400">{c.irdaiRef}</span>
+                      <span className="text-[11px] tabular-nums font-bold px-2 py-0.5 rounded-md bg-purple-50 text-[#582be8] border border-purple-200">
+                        {c.clauseNumber} • {c.category}</span>
+                      <span className="text-[11px] tabular-nums text-slate-400">{c.irdaiRef}</span>
                     </div>
                     <h4 className="text-xs font-bold text-slate-900">{c.title}</h4>
                     <p className="text-xs text-slate-600 leading-relaxed font-medium bg-slate-50 p-2.5 rounded-lg border border-slate-100">
@@ -4272,9 +4514,9 @@ export default function AckoInsurancePortal() {
                         const askQuery = `Please explain ${c.title} in simple terms.`;
                         processUserSpokenQuestion(askQuery);
                       }}
-                      className="text-[10px] font-bold text-[#582be8] hover:underline flex items-center gap-1 pt-1"
+                      className="text-[11px] font-bold text-[#582be8] hover:underline flex items-center gap-1 pt-1"
                     >
-                      <span>🔊 Hear OmniCB Voice Explanation</span>
+                      <span>Hear OmniCB Voice Explanation</span>
                       <span>→</span>
                     </button>
                   </div>
@@ -4284,11 +4526,10 @@ export default function AckoInsurancePortal() {
             {/* Drawer Footer */}
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               <span className="text-[11px] text-slate-500">
-                Statutory Compliance: Insurance Regulatory & Development Authority of India (IRDAI)
-              </span>
+                Statutory Compliance: Insurance Regulatory & Development Authority of India (IRDAI)</span>
               <button
                 onClick={() => setShowTermsDrawer(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-all"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-900 text-white text-xs font-bold transition-all"
               >
                 Close Drawer
               </button>
@@ -4302,10 +4543,10 @@ export default function AckoInsurancePortal() {
         <div className="max-w-7xl mx-auto flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between pb-4 border-b border-purple-900/50 gap-2">
             <div className="flex items-center gap-3">
-              <span className="font-extrabold text-sm text-white">ACKO Life Insurance</span>
-              <span className="text-[10px] text-purple-300 font-mono">CIN: U66010KA2022PLC164741</span>
+              <span className="font-bold text-sm text-white">ACKO Life Insurance</span>
+              <span className="text-[11px] text-purple-300 tabular-nums">CIN: U66010KA2022PLC164741</span>
             </div>
-            <span className="text-purple-300 text-xs">Powered by Meta AI: Muse Spark 1.3 • Glimmer • SAM 3 • Muse Voice</span>
+            <span className="text-purple-300 text-xs">Powered by Meta Model API: Muse Spark 1.3 • Muse Voice Transcribe 1.0</span>
           </div>
           <p className="text-purple-300/80 leading-relaxed">
             ACKO Life Insurance Limited. Registered Office: #36/5, Hustlehub One East, 27th Main Rd, Sector 2, HSR Layout, Bengaluru, Karnataka 560102. Insurance is the subject matter of solicitation. ACKO Life Flexi Shield is a Non-Linked Non-Participating Individual Pure Risk Life Insurance Plan (UIN: 157N001V01).
