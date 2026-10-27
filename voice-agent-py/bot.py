@@ -1,0 +1,329 @@
+"""CoverPilot voice agent (Pipecat).
+
+Pipeline:
+  transport.input -> RTVI -> Meta Muse Voice Transcribe (STT)
+    -> user aggregator (Silero VAD + Smart Turn v3 end-of-turn)
+    -> ScreenStateInjector -> Muse Spark (OpenAI-compatible, streamed)
+    -> ActionMarkerFilter -> WonderVerifier -> Google TTS -> transport.output
+    -> assistant aggregator
+
+Run locally (serves the WebRTC offer endpoint and a prebuilt test UI on :7860):
+  uv run bot.py -t webrtc
+"""
+
+from __future__ import annotations
+
+import json
+import os
+
+from loguru import logger
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.frames.frames import InterruptionWorkerFrame, LLMMessagesAppendFrame, TTSSpeakFrame
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
+from pipecat.processors.frameworks.rtvi.observer import RTVIObserver, RTVIObserverParams
+from pipecat.processors.frameworks.rtvi.frames import RTVIServerMessageFrame
+from pipecat.processors.frameworks.rtvi.processor import RTVIProcessor
+from pipecat.runner.types import RunnerArguments
+from pipecat.runner.utils import create_transport
+from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.transports.base_transport import BaseTransport, TransportParams
+
+from coverpilot.config import Settings
+from coverpilot.google_tts import GoogleRestTTSService
+from coverpilot.knowledge import KnowledgeBase
+from coverpilot.memory import MemoryStore, MemoryWriter
+from coverpilot.meta_stt import MetaRealtimeSTTService
+from coverpilot.processors import AckProcessor, ActionMarkerFilter, ScreenStateInjector, WonderVerifier
+from coverpilot.prompt import build_system_prompt
+from coverpilot.session import ACCENTS, LANGS, LANGUAGE_BIAS, PERSONAS, SessionState, voice_for
+
+AUDIO_IN_RATE = 16000  # Silero + Smart Turn need 16 kHz
+AUDIO_OUT_RATE = 24000
+
+KNOWLEDGE = KnowledgeBase()  # loaded once per process
+MEMORY = MemoryStore()
+
+WELCOME = {
+    "en": "Welcome! Your secure live session is connected. I can see your proposal form. Start with your full legal name, or ask me anything.",
+    "hi": "नमस्ते! सुरक्षित लाइव सत्र जुड़ गया है। मैं आपका फॉर्म देख रहा हूँ। कृपया अपना पूरा नाम बताएं, या कोई भी प्रश्न पूछें।",
+    "mr": "नमस्कार! सुरक्षित लाइव्ह सत्र सुरू झाले आहे. मी तुमचा अर्ज पाहत आहे. कृपया तुमचे पूर्ण नाव सांगा किंवा कोणताही प्रश्न विचारा.",
+}
+
+
+def build_processors(settings: Settings, session: SessionState, *, sample_rate_in: int = AUDIO_IN_RATE, sample_rate_out: int = AUDIO_OUT_RATE):
+    """Create the services and processors shared by the runner bot and the offline harness."""
+    stt = MetaRealtimeSTTService(
+        api_key=settings.meta_api_key,
+        model=settings.transcribe_model,
+        url=settings.meta_asr_url,
+        language_bias=LANGUAGE_BIAS[session.lang],
+        sample_rate=sample_rate_in,
+    )
+    llm = OpenAILLMService(
+        api_key=settings.meta_api_key,
+        base_url=settings.meta_base_url,
+        settings=OpenAILLMService.Settings(
+            model=settings.spark_model,
+            temperature=0.2,
+            extra={"reasoning_effort": settings.reasoning_effort},
+        ),
+    )
+    lang_code, voice = voice_for(session.persona, session.lang, session.accent)
+    tts = GoogleRestTTSService(api_key=settings.google_tts_api_key, voice=voice, language_code=lang_code, sample_rate=sample_rate_out)
+
+    context = LLMContext([{"role": "system", "content": build_system_prompt(session.lang, session.accent, settings.spark_model)}])
+    aggregators = LLMContextAggregatorPair(
+        context,
+        user_params=LLMUserAggregatorParams(
+            # Silero VAD on 16 kHz input; end-of-turn is decided by Pipecat's default
+            # Smart Turn v3 strategy (UserTurnStrategies default), not by a fixed silence.
+            # start_secs 0.4: an interruption needs ~400 ms of confident speech, so short
+            # echo blips of the bot's own voice from the speakers do not barge in.
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(confidence=0.8, start_secs=0.4, stop_secs=0.2, min_volume=0.6)),
+            # If Smart Turn keeps judging the turn incomplete, hand it over after this much silence.
+            user_turn_stop_timeout=2.0,
+            # A turn with no transcript (echo, cough, click) is dropped instead of asking Spark to
+            # answer nothing, which produced "Sorry, I missed that" loops.
+            empty_user_turn=None,
+        ),
+    )
+    verifier = WonderVerifier(session, settings)
+    memory_writer = MemoryWriter(MEMORY, api_key=settings.meta_api_key, base_url=settings.meta_base_url, model=settings.spark_model)
+
+    async def on_turn_complete(spoken: str):
+        async def on_saved(added, facts, summary):
+            session.memory_text = MemoryStore.render(MEMORY.load(session.customer_id)) if session.customer_id else ""
+            await actions.push_frame(RTVIServerMessageFrame(data={"type": "memory_updated", "added": added, "facts": facts, "summary": summary}))
+
+        memory_writer.schedule(session.customer_id, session.last_user_text, spoken, on_saved)
+
+    actions = ActionMarkerFilter(session, on_action=verifier.verify, on_turn_complete=on_turn_complete)
+    injector = ScreenStateInjector(session, settings, kb=KNOWLEDGE)
+    ack = AckProcessor(session, settings, downstream=actions)
+    return stt, llm, tts, context, aggregators, injector, ack, actions, verifier
+
+
+def load_customer_memory(session: SessionState, customer_id: str | None) -> dict:
+    session.customer_id = customer_id or None
+    memory = MEMORY.load(customer_id) if customer_id else {"facts": [], "summary": ""}
+    session.memory_text = MemoryStore.render(memory)
+    return memory
+
+
+async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None = None, *, lang: str = "en", persona: str = "veena", accent: str = "in", customer_id: str | None = None, auto_welcome: bool = True):
+    settings = Settings.load()
+    session = SessionState(lang=lang, persona=persona, accent=accent)
+    memory = load_customer_memory(session, customer_id)
+    stt, llm, tts, context, aggregators, injector, ack, actions, verifier = build_processors(settings, session)
+    rtvi = RTVIProcessor()
+
+    pipeline = Pipeline(
+        [
+            transport.input(),
+            rtvi,
+            stt,
+            aggregators.user(),
+            injector,
+            ack,
+            llm,
+            actions,
+            verifier,
+            tts,
+            transport.output(),
+            aggregators.assistant(),
+        ]
+    )
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(
+            allow_interruptions=True,
+            enable_metrics=True,
+            enable_usage_metrics=False,
+            audio_in_sample_rate=AUDIO_IN_RATE,
+            audio_out_sample_rate=AUDIO_OUT_RATE,
+        ),
+        # Raw LLM text is not sent: ActionMarkerFilter sends the cleaned text (no <<ACTION>> tail)
+        # as agent_start/agent_text/agent_done server messages instead.
+        observers=[RTVIObserver(rtvi, params=RTVIObserverParams(bot_llm_enabled=False))],
+    )
+
+    @rtvi.event_handler("on_client_ready")
+    async def on_client_ready(rtvi_proc):
+        await rtvi_proc.set_bot_ready(
+            about={
+                "sttModel": settings.transcribe_model,
+                "llmModel": settings.spark_model,
+                "reasoningEffort": settings.reasoning_effort,
+                "ttsVoice": tts.voice,
+                "turnDetection": "pipecat-smart-turn-v3",
+                "vad": "silero",
+                "knowledgeChunks": len(KNOWLEDGE.chunks),
+                "memoryFacts": len(memory.get("facts", [])),
+            }
+        )
+        if memory.get("facts") or memory.get("summary"):
+            await rtvi_proc.send_server_message({"type": "memory", **memory})
+        if auto_welcome:  # the web app may sequence its own greeting first and then ask via "speak"
+            await task.queue_frames([TTSSpeakFrame(text=WELCOME.get(session.lang, WELCOME["en"]))])
+
+    @rtvi.event_handler("on_client_message")
+    async def on_client_message(rtvi_proc, msg):
+        kind = msg.type
+        data = msg.data if isinstance(msg.data, dict) else {}
+        if kind not in ("screen_state", "screenshot_chunk"):
+            logger.debug(f"[client] {kind}: {str(data)[:120]}")
+        try:
+            if kind == "screen_state":
+                state = data.get("state")
+                if isinstance(state, dict) and len(json.dumps(state)) <= 20000:
+                    session.screen_state = state
+            elif kind == "screenshot":
+                url = data.get("dataUrl")
+                if isinstance(url, str) and url.startswith("data:image/") and len(url) < 2_000_000:
+                    session.set_screenshot(url)
+            elif kind == "screenshot_chunk":
+                # The WebRTC data channel caps a message at 64 KB, so the browser sends the JPEG
+                # data URL in pieces: {id, index, total, data}.
+                sid, idx, total, part = str(data.get("id") or ""), int(data.get("index", -1)), int(data.get("total", 0)), data.get("data")
+                if sid and 0 <= idx < total <= 400 and isinstance(part, str) and len(part) <= 65536:
+                    entry = session.screenshot_chunks.setdefault(sid, {"total": total, "parts": {}})
+                    entry["parts"][idx] = part
+                    if len(entry["parts"]) == total:
+                        url = "".join(entry["parts"][i] for i in range(total))
+                        session.screenshot_chunks.clear()
+                        if url.startswith("data:image/") and len(url) < 2_000_000:
+                            session.set_screenshot(url)
+                    elif len(session.screenshot_chunks) > 3:
+                        session.screenshot_chunks.pop(next(iter(session.screenshot_chunks)))
+            elif kind == "interrupt":
+                await task.queue_frames([InterruptionWorkerFrame()])
+            elif kind == "text":
+                text = str(data.get("text") or "").strip()
+                if text:
+                    session.turn_source = "text"
+                    await task.queue_frames([LLMMessagesAppendFrame(messages=[{"role": "user", "content": text}], run_llm=True)])
+            elif kind == "speak":
+                text = str(data.get("text") or "").strip()
+                if text:
+                    await task.queue_frames([TTSSpeakFrame(text=text[:1200])])
+            elif kind == "set_voice":
+                if data.get("persona") in PERSONAS:
+                    session.persona = data["persona"]
+                if data.get("accent") in ACCENTS:
+                    session.accent = data["accent"]
+                tts.set_voice(*voice_for(session.persona, session.lang, session.accent))
+            elif kind == "set_customer":
+                mem = load_customer_memory(session, str(data.get("customerId") or "").strip()[:64] or None)
+                await rtvi_proc.send_server_message({"type": "memory", **mem})
+            elif kind == "forget_me":
+                if session.customer_id:
+                    MEMORY.forget(session.customer_id)
+                    session.memory_text = ""
+                await rtvi_proc.send_server_message({"type": "memory", "facts": [], "summary": ""})
+            elif kind == "set_language":
+                if data.get("lang") in LANGS:
+                    session.lang = data["lang"]
+                    tts.set_voice(*voice_for(session.persona, session.lang, session.accent))
+                    await stt.set_language_bias(LANGUAGE_BIAS[session.lang])
+                    # Refresh the system prompt immediately so Spark replies in the new language
+                    # on this very turn rather than the next one.
+                    new_system = build_system_prompt(session.lang, session.accent, settings.spark_model)
+                    if context.messages and context.messages[0].get("role") == "system":
+                        context.messages[0]["content"] = new_system
+                    else:
+                        context.messages.insert(0, {"role": "system", "content": new_system})
+            await rtvi_proc.send_server_response(msg, {"ok": True})
+        except Exception as e:  # keep the session alive on bad client messages
+            logger.exception("client message failed")
+            await rtvi_proc.send_error_response(msg, str(e))
+
+    @transport.event_handler("on_client_disconnected")
+    async def on_client_disconnected(_transport, _client):
+        logger.info("Client disconnected")
+        await task.cancel()
+
+    runner = PipelineRunner(handle_sigint=runner_args.handle_sigint if runner_args else False)
+    await runner.run(task)
+
+
+async def bot(runner_args: RunnerArguments):
+    """Entry point for Pipecat's development runner (`uv run bot.py -t webrtc`)."""
+    transport_params = {
+        "webrtc": lambda: TransportParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            audio_in_sample_rate=AUDIO_IN_RATE,
+            audio_out_sample_rate=AUDIO_OUT_RATE,
+        ),
+    }
+    transport = await create_transport(runner_args, transport_params)
+    body = getattr(runner_args, "body", None) or {}
+    logger.info(f"[session] body: {body}")
+    await run_bot(
+        transport,
+        runner_args,
+        lang=body.get("lang", os.getenv("COVERPILOT_LANG", "en")),
+        persona=body.get("persona", "veena"),
+        accent=body.get("accent", "in"),
+        customer_id=body.get("customerId"),
+        auto_welcome=body.get("autoWelcome", True) is not False,
+    )
+
+
+def _default_ice_servers() -> str:
+    """ICE servers for the bot's own peer connection, from the shared env
+    (TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL, same values /api/ice-servers
+    gives the browser). Without them the bot only offers host candidates."""
+    servers: list[dict] = [{"urls": "stun:stun.l.google.com:19302"}]
+    urls = [u.strip() for u in (os.getenv("TURN_URLS") or "").split(",") if u.strip()]
+    if urls:
+        entry: dict = {"urls": urls[0] if len(urls) == 1 else urls}
+        if os.getenv("TURN_USERNAME"):
+            entry["username"] = os.getenv("TURN_USERNAME")
+        if os.getenv("TURN_CREDENTIAL"):
+            entry["credential"] = os.getenv("TURN_CREDENTIAL")
+        servers.append(entry)
+    return json.dumps(servers)
+
+
+def _patch_offer_request_model() -> None:
+    """Pipecat 1.14's /api/offer body model is a plain dataclass, so FastAPI drops the
+    camelCase ``requestData`` key that @pipecat-ai/small-webrtc-transport sends before
+    the runner's snake_case shim can rename it, and the bot sees an empty body. Swap in
+    a pydantic model that accepts both spellings; the handler only reads attributes."""
+    from typing import Any as _Any
+
+    from pydantic import BaseModel, ConfigDict, Field
+
+    import pipecat.transports.smallwebrtc.request_handler as rh
+
+    class SmallWebRTCRequest(BaseModel):
+        model_config = ConfigDict(populate_by_name=True, extra="ignore")
+        sdp: str
+        type: str
+        pc_id: str | None = None
+        restart_pc: bool | None = None
+        request_data: _Any | None = Field(default=None, alias="requestData")
+
+        @classmethod
+        def from_dict(cls, data: dict):
+            return cls.model_validate(data)
+
+    rh.SmallWebRTCRequest = SmallWebRTCRequest
+
+
+if __name__ == "__main__":
+    _patch_offer_request_model()
+    from pipecat.runner.run import main
+
+    # coverpilot.config has already loaded .env and ../omni_browse/.env.local.
+    os.environ.setdefault("PIPECAT_ICE_SERVERS", _default_ice_servers())
+    main()
