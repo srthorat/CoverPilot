@@ -391,6 +391,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   });
   const [showAgentView, setShowAgentView] = useState<boolean>(true);
   const [showTaxBreakdownWidget, setShowTaxBreakdownWidget] = useState<boolean>(true);
+  const [showSessionControls, setShowSessionControls] = useState<boolean>(false);
   const [activeWhyAskField, setActiveWhyAskField] = useState<string | null>(null);
 
   // Web Audio chime to ensure immediate audible feedback on modern browsers
@@ -3674,6 +3675,26 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               )}
             </div>
 
+            {/* Collapsible session controls: sharing, control, language, voice, accent */}
+            <button
+              type="button"
+              onClick={() => setShowSessionControls((v) => !v)}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] transition-all"
+            >
+              <span className="font-bold text-slate-700">Session controls</span>
+              <span className="flex items-center gap-2 text-slate-500">
+                <span className="truncate">
+                  {selectedLanguage === 'en' ? 'English' : selectedLanguage === 'hi' ? 'हिंदी' : 'मराठी'} · {selectedVoicePersona.charAt(0).toUpperCase() + selectedVoicePersona.slice(1)}
+                  {selectedLanguage === 'en' ? ` · ${englishAccent === 'us' ? 'US' : 'Indian'}` : ''}
+                  {isSharingPaused ? ' · sharing paused' : ''}
+                  {screenControlStatus === 'granted' ? ' · control on' : ''}
+                </span>
+                <span>{showSessionControls ? '▾' : '▸'}</span>
+              </span>
+            </button>
+
+            {showSessionControls && (
+            <div className="flex flex-col gap-2">
             {/* Essential Screen Controls Row */}
             <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
               {/* Screen Share Toggle */}
@@ -3787,6 +3808,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 ))}
               </div>
             </div>
+            </div>
+            )}
 
             {/* Two-Way Conversational Voice Mic Button */}
             <div className="flex flex-col gap-2">
