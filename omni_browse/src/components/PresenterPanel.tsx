@@ -16,6 +16,32 @@ export interface TurnRecord {
     reason?: string;
     ms?: number;
   };
+  ackMs?: number | null;
+  actions?: string[];
+}
+
+export function describeFieldAction(a: Record<string, any>): string {
+  switch (a.type) {
+    case 'fill':
+      return `fill ${a.field} = "${a.value}"`;
+    case 'select':
+      return `${a.value ? 'select' : 'deselect'} ${a.field}`;
+    case 'ladder':
+      return `ladder ${a.field} → ${String(a.value)}`;
+    case 'navigate':
+      return `navigate → step ${a.step}`;
+    case 'cover':
+      return `base cover → ${a.value}`;
+    case 'ui':
+      return `ui: ${a.action}`;
+    case 'nominate':
+      return `nominate ${Object.entries(a)
+        .filter(([k]) => k !== 'type')
+        .map(([k, v]) => `${k}=${v}`)
+        .join(', ')}`;
+    default:
+      return JSON.stringify(a).slice(0, 80);
+  }
 }
 
 interface Props {
@@ -104,9 +130,30 @@ export function PresenterPanel({ turns, memoryFacts, agentState }: Props) {
               </div>
             )}
 
+            {/* Form actions the agent executed */}
+            {latest.actions && latest.actions.length > 0 && (
+              <div className="mb-2">
+                <div className="text-[10px] text-emerald-400 mb-1">⚡ Form actions executed ({latest.actions.length})</div>
+                <div className="space-y-1">
+                  {latest.actions.map((a, i) => (
+                    <div key={i} className="bg-[#0f2a1e] border border-emerald-900/50 rounded px-2 py-1 text-[11px] text-emerald-200">
+                      {a}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Latency tiles */}
-            {(latest.ttftMs != null || latest.totalMs != null) && (
+            {(latest.ackMs != null || latest.ttftMs != null || latest.totalMs != null) && (
               <div className="flex gap-2 mb-2">
+                {latest.ackMs != null && (
+                  <div className="bg-[#1a1035] rounded px-2 py-1.5 flex-1 text-center">
+                    <div className="text-[9px] text-slate-400 uppercase">Ack</div>
+                    <div className="text-[15px] font-bold text-yellow-400">{latest.ackMs}</div>
+                    <div className="text-[9px] text-slate-500">ms</div>
+                  </div>
+                )}
                 {latest.ttftMs != null && (
                   <div className="bg-[#1a1035] rounded px-2 py-1.5 flex-1 text-center">
                     <div className="text-[9px] text-slate-400 uppercase">TTFT</div>

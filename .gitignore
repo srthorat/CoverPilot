@@ -37,3 +37,4 @@ pnpm-debug.log*
 
 # Superpowers / system generated
 .superpowers/
+.gstack/

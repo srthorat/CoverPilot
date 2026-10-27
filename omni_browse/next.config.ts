@@ -3,10 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
-  // /presenter → /?presenter for the split presenter view
-  async redirects() {
-    return [{ source: "/presenter", destination: "/?presenter", permanent: false }];
-  },
   // The Python voice agent (voice-agent-py, Pipecat runner) serves the WebRTC offer
   // endpoint; proxying it keeps the browser same-origin (no CORS, works behind HTTPS).
   async rewrites() {
