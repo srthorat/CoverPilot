@@ -63,7 +63,12 @@ class ScreenStateInjector(FrameProcessor):
             await self.push_frame(frame, direction)
             if self._session.last_user_text:
                 source, self._session.turn_source = self._session.turn_source, "voice"
-                await self.push_frame(RTVIServerMessageFrame(data={"type": "user_turn", "text": self._session.last_user_text, "source": source}))
+                await self.push_frame(RTVIServerMessageFrame(data={
+                    "type": "user_turn",
+                    "text": self._session.last_user_text,
+                    "source": source,
+                    "kbChunks": self._session.last_kb_chunks,
+                }))
             return
         await self.push_frame(frame, direction)
 
@@ -97,7 +102,9 @@ class ScreenStateInjector(FrameProcessor):
         logger.info(f"[turn] user ({s.turn_source}): {text!r}")
         self._decorated[id(last)] = text
         # Knowledge retrieved for this turn only.
-        kb_ctx = self._kb.context_for(text) if self._kb else ""
+        hits = self._kb.search(text, k=4) if self._kb else []
+        kb_ctx = self._kb.hits_to_context(hits) if hits else ""
+        s.last_kb_chunks = [{"label": chunk.label, "score": round(score, 2)} for score, chunk in hits]
         decorated = f"{text}\n\n[Relevant knowledge]\n{kb_ctx}" if kb_ctx else text
         shot = s.fresh_screenshot()
         if shot:

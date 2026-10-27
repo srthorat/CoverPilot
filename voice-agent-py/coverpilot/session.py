@@ -46,6 +46,7 @@ class SessionState:
     turn_started_at: float = 0.0  # when the current user turn was handed to Spark
     turn_source: str = "voice"  # "voice" or "text" for the next user turn
     screenshot_chunks: dict[str, Any] = field(default_factory=dict)  # id -> {total, parts}
+    last_kb_chunks: list[dict] = field(default_factory=list)  # [{label, score}] for current turn
 
     def set_screenshot(self, data_url: str) -> None:
         self.screenshot_data_url = data_url

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent } from '@/lib/voice-client';
+import { PresenterPanel, type TurnRecord } from '@/components/PresenterPanel';
 import { toJpeg } from 'html-to-image';
 
 // A PII region found by Meta SAM 3.1 (see /api/sam)
@@ -379,6 +380,8 @@ export default function AckoInsurancePortal() {
   const formBodyRef = useRef<HTMLDivElement | null>(null);
   // Customer-facing by default; model names, timings and internals only when this is on.
   const [showDevPanel, setShowDevPanel] = useState<boolean>(false);
+  const [turns, setTurns] = useState<TurnRecord[]>([]);
+  const [presenterMode, setPresenterMode] = useState<boolean>(false);
   const devRef = useRef<boolean>(false);
   // "What the agent sees": the last frame + state actually sent to Muse Spark.
   const [agentView, setAgentView] = useState<{ frameDataUrl: string | null; sentAt: number | null; step: number | null }>({
@@ -835,6 +838,10 @@ export default function AckoInsurancePortal() {
       case 'user_turn':
         setVoiceTranscriptLive('');
         setVoiceTelemetry((t) => ({ ...t, asrTurnMs: ev.asrTurnMs }));
+        setTurns((prev) => [
+          ...prev.slice(-19),
+          { turnId: ev.turnId, userText: ev.text, source: ev.source, kbChunks: ev.kbChunks },
+        ]);
         setChatMessages((prev) => [
           ...prev,
           {
@@ -871,6 +878,13 @@ export default function AckoInsurancePortal() {
           return (i < 0 ? [...prev, entry] : prev.map((v, k) => (k === i ? entry : v))).slice(-6);
         });
         if (ev.status !== 'pending') {
+          setTurns((prev) => {
+            if (!prev.length) return prev;
+            const last = prev[prev.length - 1];
+            return [...prev.slice(0, -1), { ...last, wonder: { status: ev.status, actionTitle: ev.actionTitle, reason: ev.reason, ms: ev.ms } }];
+          });
+        }
+        if (ev.status !== 'pending') {
           if (devRef.current) {
             const verb =
               ev.status === 'approve' ? 'Muse Wonder approved' : ev.status === 'amend' ? 'Muse Wonder amended' : ev.status === 'reject' ? 'Muse Wonder rejected' : 'Muse Wonder could not verify';
@@ -900,6 +914,11 @@ export default function AckoInsurancePortal() {
           reasoningEffort: ev.telemetry?.reasoningEffort ?? t.reasoningEffort,
           lastError: ev.telemetry?.error ?? null,
         }));
+        setTurns((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          return [...prev.slice(0, -1), { ...last, agentText: ev.text || last.agentText, ttftMs: ev.telemetry?.ttftMs ?? null, totalMs: ev.telemetry?.totalMs ?? null }];
+        });
         break;
       case 'memory':
         setMemoryFacts(ev.facts || []);
@@ -1517,6 +1536,13 @@ export default function AckoInsurancePortal() {
   // Architectural Inspector State
   const [showArchInspector, setShowArchInspector] = useState<boolean>(false);
 
+  // Detect ?presenter query param to enable split presenter view
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setPresenterMode(new URLSearchParams(window.location.search).has('presenter'));
+    }
+  }, []);
+
   // Keyboard shortcut listener: ESC to instantly reclaim screen control
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1814,7 +1840,7 @@ export default function AckoInsurancePortal() {
 
   const currentGuidanceItem = GUIDANCE_CONTENT[activeGuidanceKey] || GUIDANCE_CONTENT['field-full-name'];
 
-  return (
+  const pageContent = (
     <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
       
       {/* 1. Authentic Top Regulatory Strip with Language Picker */}
@@ -4556,4 +4582,15 @@ export default function AckoInsurancePortal() {
 
     </div>
   );
+
+  if (presenterMode) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-[#0d0921]">
+        <div className="flex-1 min-w-0 overflow-y-auto">{pageContent}</div>
+        <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} />
+      </div>
+    );
+  }
+
+  return pageContent;
 }

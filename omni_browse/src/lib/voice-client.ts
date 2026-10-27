@@ -19,7 +19,7 @@ export type AgentEvent =
   | { type: 'state'; state: AgentState }
   | { type: 'level'; rms: number; gated: boolean }
   | { type: 'user_transcript'; text: string; final: boolean; turnId: number | null }
-  | { type: 'user_turn'; text: string; turnId: number; source: 'voice' | 'text'; asrTurnMs: number | null }
+  | { type: 'user_turn'; text: string; turnId: number; source: 'voice' | 'text'; asrTurnMs: number | null; kbChunks?: Array<{ label: string; score: number }> }
   | { type: 'agent_start'; turnId: number }
   | { type: 'agent_text'; delta: string }
   | { type: 'agent_ack'; text: string; ms?: number }
@@ -188,7 +188,7 @@ export class VoiceAgentClient {
           switch (data.type) {
             case 'user_turn':
               this.turnCounter += 1;
-              emit({ type: 'user_turn', text: String(data.text || ''), turnId: this.turnCounter, source: data.source === 'text' ? 'text' : 'voice', asrTurnMs: null });
+              emit({ type: 'user_turn', text: String(data.text || ''), turnId: this.turnCounter, source: data.source === 'text' ? 'text' : 'voice', asrTurnMs: null, kbChunks: Array.isArray(data.kbChunks) ? data.kbChunks : undefined });
               emit({ type: 'state', state: 'thinking' });
               break;
             case 'agent_start':

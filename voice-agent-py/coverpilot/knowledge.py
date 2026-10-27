@@ -152,8 +152,11 @@ class KnowledgeBase:
         return scored[:k]
 
     def context_for(self, query: str, k: int = 4, max_chars: int = 2400) -> str:
+        return self.hits_to_context(self.search(query, k=k), max_chars=max_chars)
+
+    def hits_to_context(self, hits: list[tuple[float, "Chunk"]], max_chars: int = 2400) -> str:
         parts, used = [], 0
-        for score, chunk in self.search(query, k=k):
+        for _score, chunk in hits:
             block = f"[{chunk.label}]\n{chunk.text}"
             if used + len(block) > max_chars:
                 break
