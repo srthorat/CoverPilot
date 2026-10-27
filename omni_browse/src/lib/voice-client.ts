@@ -1,0 +1,367 @@
+// Browser side of the CoverPilot voice agent.
+//
+// Audio travels over WebRTC (Pipecat SmallWebRTC transport): the microphone goes
+// to the Python agent in voice-agent-py, which runs Meta Muse Voice Transcribe,
+// Silero VAD + Smart Turn end-of-turn detection, Muse Spark, Muse Wonder and
+// Google TTS, and the bot's voice comes back as a remote audio track. Browser
+// echo cancellation plus server-side VAD give real barge-in. Everything else
+// (form state, screenshots, typed questions, voice/language changes) is small
+// JSON on the WebRTC data channel using the RTVI message protocol.
+
+import { PipecatClient, type BotReadyData, type TranscriptData, type Participant, type RTVIMessage } from '@pipecat-ai/client-js';
+import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
+
+export type AgentState = 'listening' | 'thinking' | 'speaking';
+
+export type AgentEvent =
+  | { type: 'hello'; lang: string; sttModel: string; llmModel: string; reasoningEffort: string; ttsVoice?: string; about?: Record<string, any> }
+  | { type: 'ready'; sttModel: string; lang: string }
+  | { type: 'state'; state: AgentState }
+  | { type: 'level'; rms: number; gated: boolean }
+  | { type: 'user_transcript'; text: string; final: boolean; turnId: number | null }
+  | { type: 'user_turn'; text: string; turnId: number; source: 'voice' | 'text'; asrTurnMs: number | null }
+  | { type: 'agent_start'; turnId: number }
+  | { type: 'agent_text'; delta: string }
+  | { type: 'agent_ack'; text: string; ms?: number }
+  | { type: 'agent_sentence'; index: number; text: string; local?: boolean }
+  | { type: 'agent_audio_meta'; index: number; text: string; ttsMs: number; cached: boolean; voice: string | null; local?: boolean }
+  | { type: 'agent_local_done'; index: number }
+  | { type: 'action'; targetElementId: string | null; actionTitle: string; fieldAction: Record<string, any> | null; fieldActions?: Record<string, any>[] }
+  | { type: 'agent_done'; text: string; telemetry: AgentTelemetry }
+  | { type: 'agent_prefetch'; reason: string; step: number | null; ms: number; questions: string[] }
+  | {
+      type: 'action_verification';
+      id: string;
+      status: 'pending' | 'approve' | 'amend' | 'reject' | 'error';
+      model: string;
+      actionTitle: string;
+      reason?: string;
+      clause?: string | null;
+      amendedAction?: Record<string, any> | null;
+      ms?: number;
+    }
+  | { type: 'memory'; facts: string[]; summary: string; updated_at?: number | null }
+  | { type: 'memory_updated'; added: number; facts: string[]; summary?: string | null }
+  | { type: 'interrupt' }
+  | { type: 'error'; message: string }
+  | { type: 'closed'; code: number; reason: string };
+
+export type AgentAction = Extract<AgentEvent, { type: 'action' }>;
+
+export interface AgentTelemetry {
+  sttModel?: string;
+  llmModel?: string;
+  reasoningEffort?: string;
+  asrTurnMs?: number | null;
+  servedFrom?: string;
+  matchedQuestion?: string;
+  ackMs?: number | null;
+  screenshotAttached?: boolean;
+  ttftMs?: number | null;
+  totalMs?: number;
+  usage?: any;
+  error?: string;
+}
+
+export type VoicePersona = 'veena' | 'rishi' | 'nova' | 'aura';
+
+export type EnglishAccent = 'in' | 'us';
+
+export interface VoiceAgentClientOptions {
+  lang: 'en' | 'hi' | 'mr';
+  /** Google Cloud TTS persona (server maps it to a Chirp 3 HD voice in the session language). */
+  voice: VoicePersona;
+  /** Indian or American English; ignored for Hindi/Marathi. */
+  accent: EnglishAccent;
+  /** Stable id for cross-session memory; omit for a session with no memory. */
+  customerId?: string | null;
+  /** Let the agent speak its welcome as soon as it is ready (default true). */
+  autoWelcome?: boolean;
+  onEvent: (event: AgentEvent) => void;
+  /** Bot audio actually playing or not. */
+  onSpeaking?: (speaking: boolean) => void;
+}
+
+/** The Pipecat runner's offer endpoint, proxied by next.config (`/voice-agent/*` -> VOICE_AGENT_URL). */
+export const VOICE_AGENT_OFFER_URL = process.env.NEXT_PUBLIC_VOICE_AGENT_OFFER_URL || '/voice-agent/api/offer';
+
+// SCTP data-channel messages are capped at 64 KB by the Python peer; screenshots are split.
+const SCREENSHOT_CHUNK_CHARS = 12_000;
+
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+/** STUN + TURN from the server (`/api/ice-servers`); public STUN alone if that fails. */
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch('/api/ice-servers', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (Array.isArray(data?.iceServers) && data.iceServers.length) return data.iceServers as RTCIceServer[];
+  } catch (e) {
+    console.warn('ICE server lookup failed, using public STUN only', e);
+  }
+  return DEFAULT_ICE_SERVERS;
+}
+
+/* ------------------------------------------------------------------------ */
+
+export class VoiceAgentClient {
+  private opts: VoiceAgentClientOptions;
+  private client: PipecatClient | null = null;
+  private audioEl: HTMLAudioElement | null = null;
+  private stopped = false;
+  private ready = false;
+  private turnCounter = 0;
+  private speaking = false;
+  lang: 'en' | 'hi' | 'mr';
+
+  constructor(opts: VoiceAgentClientOptions) {
+    this.opts = opts;
+    this.lang = opts.lang;
+  }
+
+  get isOpen(): boolean {
+    return !!this.client && this.client.connected && this.ready;
+  }
+
+  setVoice(persona: VoicePersona, accent: EnglishAccent = this.opts.accent) {
+    this.opts.voice = persona;
+    this.opts.accent = accent;
+    this.send('set_voice', { persona, accent });
+  }
+
+  async start(): Promise<void> {
+    this.stopped = false;
+    const transport = new SmallWebRTCTransport({
+      iceServers: await fetchIceServers(),
+      waitForICEGathering: false,
+    });
+    const emit = (ev: AgentEvent) => {
+      if (!this.stopped) this.opts.onEvent(ev);
+    };
+    const setSpeaking = (on: boolean) => {
+      if (this.speaking === on) return;
+      this.speaking = on;
+      this.opts.onSpeaking?.(on);
+      emit({ type: 'state', state: on ? 'speaking' : 'listening' });
+    };
+
+    const client = new PipecatClient({
+      transport,
+      enableMic: true,
+      enableCam: false,
+      callbacks: {
+        onBotReady: (data: BotReadyData) => {
+          const about = (data.about || {}) as Record<string, any>;
+          this.ready = true;
+          emit({
+            type: 'hello',
+            lang: this.lang,
+            sttModel: String(about.sttModel || ''),
+            llmModel: String(about.llmModel || ''),
+            reasoningEffort: String(about.reasoningEffort || ''),
+            ttsVoice: about.ttsVoice ? String(about.ttsVoice) : undefined,
+            about,
+          });
+          emit({ type: 'ready', sttModel: String(about.sttModel || ''), lang: this.lang });
+        },
+        onTrackStarted: (track: MediaStreamTrack, participant?: Participant) => {
+          if (track.kind !== 'audio' || participant?.local) return;
+          this.attachBotAudio(track);
+        },
+        onUserTranscript: (data: TranscriptData) => {
+          emit({ type: 'user_transcript', text: data.text, final: data.final, turnId: null });
+        },
+        onUserStartedSpeaking: () => {
+          emit({ type: 'level', rms: 0.2, gated: false });
+        },
+        onUserStoppedSpeaking: () => {
+          emit({ type: 'state', state: 'thinking' });
+        },
+        onLocalAudioLevel: (level: number) => {
+          emit({ type: 'level', rms: level / 4, gated: false });
+        },
+        onBotStartedSpeaking: () => setSpeaking(true),
+        onBotStoppedSpeaking: () => setSpeaking(false),
+        onServerMessage: (data: any) => {
+          if (!data || typeof data.type !== 'string') return;
+          switch (data.type) {
+            case 'user_turn':
+              this.turnCounter += 1;
+              emit({ type: 'user_turn', text: String(data.text || ''), turnId: this.turnCounter, source: data.source === 'text' ? 'text' : 'voice', asrTurnMs: null });
+              emit({ type: 'state', state: 'thinking' });
+              break;
+            case 'agent_start':
+              emit({ type: 'agent_start', turnId: this.turnCounter });
+              break;
+            case 'agent_text':
+              emit({ type: 'agent_text', delta: String(data.delta || '') });
+              break;
+            case 'agent_done':
+              emit({ type: 'agent_done', text: String(data.text || ''), telemetry: data.telemetry || {} });
+              break;
+            case 'agent_ack':
+              emit({ type: 'agent_ack', text: String(data.text || ''), ms: data.ms });
+              break;
+            case 'action':
+            case 'action_verification':
+            case 'memory':
+            case 'memory_updated':
+            case 'interrupt':
+              emit(data as AgentEvent);
+              break;
+            default:
+              break;
+          }
+        },
+        onError: (msg: RTVIMessage) => {
+          const d = msg?.data as any;
+          let text: string;
+          if (typeof d === 'string') text = d;
+          else if (d && typeof (d.message ?? d.error) === 'string') text = d.message ?? d.error;
+          else {
+            try {
+              text = JSON.stringify(d).slice(0, 300);
+            } catch {
+              text = 'Voice agent error';
+            }
+          }
+          emit({ type: 'error', message: text });
+        },
+        onDisconnected: () => {
+          this.ready = false;
+          setSpeaking(false);
+          if (!this.stopped) emit({ type: 'closed', code: 1006, reason: 'disconnected' });
+        },
+      },
+    });
+    this.client = client;
+
+    try {
+      await client.initDevices();
+      // Direct SmallWebRTC offer (no /start step): the body is {sdp, type, requestData},
+      // and the runner hands requestData to the bot as its session body.
+      await client.connect({
+        webrtcRequestParams: {
+          endpoint: VOICE_AGENT_OFFER_URL,
+          requestData: {
+            lang: this.lang,
+            persona: this.opts.voice,
+            accent: this.opts.accent,
+            customerId: this.opts.customerId || null,
+            autoWelcome: this.opts.autoWelcome !== false,
+          },
+        },
+      });
+    } catch (err) {
+      this.stop();
+      throw err;
+    }
+  }
+
+  private attachBotAudio(track: MediaStreamTrack) {
+    if (!this.audioEl) {
+      const el = document.createElement('audio');
+      el.autoplay = true;
+      el.setAttribute('playsinline', 'true');
+      el.style.display = 'none';
+      document.body.appendChild(el);
+      this.audioEl = el;
+    }
+    this.audioEl.srcObject = new MediaStream([track]);
+    void this.audioEl.play().catch(() => {});
+  }
+
+  private send(type: string, data?: Record<string, unknown>) {
+    if (this.client && this.client.connected) {
+      try {
+        this.client.sendClientMessage(type, data ?? {});
+      } catch (e) {
+        console.warn('voice agent message failed', type, e);
+      }
+    }
+  }
+
+  /** Typed question through the same Spark turn pipeline as speech. */
+  sendText(text: string) {
+    this.send('text', { text });
+  }
+
+  sendScreenState(state: unknown) {
+    this.send('screen_state', { state });
+  }
+
+  /** JPEG data URL of the customer's viewport; attached to the next Spark turn for visual grounding. */
+  sendScreenshot(dataUrl: string) {
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const total = Math.ceil(dataUrl.length / SCREENSHOT_CHUNK_CHARS);
+    for (let i = 0; i < total; i++) {
+      this.send('screenshot_chunk', { id, index: i, total, data: dataUrl.slice(i * SCREENSHOT_CHUNK_CHARS, (i + 1) * SCREENSHOT_CHUNK_CHARS) });
+    }
+  }
+
+  setLanguage(lang: 'en' | 'hi' | 'mr') {
+    this.lang = lang;
+    this.send('set_language', { lang });
+  }
+
+  setCustomer(customerId: string | null) {
+    this.opts.customerId = customerId;
+    this.send('set_customer', { customerId: customerId || '' });
+  }
+
+  forgetMe() {
+    this.send('forget_me');
+  }
+
+  /**
+   * Speak a client-originated line (welcome, field guidance) through the agent's
+   * TTS, so the pipeline knows the bot is talking and barge-in applies to it too.
+   */
+  speakLocal(text: string, lang: 'en' | 'hi' | 'mr') {
+    this.send('speak', { text, lang });
+  }
+
+  /** User pressed stop while the agent was talking. */
+  interrupt() {
+    this.send('interrupt');
+  }
+
+  stop() {
+    this.stopped = true;
+    this.ready = false;
+    const client = this.client;
+    this.client = null;
+    if (client) void client.disconnect().catch(() => {});
+    if (this.audioEl) {
+      try {
+        this.audioEl.pause();
+        this.audioEl.srcObject = null;
+        this.audioEl.remove();
+      } catch {
+        /* ignore */
+      }
+      this.audioEl = null;
+    }
+    if (this.speaking) {
+      this.speaking = false;
+      this.opts.onSpeaking?.(false);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+
+/** Splits text into complete sentences, returning the unfinished tail. */
+export function takeSentences(buffer: string): { sentences: string[]; rest: string } {
+  const sentences: string[] = [];
+  let rest = buffer;
+  for (;;) {
+    const m = rest.match(/^([\s\S]*?[.!?।]+)\s+/);
+    if (!m) break;
+    const sentence = m[1].trim();
+    if (sentence.length > 1) sentences.push(sentence);
+    rest = rest.slice(m[0].length);
+  }
+  return { sentences, rest };
+}

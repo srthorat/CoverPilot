@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server.mjs",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_ENV=production node server.mjs",
     "lint": "eslint"
   },
   "dependencies": {
+    "@meta-sam/parser": "^0.1.0",
+    "@pipecat-ai/client-js": "1.15.0",
+    "@pipecat-ai/small-webrtc-transport": "1.11.1",
+    "html-to-image": "1.11.13",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
