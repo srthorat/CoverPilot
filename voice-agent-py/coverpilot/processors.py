@@ -104,7 +104,10 @@ class ScreenStateInjector(FrameProcessor):
         # Knowledge retrieved for this turn only.
         hits = self._kb.search(text, k=4) if self._kb else []
         kb_ctx = self._kb.hits_to_context(hits) if hits else ""
-        s.last_kb_chunks = [{"label": chunk.label, "score": round(score, 2)} for score, chunk in hits]
+        s.last_kb_chunks = [
+            {"label": chunk.label, "score": round(score, 2), "terms": self._kb.matched_terms(text, chunk)}
+            for score, chunk in hits
+        ]
         decorated = f"{text}\n\n[Relevant knowledge]\n{kb_ctx}" if kb_ctx else text
         shot = s.fresh_screenshot()
         if shot:

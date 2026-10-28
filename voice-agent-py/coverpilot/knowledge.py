@@ -151,6 +151,19 @@ class KnowledgeBase:
         scored.sort(key=lambda x: -x[0])
         return scored[:k]
 
+    def matched_terms(self, query: str, chunk: "Chunk") -> list[str]:
+        tf = self._tf[self.chunks.index(chunk)]
+        out: list[str] = []
+        for w in (w.lower() for w in _TOKEN.findall(query)):
+            if w in _STOP or len(w) < 2:
+                continue
+            for t in [w, _stem(w), *_SYNONYMS.get(w, [])]:
+                if t in tf:
+                    shown = t if t == w else f"{w}→{t}"
+                    if shown not in out:
+                        out.append(shown)
+        return out
+
     def context_for(self, query: str, k: int = 4, max_chars: int = 2400) -> str:
         return self.hits_to_context(self.search(query, k=k), max_chars=max_chars)
 
