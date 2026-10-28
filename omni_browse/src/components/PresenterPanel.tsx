@@ -1,12 +1,31 @@
 'use client';
 
 import React from 'react';
+import type { KbChunk } from '@/lib/voice-client';
+
+export interface SessionStats {
+  interrupts: number;
+  approve: number;
+  amend: number;
+  reject: number;
+  error: number;
+}
+
+export interface TurnMarks {
+  speechEnd?: number;
+  ack?: number;
+  firstToken?: number;
+  firstAudio?: number;
+  verified?: number;
+}
 
 export interface TurnRecord {
   turnId: number;
   userText: string;
   source: 'voice' | 'text';
-  kbChunks?: Array<{ label: string; score: number }>;
+  kbChunks?: KbChunk[];
+  marks?: TurnMarks;
+  memoryAdded?: string[];
   agentText?: string;
   ttftMs?: number | null;
   totalMs?: number | null;
@@ -48,6 +67,37 @@ interface Props {
   turns: TurnRecord[];
   memoryFacts: string[];
   agentState: 'listening' | 'thinking' | 'speaking';
+  stats: SessionStats;
+}
+
+const TIMELINE: Array<{ key: keyof TurnMarks; label: string; color: string }> = [
+  { key: 'ack', label: 'Ack', color: 'bg-yellow-400' },
+  { key: 'firstToken', label: 'First token', color: 'bg-green-400' },
+  { key: 'firstAudio', label: 'First audio', color: 'bg-blue-400' },
+  { key: 'verified', label: 'Wonder verified', color: 'bg-purple-400' },
+];
+
+function Timeline({ marks }: { marks: TurnMarks }) {
+  const origin = marks.speechEnd;
+  if (origin == null) return null;
+  const offsets = TIMELINE.map((s) => ({ ...s, ms: marks[s.key] != null ? (marks[s.key] as number) - origin : null }));
+  const scale = Math.max(1000, ...offsets.map((o) => o.ms ?? 0));
+  return (
+    <div className="bg-[#1a1035] rounded-lg p-2.5 mb-2">
+      <div className="text-[10px] text-slate-400 mb-1.5">Turn timeline (from end of speech)</div>
+      <div className="space-y-1.5">
+        {offsets.map((o) => (
+          <div key={o.key} className="flex items-center gap-2 text-[10px]">
+            <span className="w-24 shrink-0 text-slate-300">{o.label}</span>
+            <div className="flex-1 h-2 rounded bg-[#0d0921] overflow-hidden">
+              {o.ms != null && <div className={`h-full ${o.color}`} style={{ width: `${Math.min(100, (o.ms / scale) * 100)}%` }} />}
+            </div>
+            <span className="w-14 shrink-0 text-right tabular-nums text-slate-200">{o.ms != null ? `${o.ms} ms` : '—'}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 const WONDER_COLOR: Record<string, string> = {
@@ -66,28 +116,45 @@ const WONDER_LABEL: Record<string, string> = {
   error: '! Error',
 };
 
-export function PresenterPanel({ turns, memoryFacts, agentState }: Props) {
+export function PresenterPanel({ turns, memoryFacts, agentState, stats }: Props) {
   const latest = turns[turns.length - 1] ?? null;
   const older = turns.slice(-6, -1).reverse();
+  const verdicts = stats.approve + stats.amend + stats.reject + stats.error;
 
   return (
     <div className="w-[400px] shrink-0 bg-[#0d0921] text-white flex flex-col overflow-hidden border-l border-purple-900/40 font-mono text-xs">
       {/* Header */}
-      <div className="px-4 py-3 bg-[#1a0f42] border-b border-purple-900/40 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-          <span className="font-bold text-purple-200 text-[11px] uppercase tracking-widest">Agent Internals</span>
+      <div className="px-4 py-3 bg-[#1a0f42] border-b border-purple-900/40">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+            <span className="font-bold text-purple-200 text-[11px] uppercase tracking-widest">Agent Internals</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                agentState === 'speaking'
+                  ? 'bg-purple-600 text-white'
+                  : agentState === 'thinking'
+                  ? 'bg-yellow-600/80 text-yellow-100'
+                  : 'bg-slate-700 text-slate-300'
+              }`}
+            >
+              {agentState === 'speaking' ? '🔊 Speaking' : agentState === 'thinking' ? '⚙ Thinking' : '🎙 Listening'}
+            </span>
+          </div>
         </div>
-        <div
-          className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-            agentState === 'speaking'
-              ? 'bg-purple-600 text-white'
-              : agentState === 'thinking'
-              ? 'bg-yellow-600/80 text-yellow-100'
-              : 'bg-slate-700 text-slate-300'
-          }`}
-        >
-          {agentState === 'speaking' ? '🔊 Speaking' : agentState === 'thinking' ? '⚙ Thinking' : '🎙 Listening'}
+        <div className="mt-2 flex items-center gap-1.5 text-[10px]">
+          <span className="px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 font-sans font-bold whitespace-nowrap">
+            🔒 PII never sent to the model
+          </span>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1.5 text-[10px]">
+          <span className="px-1.5 py-0.5 rounded bg-[#1a1035] text-slate-300">⛔ {stats.interrupts} barge-in{stats.interrupts === 1 ? '' : 's'}</span>
+          <span className="px-1.5 py-0.5 rounded bg-green-400/10 text-green-400">✓ {stats.approve}</span>
+          <span className="px-1.5 py-0.5 rounded bg-blue-400/10 text-blue-400">✎ {stats.amend}</span>
+          <span className="px-1.5 py-0.5 rounded bg-red-400/10 text-red-400">✗ {stats.reject}</span>
+          <span className="text-slate-500 ml-auto">{verdicts} verdicts</span>
         </div>
       </div>
 
@@ -113,9 +180,20 @@ export function PresenterPanel({ turns, memoryFacts, agentState }: Props) {
                 <div className="text-[10px] text-purple-400 mb-1">📚 KB chunks (BM25, {latest.kbChunks.length} retrieved)</div>
                 <div className="space-y-1">
                   {latest.kbChunks.map((chunk, i) => (
-                    <div key={i} className="bg-[#1a1035] rounded px-2 py-1.5 flex items-center justify-between gap-2">
-                      <span className="text-slate-300 text-[11px] truncate">{chunk.label}</span>
-                      <span className="text-purple-400 text-[10px] font-bold shrink-0">score {chunk.score.toFixed(2)}</span>
+                    <div key={i} className="bg-[#1a1035] rounded px-2 py-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-300 text-[11px] truncate">{chunk.label}</span>
+                        <span className="text-purple-400 text-[10px] font-bold shrink-0">score {chunk.score.toFixed(2)}</span>
+                      </div>
+                      {chunk.terms && chunk.terms.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {chunk.terms.map((t) => (
+                            <span key={t} className="text-[10px] px-1.5 py-0 rounded bg-purple-900/60 text-purple-200 font-sans">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -139,6 +217,19 @@ export function PresenterPanel({ turns, memoryFacts, agentState }: Props) {
                     <div key={i} className="bg-[#0f2a1e] border border-emerald-900/50 rounded px-2 py-1 text-[11px] text-emerald-200">
                       {a}
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {latest.marks && <Timeline marks={latest.marks} />}
+
+            {latest.memoryAdded && latest.memoryAdded.length > 0 && (
+              <div className="mb-2">
+                <div className="text-[10px] text-purple-400 mb-1">🧠 Remembered this turn ({latest.memoryAdded.length})</div>
+                <div className="space-y-1">
+                  {latest.memoryAdded.map((f, i) => (
+                    <div key={i} className="bg-[#1a1035] rounded px-2 py-1 text-[10px] text-slate-200 leading-relaxed">+ {f}</div>
                   ))}
                 </div>
               </div>

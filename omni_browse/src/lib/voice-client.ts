@@ -19,7 +19,7 @@ export type AgentEvent =
   | { type: 'state'; state: AgentState }
   | { type: 'level'; rms: number; gated: boolean }
   | { type: 'user_transcript'; text: string; final: boolean; turnId: number | null }
-  | { type: 'user_turn'; text: string; turnId: number; source: 'voice' | 'text'; asrTurnMs: number | null; kbChunks?: Array<{ label: string; score: number }> }
+  | { type: 'user_turn'; text: string; turnId: number; source: 'voice' | 'text'; asrTurnMs: number | null; kbChunks?: KbChunk[] }
   | { type: 'agent_start'; turnId: number }
   | { type: 'agent_text'; delta: string }
   | { type: 'agent_ack'; text: string; ms?: number }
@@ -47,6 +47,12 @@ export type AgentEvent =
   | { type: 'closed'; code: number; reason: string };
 
 export type AgentAction = Extract<AgentEvent, { type: 'action' }>;
+
+export interface KbChunk {
+  label: string;
+  score: number;
+  terms?: string[];
+}
 
 export interface AgentTelemetry {
   sttModel?: string;

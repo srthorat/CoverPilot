@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent } from '@/lib/voice-client';
-import { PresenterPanel, describeFieldAction, type TurnRecord } from '@/components/PresenterPanel';
+import { PresenterPanel, describeFieldAction, type SessionStats, type TurnRecord, type TurnMarks } from '@/components/PresenterPanel';
 import { toJpeg } from 'html-to-image';
 
 // A PII region found by Meta SAM 3.1 (see /api/sam)
@@ -381,6 +381,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Customer-facing by default; model names, timings and internals only when this is on.
   const [showDevPanel, setShowDevPanel] = useState<boolean>(false);
   const [turns, setTurns] = useState<TurnRecord[]>([]);
+  const [sessionStats, setSessionStats] = useState<SessionStats>({ interrupts: 0, approve: 0, amend: 0, reject: 0, error: 0 });
+  const speechEndRef = useRef<number | null>(null);
   const [presenterMode] = useState<boolean>(initialPresenter);
   const devRef = useRef<boolean>(false);
   // "What the agent sees": the last frame + state actually sent to Muse Spark.
@@ -806,6 +808,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   };
 
   // Events from the Python voice agent (voice-agent-py/bot.py) over the WebRTC data channel.
+  const patchLastTurn = (patch: (last: TurnRecord) => Partial<TurnRecord>) =>
+    setTurns((prev) => {
+      if (!prev.length) return prev;
+      const last = prev[prev.length - 1];
+      return [...prev.slice(0, -1), { ...last, ...patch(last) }];
+    });
+  const markLastTurn = (key: keyof TurnMarks) =>
+    patchLastTurn((last) => (last.marks?.[key] != null ? {} : { marks: { ...last.marks, [key]: Date.now() } }));
+
   const handleAgentEvent = (ev: AgentEvent) => {
     switch (ev.type) {
       case 'hello':
@@ -832,6 +843,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       case 'state':
         setAgentState(ev.state);
         setVoiceThinking(ev.state === 'thinking');
+        if (ev.state === 'thinking') speechEndRef.current = Date.now();
+        if (ev.state === 'speaking') markLastTurn('firstAudio');
         break;
       case 'level':
         updateMicMeter(ev.rms, ev.gated);
@@ -844,7 +857,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         setVoiceTelemetry((t) => ({ ...t, asrTurnMs: ev.asrTurnMs }));
         setTurns((prev) => [
           ...prev.slice(-19),
-          { turnId: ev.turnId, userText: ev.text, source: ev.source, kbChunks: ev.kbChunks },
+          { turnId: ev.turnId, userText: ev.text, source: ev.source, kbChunks: ev.kbChunks, marks: { speechEnd: speechEndRef.current ?? Date.now() } },
         ]);
         setChatMessages((prev) => [
           ...prev,
@@ -864,13 +877,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       case 'agent_ack':
         agentTextRef.current = `${ev.text} `;
         upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current}`);
-        setTurns((prev) => {
-          if (!prev.length) return prev;
-          const last = prev[prev.length - 1];
-          return [...prev.slice(0, -1), { ...last, ackMs: ev.ms ?? null }];
-        });
+        patchLastTurn((last) => ({ ackMs: ev.ms ?? null, marks: { ...last.marks, ack: Date.now() } }));
         break;
       case 'agent_text':
+        if (!agentTextRef.current) markLastTurn('firstToken');
         agentTextRef.current += ev.delta;
         upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current}`);
         break;
@@ -898,11 +908,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           return (i < 0 ? [...prev, entry] : prev.map((v, k) => (k === i ? entry : v))).slice(-6);
         });
         if (ev.status !== 'pending') {
-          setTurns((prev) => {
-            if (!prev.length) return prev;
-            const last = prev[prev.length - 1];
-            return [...prev.slice(0, -1), { ...last, wonder: { status: ev.status, actionTitle: ev.actionTitle, reason: ev.reason, ms: ev.ms } }];
-          });
+          patchLastTurn((last) => ({
+            wonder: { status: ev.status, actionTitle: ev.actionTitle, reason: ev.reason, ms: ev.ms },
+            marks: { ...last.marks, verified: Date.now() },
+          }));
+          setSessionStats((s) => ({ ...s, [ev.status]: s[ev.status as keyof SessionStats] + 1 }));
         }
         if (ev.status !== 'pending') {
           if (devRef.current) {
@@ -950,10 +960,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         break;
       case 'memory_updated':
         if (ev.facts?.length) setMemoryFacts((prev) => Array.from(new Set([...prev, ...ev.facts])).slice(-25));
+        if (ev.facts?.length) patchLastTurn((last) => ({ memoryAdded: [...(last.memoryAdded ?? []), ...ev.facts] }));
         if (devRef.current && ev.added > 0)
           setChatMessages((prev) => [...prev, { sender: 'agent', text: `[Memory • Muse Spark] saved ${ev.added} new fact${ev.added === 1 ? '' : 's'}: ${ev.facts.join(' ')}`, time: stampNow() }]);
         break;
       case 'interrupt':
+        setSessionStats((s) => ({ ...s, interrupts: s.interrupts + 1 }));
         if (agentTextRef.current) upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current} (interrupted)`);
         break;
       case 'error':
@@ -4696,7 +4708,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return (
       <div className="flex h-screen overflow-hidden bg-[#0d0921]">
         <div className="flex-1 min-w-0 overflow-y-auto">{pageContent}</div>
-        <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} />
+        <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} stats={sessionStats} />
       </div>
     );
   }
