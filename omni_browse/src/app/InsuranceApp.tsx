@@ -287,14 +287,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [clickIndicators, setClickIndicators] = useState<Array<{ id: number; x: number; y: number }>>([]);
   
   const GREETING_TEXT: Record<'en' | 'hi' | 'mr', string> = {
-    en: 'Welcome to ACKO Life! I am OmniCB Agent. Connecting your secure live voice session now.',
-    hi: 'ACKO Life में आपका स्वागत है! मैं OmniCB एजेंट हूँ। आपका सुरक्षित लाइव वॉइस सत्र अभी जोड़ रहा हूँ।',
-    mr: 'ACKO Life मध्ये आपले स्वागत आहे! मी OmniCB एजंट आहे. तुमचे सुरक्षित लाइव्ह व्हॉइस सत्र आता जोडत आहे.',
+    en: 'Welcome to NexaSure! I am OmniCB Agent. Connecting your secure live voice session now.',
+    hi: 'NexaSure में आपका स्वागत है! मैं OmniCB एजेंट हूँ। आपका सुरक्षित लाइव वॉइस सत्र अभी जोड़ रहा हूँ।',
+    mr: 'NexaSure मध्ये आपले स्वागत आहे! मी OmniCB एजंट आहे. तुमचे सुरक्षित लाइव्ह व्हॉइस सत्र आता जोडत आहे.',
   };
   const [chatMessages, setChatMessages] = useState<Array<{ id?: number; sender: 'user' | 'agent'; text: string; time: string }>>([
     {
       sender: 'agent',
-      text: "Welcome to ACKO Life! I am OmniCB Agent. When you are ready, click 'Accept and start co-browsing'to begin our secure live voice session.",
+      text: "Welcome to NexaSure! I am OmniCB Agent. When you are ready, click 'Accept and start co-browsing'to begin our secure live voice session.",
       time: 'Just now',
     },
   ]);
@@ -374,6 +374,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     ocrMs: number | null;
     status: string;
   } | null>(null);
+  // The shield panel shows the redacted document while it works, then folds itself away once the form
+  // is filled. A warning or a failure keeps it open, and the header toggles it by hand.
+  const [kycPanelOpen, setKycPanelOpen] = useState<boolean>(true);
+  const kycCollapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (kycCollapseTimer.current) clearTimeout(kycCollapseTimer.current);
+    if (kycRedaction?.status === 'Done') {
+      kycCollapseTimer.current = setTimeout(() => setKycPanelOpen(false), 6000);
+    }
+    return () => {
+      if (kycCollapseTimer.current) clearTimeout(kycCollapseTimer.current);
+    };
+  }, [kycRedaction?.status, kycRedaction?.type]);
   // Session-worker telemetry: Muse Wonder verdicts and Spark pre-answered questions
   const [verifications, setVerifications] = useState<
     Array<{ id: string; status: string; actionTitle: string; reason?: string; clause?: string | null; ms?: number; model: string }>
@@ -1032,7 +1045,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     'clause-42': {
       title: 'Clause 4.2: Critical Illness 100% Lump Sum Living Benefit',
       clauseId: 'Clause 4.2 (Living Benefits)',
-      document: 'ACKO Life Flexi Shield Policy Document (IRDAI UIN: 157N001V01)',
+      document: 'NexaSure Flexi Shield Policy Document (demo product)',
       page: 7,
       effectiveDate: 'April 2024 (IRDAI Master Circular)',
       highlightedText: 'Upon first diagnosis of any of the 36 defined Critical Illnesses (including Acute Myocardial Infarction, Stroke Resulting in Permanent Symptoms, Open Chest CABG, and Cancer of Specified Severity), 100% of the Critical Illness Sum Assured (₹25,00,000) shall be paid immediately as a tax-free lump sum, irrespective of actual hospital medical expenses incurred.',
@@ -1050,7 +1063,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     'clause-73': {
       title: 'Clause 7.3: Dual Tax Deductions (Section 80C + Section 80D)',
       clauseId: 'Clause 7.3 (Tax Certificates)',
-      document: 'Income Tax Act 1961 & ACKO Annual Tax Schedule Guide',
+      document: 'Income Tax Act 1961 & NexaSure Annual Tax Schedule Guide',
       page: 12,
       effectiveDate: 'Financial Year 2024-2025',
       highlightedText: 'Premiums paid towards the Base Pure Term Protection component are eligible for tax deduction under Section 80C up to ₹1,50,000 per financial year. Incremental premiums paid towards the Critical Illness Rider qualify under Section 80D (Health Insurance) up to ₹25,000 for self/family and up to ₹50,000 for senior citizen parents.',
@@ -1074,7 +1087,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       title: 'Section 45 Statutory Claim Guarantee (3-Year Incontestability Rule)',
       category: 'Statutory Protection',
       irdaiRef: 'Insurance Act 1938, Section 45',
-      summary: 'After 3 continuous years of the policy in force, ACKO Life cannot dispute, question, or reject any death claim on any grounds whatsoever (except documented deliberate fraud).',
+      summary: 'After 3 continuous years of the policy in force, NexaSure cannot dispute, question, or reject any death claim on any grounds whatsoever (except documented deliberate fraud).',
       fullText: 'No policy of life insurance shall be called in question on any ground whatsoever after the expiry of three years from the date on which the policy was effected, or the date of revival. Full honest disclosure at proposal guarantees irrevocable settlement for your nominee.',
     },
     {
@@ -1100,7 +1113,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       clauseNumber: 'Clause 4',
       title: 'Suicide Exclusion & 80% Premium Refund Rule',
       category: 'Exclusions',
-      irdaiRef: 'ACKO Life Flexi Shield Schedule, Section 9.2',
+      irdaiRef: 'NexaSure Flexi Shield Schedule, Section 9.2',
       summary: 'In the event of suicide within 12 months of inception, 80% of total premiums paid are refunded to the nominee. After 12 months, 100% of the full sum assured is paid with zero dispute.',
       fullText: 'If the Life Assured commits suicide within twelve (12) months from the Date of Inception or Date of Revival, the policy shall terminate and 80% of total premiums paid shall be refunded to the nominee. After 12 continuous months, death claim is fully payable in accordance with the schedule.',
     },
@@ -1110,7 +1123,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       title: 'Pre-Existing Disease (PED) & Medical Acceptance',
       category: 'Underwriting',
       irdaiRef: 'IRDAI Underwriting Norms & Section 45',
-      summary: 'Disclose all medical history honestly. Once accepted by underwriting without loading, ACKO Life cannot dispute coverage post-issuance.',
+      summary: 'Disclose all medical history honestly. Once accepted by underwriting without loading, NexaSure cannot dispute coverage post-issuance.',
       fullText: 'All pre-existing medical conditions, surgical histories, or chronic illnesses disclosed in the proposal form and accepted by the underwriter are covered under the policy terms without retrospective exclusion or dispute.',
     },
     {
@@ -1125,11 +1138,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     {
       id: 'tc-csr-sla',
       clauseNumber: 'Clause 7',
-      title: '99.1% Audited Claim Settlement Ratio & 2-Hour Digital SLA',
+      title: 'Digital Claims & 2-Hour Response Target (demo figures)',
       category: 'Claims Concierge',
-      irdaiRef: 'IRDAI Annual Audited Public Disclosures 2024',
-      summary: 'ACKO Life maintains a 99.1% claim settlement ratio with a 2-hour digital claim registration and zero physical paperwork required from your family.',
-      fullText: 'ACKO Life is committed to fair, prompt claim settlements with an audited 99.1% Claim Settlement Ratio. Claims can be registered 24x7 digitally via the customer portal or dedicated bereavement concierge with express 2-hour initiation.',
+      irdaiRef: 'NexaSure Service Standards (demo targets, not audited results)',
+      summary: 'NexaSure registers claims digitally with a 2-hour response target and no physical paperwork required from your family. These are demo targets, not audited results.',
+      fullText: 'NexaSure is committed to fair, prompt claim settlements. Claims can be registered 24x7 digitally via the customer portal or dedicated bereavement concierge with a 2-hour response target. The figures in this demo are targets, not audited results.',
     },
     {
       id: 'tc-revival-policy',
@@ -1155,7 +1168,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       en: 'Age determines your actuarial risk and base premium. By completing this proposal today, you lock in this low rate for the next 30 years without annual age-based price hikes.',
       hi: 'उम्र आपके प्रीमियम की दर तय करती है। आज प्रस्ताव भरने से आपकी यह दर अगले 30 वर्षों के लिए फ्रीज (लॉक) हो जाती है।',
       mr: 'वय तुमच्या विम्याच्या दराचा मुख्य निकष आहे. आज पॉलिसी घेतल्याने पुढील ३० वर्षांसाठी हाच कमी दर लॉक केला जातो.',
-      clauseRef: 'ACKO Flexi Shield Schedule, Section 3.1',
+      clauseRef: 'NexaSure Flexi Shield Schedule, Section 3.1',
     },
     'field-income': {
       title: 'Annual Income & Human Life Value',
@@ -1194,7 +1207,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ...prev,
       {
         sender: 'agent',
-        text: `[Why ACKO Asks: ${expl.title}]: ${spoken} (Ref: ${expl.clauseRef})`,
+        text: `[Why NexaSure Asks: ${expl.title}]: ${spoken} (Ref: ${expl.clauseRef})`,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -1237,12 +1250,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Printed IDs are too small for SAM 3.1. Blur a copy until the text is unreadable (the layout
   // survives) and ask Muse Spark where the identifiers are; the sharp image never leaves the page.
-  const blurForLocating = (img: HTMLImageElement): string => {
+  const blurForLocating = (img: HTMLImageElement, width: number): string => {
     const w = img.naturalWidth;
     const h = img.naturalHeight;
     const small = document.createElement('canvas');
-    small.width = 100;
-    small.height = Math.max(1, Math.round((100 * h) / w));
+    small.width = width;
+    small.height = Math.max(1, Math.round((width * h) / w));
     const sctx = small.getContext('2d')!;
     sctx.imageSmoothingQuality = 'high';
     sctx.drawImage(img, 0, 0, small.width, small.height);
@@ -1260,7 +1273,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     const res = await fetch('/api/locate-ids', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ documentType: type, blurredDataUrl: blurForLocating(img) }),
+      // Three blur levels, so the server can keep only the positions that agree.
+      body: JSON.stringify({ documentType: type, blurredDataUrls: [105, 115, 125].map((width) => blurForLocating(img, width)) }),
     });
     const data = await res.json();
     if (!res.ok || !Array.isArray(data.regions)) throw new Error(data.error || `Locate HTTP ${res.status}`);
@@ -1284,6 +1298,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? 'Reading the sample salary slip with Meta Muse Spark for income proof…' : 'Reading your salary slip for income proof…', time: stampNow() }]);
     try {
       const slipUrl = '/samples/sample-salary-slip.png';
+      setKycPanelOpen(true);
       setKycRedaction({ type: 'salary-slip', imageUrl: slipUrl, width: 1000, height: 630, regions: [], redactedDataUrl: null, samMs: null, samCached: false, locateMs: null, ocrMs: null, status: 'Locating ID numbers on a blurred copy…' });
       const slipImg = await loadSampleImage(slipUrl);
       const located = await locateTextIds('salary-slip', slipImg);
@@ -1322,6 +1337,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const handleRunSampleKycOcr = async (type: 'pan' | 'aadhaar' | 'salary-slip') => {
     if (type === 'salary-slip') return handleSalarySlipOcr();
     setKycSampleCard(type);
+    setKycPanelOpen(true);
     playChime();
     const label = type === 'pan' ? 'PAN' : 'Aadhaar';
     const imageUrl = `/samples/sample-${type}.png`;
@@ -1458,7 +1474,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   };
 
   const handleDownloadAuditCertificate = async () => {
-    const certId = `ACKO-AUDIT-2026-${Math.random().toString(16).substring(2, 8).toUpperCase()}`;
+    const certId = `NEXA-AUDIT-2026-${Math.random().toString(16).substring(2, 8).toUpperCase()}`;
     const timestamp = new Date().toISOString();
     const rates: Record<'1cr' | '1.5cr' | '2cr', number> = { '1cr': 580, '1.5cr': 780, '2cr': 990 };
     const currentMonthlyBase = rates[baseSumAssured] || 580;
@@ -1470,8 +1486,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
     const certPayload = {
       certificateId: certId,
-      product: 'ACKO Life Flexi Shield (Pure Term Insurance)',
-      irdaUin: '157N001V01',
+      product: 'NexaSure Flexi Shield (Pure Term Insurance)',
+      irdaUin: 'Not applicable (demo product, not a registered plan)',
       generatedAt: timestamp,
       coBrowsingEngine: 'OmniCB voice agent (Meta Muse Voice Transcribe 1.0 + Muse Spark 1.3 + SAM 3.1 + Muse Wonder 1.0)',
       applicant: {
@@ -1652,15 +1668,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Policy Issuance
   const submitPolicyProposal = () => {
-    const id = `ACKO-LIFE-2026-${Math.floor(100000 + Math.random() * 900000)}`;
+    const id = `NEXA-LIFE-2026-${Math.floor(100000 + Math.random() * 900000)}`;
     setProposalId(id);
     setPolicyIssued(true);
     setActiveStep(5);
     const msg = selectedLanguage === 'hi'
-      ? `बधाई हो! आपकी ACKO Life पॉलिसी ${id} सफलतापूर्वक जारी कर दी गई है।`
+      ? `बधाई हो! आपकी NexaSure पॉलिसी ${id} सफलतापूर्वक जारी कर दी गई है।`
       : selectedLanguage === 'mr'
-      ? `अभिनंदन! तुमची ACKO Life पॉलिसी ${id} यशस्वीपणे जारी करण्यात आली आहे.`
-      : `Congratulations! Your ACKO Life policy ${id} has been generated successfully.`;
+      ? `अभिनंदन! तुमची NexaSure पॉलिसी ${id} यशस्वीपणे जारी करण्यात आली आहे.`
+      : `Congratulations! Your NexaSure policy ${id} has been generated successfully.`;
     speakText(msg, selectedLanguage);
   };
 
@@ -2001,20 +2017,20 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const pageContent = (
     <div className="h-screen overflow-hidden bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
       
-      {/* 2. Main ACKO Header */}
+      {/* 2. Main NexaSure Header */}
       <header className="shrink-0 bg-white border-b border-slate-200 z-30">
         <div className="w-full px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="size-9 rounded-xl bg-[#582be8] text-white flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
-              acko
+              N
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-lg font-bold tracking-tight text-[#111827]">ACKO</span>
+                <span className="text-lg font-bold tracking-tight text-[#111827]">NexaSure</span>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-[#582be8] border border-purple-200">
                   Life Flexi Shield</span>
               </div>
-              <p className="text-[11px] text-slate-500 truncate max-w-[36rem]">ACKO Life Insurance Limited · IRDAI Reg. No. 157 · Pure term life with zero commission & living benefits</p>
+              <p className="text-[11px] text-slate-500 truncate max-w-[36rem]">AI-first digital insurance company · Demo product, not a real insurer</p>
             </div>
           </div>
 
@@ -2334,7 +2350,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           {/* STEP 1: Blank Profile (Click any field -> auto-played regional guidance!) */}
           {activeStep === 1 && (
-            <div className="acko-card p-4 flex flex-col gap-3">
+            <div className="nx-card p-4 flex flex-col gap-3">
               <div className="pb-2 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 1: Applicant Profile & Eligibility</h2>
@@ -2388,15 +2404,25 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               </div>
 
               {kycRedaction && (
-                <div className="p-3 rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div className={`${kycPanelOpen ? 'p-3' : 'px-3 py-1'} rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (kycCollapseTimer.current) clearTimeout(kycCollapseTimer.current);
+                      setKycPanelOpen((v) => !v);
+                    }}
+                    className="flex flex-wrap items-center justify-between gap-2 text-[11px] w-full text-left"
+                    title={kycPanelOpen ? 'Hide the documents' : 'Show the documents'}
+                  >
                     <span className="font-bold"> Privacy shield • {kycRedaction.type.replace('-', ' ').toUpperCase()}</span>
-                    <span className="text-slate-500">
+                    <span className={kycRedaction.status.startsWith('Warning') || kycRedaction.status.startsWith('Failed') ? 'text-red-600 font-semibold' : 'text-slate-500'}>
                       {kycRedaction.status}
                       {showDevPanel && kycRedaction.samMs !== null ? ` • SAM 3.1 ${kycRedaction.samMs} ms${kycRedaction.samCached ? '(cached)' : ''}` : ''}
                       {showDevPanel && kycRedaction.locateMs !== null ? ` • Spark locate ${kycRedaction.locateMs} ms` : ''}
-                      {showDevPanel && kycRedaction.ocrMs !== null ? ` • Spark OCR ${kycRedaction.ocrMs} ms` : ''}</span>
-                  </div>
+                      {showDevPanel && kycRedaction.ocrMs !== null ? ` • Spark OCR ${kycRedaction.ocrMs} ms` : ''}
+                      {kycRedaction.status === 'Done' ? ' ✓' : ''} {kycPanelOpen ? '▾' : '▸'}</span>
+                  </button>
+                  {kycPanelOpen && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '1. SAM 3.1 boxes + pixel masks (one request per concept)' : '1. Private regions found on your card'}</div>
@@ -2434,6 +2460,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       )}
                     </div>
                   </div>
+                  )}
                 </div>
               )}
 
@@ -2459,7 +2486,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-full-name', e)}
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does ACKO ask this?"
+                        title="Why does NexaSure ask this?"
                       >
                         <span>Why?</span>
                       </button>
@@ -2510,7 +2537,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-dob', e)}
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does ACKO ask this?"
+                        title="Why does NexaSure ask this?"
                       >
                         <span>Why?</span>
                       </button>
@@ -2605,7 +2632,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-income', e)}
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does ACKO ask this?"
+                        title="Why does NexaSure ask this?"
                       >
                         <span>Why?</span>
                       </button>
@@ -2659,7 +2686,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         type="button"
                         onClick={(e) => handleWhyAskThis('field-smoker', e)}
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does ACKO ask this?"
+                        title="Why does NexaSure ask this?"
                       >
                         <span>Why?</span>
                       </button>
@@ -2816,7 +2843,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             <div className="flex flex-col gap-6">
 
               {/* Base Plan Selection */}
-              <div className="acko-card p-4">
+              <div className="nx-card p-4">
                 <div className="pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="text-base font-bold text-[#111827]">Step 2.1: Base Life Protection Cover</h2>
@@ -2866,7 +2893,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               </div>
 
               {/* Add-on Riders (Clicking auto-plays guidance) */}
-              <div className="acko-card p-4">
+              <div className="nx-card p-4">
                 <div className="pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="text-base font-bold text-[#111827] flex items-center gap-2">
@@ -3165,7 +3192,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           {/* STEP 3: Beneficiary Nomination & Statutory Trust (IRDAI Section 39 & MWPA 1874) */}
           {activeStep === 3 && (
-            <div id="nomination-section"className="acko-card p-4 flex flex-col gap-5">
+            <div id="nomination-section"className="nx-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827] flex items-center gap-2">
@@ -3429,7 +3456,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           {/* STEP 4: Medical Disclosures */}
           {activeStep === 4 && (
-            <div className="acko-card p-4 flex flex-col gap-5">
+            <div className="nx-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 4: Medical & Underwriting Disclosures</h2>
@@ -3529,7 +3556,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           {/* STEP 5: Summary & Issuance */}
           {activeStep === 5 && (
-            <div className="acko-card p-4 flex flex-col gap-5">
+            <div className="nx-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 5: Policy Schedule, Terms & Instant Issuance</h2>
@@ -3590,7 +3617,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     ✓
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-emerald-950">ACKO Life Policy Issued Successfully!</h3>
+                    <h3 className="text-base font-bold text-emerald-950">NexaSure Policy Issued Successfully!</h3>
                     <p className="text-xs tabular-nums text-emerald-800 mt-1">
                       Policy Certificate ID: <strong className="text-slate-900 font-bold">{proposalId}</strong>
                     </p>
@@ -3670,7 +3697,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         <div className="min-h-0 overflow-y-auto flex flex-col gap-3">
           
           {/* Premium Breakdown Card */}
-          <div className="acko-card p-3 shrink-0">
+          <div className="nx-card p-3 shrink-0">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Premium Summary</h3>
               <button
@@ -3801,7 +3828,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           </div>
 
           {/* DOCKED OMNICB CO-BROWSE AGENT (MINIMAL: CONTROLS & TRANSCRIPT ONLY) */}
-          <div className="acko-card p-3 rounded-2xl flex flex-col gap-2 bg-white flex-1 min-h-[300px] overflow-y-auto [&>*]:shrink-0">
+          <div className="nx-card p-3 rounded-2xl flex flex-col gap-2 bg-white flex-1 min-h-[300px] overflow-y-auto [&>*]:shrink-0">
             
             {/* Header with Connection Status & Connect/Disconnect Button */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -4450,7 +4477,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <span className="text-2xl"></span>
                 <div>
                   <h3 className="text-sm font-bold text-slate-950">Official Policy Evidence Viewer</h3>
-                  <p className="text-[11px] text-slate-500 tabular-nums">IRDAI UIN: 157N001V01 • ACKO Life Flexi Shield</p>
+                  <p className="text-[11px] text-slate-500 tabular-nums">Demo product, not a registered plan • NexaSure Flexi Shield</p>
                 </div>
               </div>
               <button
@@ -4657,7 +4684,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <span>Statutory Terms & Conditions (T&C)</span>
                     <span className="text-[11px] tabular-nums px-2 py-0.5 rounded-lg bg-blue-500/30 text-blue-200 border border-blue-400/40">
-                      IRDAI UIN: 157N001V01</span>
+                      Demo product</span>
                   </h3>
                   <p className="text-[11px] text-blue-200/80">Verbatim legal clauses, exclusions, grace periods, and incontestability rules</p>
                 </div>
@@ -4769,14 +4796,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         </div>
       )}
 
-      {/* 7. Authentic ACKO Modern Footer */}
+      {/* 7. Footer */}
       <footer className="shrink-0 bg-[#1e104f] text-white text-[10px] px-4 lg:px-6 py-1 border-t border-[#2d1b70]">
         <div className="w-full flex items-center justify-between gap-3">
           <span
             className="truncate text-purple-300/80"
-            title="ACKO Life Insurance Limited. Registered Office: #36/5, Hustlehub One East, 27th Main Rd, Sector 2, HSR Layout, Bengaluru, Karnataka 560102. Insurance is the subject matter of solicitation. ACKO Life Flexi Shield is a Non-Linked Non-Participating Individual Pure Risk Life Insurance Plan (UIN: 157N001V01)."
+            title="NexaSure is a fictional AI-first digital insurance company created for a hackathon demo. NexaSure Flexi Shield is a sample term life product, not a registered insurance plan, and nothing here is an offer of insurance. Insurance is the subject matter of solicitation."
           >
-            ACKO Life Insurance Limited · CIN U66010KA2022PLC164741 · Insurance is the subject matter of solicitation · UIN 157N001V01
+            NexaSure · AI-first digital insurance company · Demo product, not a real insurer or offer · Insurance is the subject matter of solicitation
           </span>
           <span className="shrink-0 text-purple-300">Powered by Meta Model API</span>
         </div>
