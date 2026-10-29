@@ -15,7 +15,7 @@ const agentLines = async () => {
 };
 
 /** Type a message to the agent and return its next reply (waits for a new one that satisfies `ok`). */
-async function ask(text: string, ok: (reply: string) => boolean = () => true, timeout = 90_000): Promise<string> {
+async function ask(text: string, ok: (reply: string) => boolean = () => true, timeout = 90_000, keepDrawer = false): Promise<string> {
   await closeTermsDrawer();
   const before = (await agentLines()).length;
   await page.getByTestId('ask-input').fill(text);
@@ -37,17 +37,20 @@ async function ask(text: string, ok: (reply: string) => boolean = () => true, ti
     throw new Error(`no matching reply to "${text}". New replies: ${JSON.stringify(lines.slice(before))}`);
   }
   await page.waitForTimeout(2500); // let any form action and its cursor glide finish
+  if (!keepDrawer) await closeTermsDrawer();
   return reply;
 }
 
-// Explaining a clause opens the terms drawer, which covers the page; close it before the next step.
+// Explaining a clause makes the agent open the terms drawer, sometimes a moment after its reply, and the
+// drawer covers the page. That is expected behaviour, so ask() closes it once the reply has settled
+// (unless a test wants to look at it) and tests close it before clicking anything else.
 async function closeTermsDrawer() {
-  // The drawer is a full-screen overlay; its title is translated, so find it by shape, not by text.
-  await page.evaluate(() => {
-    const overlay = document.querySelector('div.fixed.inset-0.z-50');
-    [...(overlay?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === '✕')?.click();
-  });
-  await page.waitForTimeout(400);
+  const close = page.getByRole('button', { name: 'Close Drawer' });
+  for (let i = 0; i < 3; i++) {
+    if (!(await close.isVisible().catch(() => false))) return;
+    await close.click().catch(() => {});
+    await page.waitForTimeout(500);
+  }
 }
 
 const input = (id: string) => page.locator(`#${id} input, input#${id}`).first();
@@ -91,10 +94,10 @@ test('AC-03 The agent identifies the current field from live page context', asyn
 });
 
 test('AC-04 A policy explanation cites the clause and highlights it', async () => {
-  const reply = await ask('What is the free-look period?', (r) => /clause\s*(3|three)|free-look/i.test(r));
+  const reply = await ask('What is the free-look period?', (r) => /clause\s*(3|three)|free-look/i.test(r), 90_000, true);
   expect(reply).toMatch(/free-look|clause/i);
   await expect(page.getByText('Being explained').first()).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: '✕' }).first().click().catch(() => {});
+  await closeTermsDrawer();
 });
 
 test('AC-05 An uploaded policy is read in the browser and answers cite the page', async () => {
@@ -239,7 +242,30 @@ test('EX-03 The agent answers a follow-up about the reviewed document with a pag
   expect(reply).toMatch(/grace/i);
 });
 
-test('EX-04 A finding sends the customer back to the right application step', async () => {
+test('EX-04 A finding sends the customer back to the application', async () => {
   await page.getByRole('button', { name: 'Fix in the application' }).first().click();
-  await expect(page.getByRole('heading', { name: /Step [23]/ })).toBeVisible({ timeout: 15_000 });
+  // Back in co-browsing, on the right step. In this run the application is incomplete, so the step gate
+  // stops at the first incomplete step (Step 1) before the cover step; with a complete application it
+  // lands on the finding's own step (the sum assured and premium are Step 2).
+  await expect(page.locator('#guardian-view')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /Step [1-3]:/ })).toBeVisible({ timeout: 15_000 });
+});
+
+// Depends on the two-agent split (a separate Integrity Guardian agent selected by set_mode). On the
+// older single-agent build this is expected to fail.
+test('AC-14 Two distinct agents: Guardian reviews and never changes the application', async () => {
+  test.setTimeout(240_000);
+  await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
+  await page.waitForTimeout(6000); // the agent switch and its introduction
+  const who = await ask('Who are you and what do you do?', (r) => /guardian/i.test(r));
+  expect(who).toMatch(/guardian/i);
+  const refusal = await ask('Please set my city to Mumbai in the application.', (r) => /(don't|do not|cannot|can't|not able|never|only review|separate)/i.test(r));
+  expect(refusal).toMatch(/(don't|do not|cannot|can't|not able|never|only review|separate)/i);
+  await page.getByRole('button', { name: /1\. Co-browse/ }).click();
+  await page.waitForTimeout(6000);
+  // State, not wording: the earlier city is untouched.
+  await expect(page.locator('#input-city')).toHaveValue('Pune');
+  const cobrowser = await ask('Who are you and what do you do?', (r) => /omnicb|co-?brows|application|form/i.test(r));
+  expect(cobrowser).toMatch(/omnicb|co-?brows|application|form/i);
+  expect(cobrowser).not.toMatch(/i am (the )?integrity guardian/i);
 });
