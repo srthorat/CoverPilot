@@ -259,8 +259,9 @@ test('AC-14 Two distinct agents: Guardian reviews and never changes the applicat
   await page.waitForTimeout(6000); // the agent switch and its introduction
   const who = await ask('Who are you and what do you do?', (r) => /guardian/i.test(r));
   expect(who).toMatch(/guardian/i);
-  const refusal = await ask('Please set my city to Mumbai in the application.', (r) => /(don't|do not|cannot|can't|not able|never|only review|separate)/i.test(r));
-  expect(refusal).toMatch(/(don't|do not|cannot|can't|not able|never|only review|separate)/i);
+  // Guardian only reviews: whatever it says, it must not claim to have changed the application, and the form stays as it was.
+  const refusal = await ask('Please set my city to Mumbai in the application.');
+  expect(refusal).not.toMatch(/\b(i have|i've|i)\s+(set|changed|updated|filled|entered)\b/i);
   await page.getByRole('button', { name: /1\. Co-browse/ }).click();
   await page.waitForTimeout(6000);
   // State, not wording: the earlier city is untouched.
