@@ -202,6 +202,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     secondaryRelation: 'Child',
     secondaryAge: 7,
     secondaryShare: 30,
+    // Third and fourth nominees (the secondary nominee above is the second)
+    additionalNominees: [] as Array<{ name: string; relation: string; age: number; share: number }>,
     appointeeName: '',
     appointeeRelation: 'Grandparent',
     mwpaTrustEnabled: false,
@@ -215,6 +217,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Statutory Terms & Conditions Interactive Drawer
   const [showTermsDrawer, setShowTermsDrawer] = useState<boolean>(false);
+  // The clause the agent is explaining: highlighted and scrolled into view in the terms drawer
+  const [highlightedClause, setHighlightedClause] = useState<string | null>(null);
   const [termsSearchQuery, setTermsSearchQuery] = useState<string>('');
 
   // Real per-turn latency telemetry from the live Meta voice loop
@@ -253,6 +257,23 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Step 5: Proposal Binding & Receipt
   const [proposalId, setProposalId] = useState<string>('');
   const [policyIssued, setPolicyIssued] = useState<boolean>(false);
+  // Checkout: the customer signs the proposal, then pays the first premium. Both are demos and both are
+  // customer-only: nothing the agent does can sign or pay.
+  const [esign, setEsign] = useState<{ typedName: string; consent: boolean; signedAt: string | null; hash: string | null; fingerprint: string | null; error: string | null }>({
+    typedName: '',
+    consent: false,
+    signedAt: null,
+    hash: null,
+    fingerprint: null,
+    error: null,
+  });
+  const [payment, setPayment] = useState<{ mode: 'upi' | 'card' | 'netbanking' | 'autopay'; status: 'idle' | 'processing' | 'paid'; txnId: string | null; paidAt: string | null; amount: number | null }>({
+    mode: 'upi',
+    status: 'idle',
+    txnId: null,
+    paidAt: null,
+    amount: null,
+  });
 
   // OmniCB Agent Co-Browsing State (Observation Mode + Auto-Play Multilingual Voice Guidance)
   const [activeGuidanceKey, setActiveGuidanceKey] = useState<string>('field-full-name');
@@ -528,12 +549,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     if (!profile.annualIncome) unfilled.push('field-annual-income');
     if (profile.isSmoker === null) unfilled.push('field-smoking');
     if (!profile.city) unfilled.push('field-city');
-    if (!profile.pincode) unfilled.push('field-pincode');
+    if (!profile.pincode) unfilled.push('field-city');
 
     return {
       activeStep,
       focusedFieldId: currentFocusedField,
+      checkout: { eSigned: esignValid, paid: paymentValid },
       termsDrawerOpen: showTermsDrawer,
+      termsHighlightedClause: highlightedClause ? TERMS_AND_CONDITIONS_CLAUSES.find((c) => c.id === highlightedClause)?.clauseNumber ?? null : null,
       baseSumAssured,
       selectedRiders,
       ciTier,
@@ -709,6 +732,26 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return '35L+';
   };
 
+  // Relation words from speech ("son", "daughter") map to the options the form offers.
+  const normalizeRelation = (r: unknown): string => {
+    const v = String(r ?? '').trim();
+    if (/^(son|daughter|kid|child|children)$/i.test(v)) return 'Child';
+    if (/^(wife|husband|spouse)$/i.test(v)) return 'Spouse';
+    if (/^(father|mother|parent|parents)$/i.test(v)) return 'Parent';
+    if (/^(brother|sister|sibling)$/i.test(v)) return 'Sibling';
+    return v || 'Child';
+  };
+
+  // "clause": 1 to 8, "Clause 3" or a clause id; returns the clause id or null.
+  const resolveClauseId = (clause: unknown): string | null => {
+    if (clause === undefined || clause === null || clause === '') return null;
+    const asText = String(clause);
+    const byId = TERMS_AND_CONDITIONS_CLAUSES.find((c) => c.id === asText);
+    if (byId) return byId.id;
+    const n = parseInt(asText.replace(/\D/g, ''), 10);
+    return TERMS_AND_CONDITIONS_CLAUSES.find((c) => c.clauseNumber === `Clause ${n}`)?.id ?? null;
+  };
+
   // Apply a co-browsing action returned by Muse Spark to the live form.
   const applyAgentAction = (a: AgentAction) => {
     if (a.targetElementId === 'drawer-terms-conditions') setShowTermsDrawer(true);
@@ -717,20 +760,45 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       if (action.type === 'nominate') {
         glideAgentCursorToElement('nomination-section', title || 'Configuring Nominee & Trust Protection', () => {
           if (activeStep < 3) setActiveStep(3);
-          setNomination((prev) => ({
-            ...prev,
-            primaryName: action.primaryName !== undefined ? action.primaryName : prev.primaryName,
-            primaryRelation: action.primaryRelation !== undefined ? action.primaryRelation : prev.primaryRelation,
-            primaryShare: action.primaryShare !== undefined ? Number(action.primaryShare) : prev.primaryShare,
-            hasSecondaryNominee: action.hasSecondaryNominee !== undefined ? action.hasSecondaryNominee : prev.hasSecondaryNominee,
-            secondaryName: action.secondaryName !== undefined ? action.secondaryName : prev.secondaryName,
-            secondaryRelation: action.secondaryRelation !== undefined ? action.secondaryRelation : prev.secondaryRelation,
-            secondaryAge: action.secondaryAge !== undefined ? Number(action.secondaryAge) : prev.secondaryAge,
-            secondaryShare: action.secondaryShare !== undefined ? Number(action.secondaryShare) : prev.secondaryShare,
-            appointeeName: action.appointeeName !== undefined ? action.appointeeName : prev.appointeeName,
-            appointeeRelation: action.appointeeRelation !== undefined ? action.appointeeRelation : prev.appointeeRelation,
-            mwpaTrustEnabled: action.mwpaTrustEnabled !== undefined ? action.mwpaTrustEnabled : prev.mwpaTrustEnabled,
-          }));
+          setNomination((prev) => {
+            const next = {
+              ...prev,
+              primaryName: action.primaryName !== undefined ? action.primaryName : prev.primaryName,
+              primaryRelation: action.primaryRelation !== undefined ? normalizeRelation(action.primaryRelation) : prev.primaryRelation,
+              primaryShare: action.primaryShare !== undefined ? Number(action.primaryShare) : prev.primaryShare,
+              hasSecondaryNominee: action.hasSecondaryNominee !== undefined ? action.hasSecondaryNominee : prev.hasSecondaryNominee,
+              secondaryName: action.secondaryName !== undefined ? action.secondaryName : prev.secondaryName,
+              secondaryRelation: action.secondaryRelation !== undefined ? normalizeRelation(action.secondaryRelation) : prev.secondaryRelation,
+              secondaryAge: action.secondaryAge !== undefined ? Number(action.secondaryAge) : prev.secondaryAge,
+              secondaryShare: action.secondaryShare !== undefined ? Number(action.secondaryShare) : prev.secondaryShare,
+              appointeeName: action.appointeeName !== undefined ? action.appointeeName : prev.appointeeName,
+              appointeeRelation: action.appointeeRelation !== undefined ? action.appointeeRelation : prev.appointeeRelation,
+              mwpaTrustEnabled: action.mwpaTrustEnabled !== undefined ? action.mwpaTrustEnabled : prev.mwpaTrustEnabled,
+            };
+            if (Array.isArray(action.additionalNominees)) {
+              let list = action.additionalNominees
+                .filter((n: unknown) => n && typeof n === 'object')
+                .slice(0, 3)
+                .map((n: Record<string, unknown>) => ({
+                  name: String(n.name ?? ''),
+                  relation: normalizeRelation(n.relation),
+                  age: Number(n.age) || 7,
+                  share: Number(n.share) || 0,
+                }));
+              // Additional nominees only exist after a secondary one: promote the first if there is none yet.
+              if (!next.hasSecondaryNominee && list.length) {
+                const [first, ...rest] = list;
+                next.hasSecondaryNominee = true;
+                next.secondaryName = first.name;
+                next.secondaryRelation = first.relation;
+                next.secondaryAge = first.age;
+                next.secondaryShare = first.share;
+                list = rest;
+              }
+              next.additionalNominees = list.slice(0, 2);
+            }
+            return next;
+          });
         });
       } else if (action.type === 'ladder') {
         glideAgentCursorToElement('card-benefit-ladders', title || 'Configuring Benefit Ladder', () => {
@@ -753,7 +821,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             el: 'field-annual-income',
             apply: () => setProfile((p) => ({ ...p, annualIncome: incomeRangeFor(value) || p.annualIncome })),
           },
-          pincode: { el: 'field-pincode', apply: () => setProfile((p) => ({ ...p, pincode: value })) },
+          pincode: { el: 'field-city', apply: () => setProfile((p) => ({ ...p, pincode: value })) },
           city: { el: 'field-city', apply: () => setProfile((p) => ({ ...p, city: value })) },
         };
         const target = targets[action.field];
@@ -771,8 +839,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           formBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         });
       } else if (action.type === 'ui') {
-        if (action.action === 'open_terms') setShowTermsDrawer(true);
-        else if (action.action === 'close_terms') setShowTermsDrawer(false);
+        if (action.action === 'open_terms') {
+          const id = resolveClauseId(action.clause);
+          if (id) {
+            setTermsSearchQuery('');
+            setHighlightedClause(id);
+          }
+          setShowTermsDrawer(true);
+        } else if (action.action === 'close_terms') setShowTermsDrawer(false);
       } else if (action.type === 'select') {
         const on = Boolean(action.value);
         if (action.field === 'criticalIllness') {
@@ -941,16 +1015,20 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             wonder: { status: ev.status, actionTitle: ev.actionTitle, reason: ev.reason, ms: ev.ms },
             marks: { ...last.marks, verified: Date.now() },
           }));
-          setSessionStats((s) => ({ ...s, [ev.status]: s[ev.status as keyof SessionStats] + 1 }));
+          // An "ask" keeps the action and only wants one more detail, so it counts as an approval.
+          const bucket = (ev.status === 'ask' ? 'approve' : ev.status) as keyof SessionStats;
+          setSessionStats((s) => ({ ...s, [bucket]: s[bucket] + 1 }));
         }
         if (ev.status !== 'pending') {
           if (devRef.current) {
             const verb =
-              ev.status === 'approve' ? 'Muse Wonder approved' : ev.status === 'amend' ? 'Muse Wonder amended' : ev.status === 'reject' ? 'Muse Wonder rejected' : 'Muse Wonder could not verify';
+              ev.status === 'approve' ? 'Muse Wonder approved' : ev.status === 'amend' ? 'Muse Wonder amended' : ev.status === 'reject' ? 'Muse Wonder rejected' : ev.status === 'ask' ? 'Muse Wonder asks for more' : 'Muse Wonder could not verify';
             setChatMessages((prev) => [
               ...prev,
               { sender: 'agent', text: `${verb} "${ev.actionTitle}"${ev.reason ? `: ${ev.reason}` : ''}${ev.ms ? `(${ev.ms} ms)` : ''}`, time: stampNow() },
             ]);
+          } else if (ev.status === 'ask') {
+            setChatMessages((prev) => [...prev, { sender: 'agent', text: `One more detail needed for "${ev.actionTitle}": ${ev.reason || 'please add the missing information'}`, time: stampNow() }]);
           } else if (ev.status === 'reject' || ev.status === 'amend') {
             // Customers only need to know when a change was flagged, not the verifier's internals.
             setChatMessages((prev) => [...prev, { sender: 'agent', text: `Compliance check on "${ev.actionTitle}": ${ev.reason || 'needs a correction'}`, time: stampNow() }]);
@@ -1453,7 +1531,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           : `The private regions of your ${label} card were hidden on your device and Muse Spark read the rest${f.fullName ? ` for ${f.fullName}` : ''}. Populating the form now.`;
       speakText(voice, selectedLanguage);
       const gender = f.gender ? (/^m/i.test(f.gender) ? 'Male' : /^f/i.test(f.gender) ? 'Female' : '') : '';
-      glideAgentCursorToElement(type === 'pan' ? 'field-full-name' : 'field-pincode', `Populate ${label} OCR fields`, () => {
+      glideAgentCursorToElement(type === 'pan' ? 'field-full-name' : 'field-city', `Populate ${label} OCR fields`, () => {
         setIdFromSample((prev) => ({ ...prev, [type]: true }));
         setProfile((prev) => ({
           ...prev,
@@ -1514,6 +1592,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         totalAnnualTaxSaved: `₹${totalSaved.toLocaleString()}/yr`,
         netEffectiveYearlyCost: `₹${netCost.toLocaleString()}/yr (effective ₹${Math.round(netCost / 12)}/month)`,
       },
+      eSignature: esignValid
+        ? { signedBy: esign.typedName.trim(), signedAt: esign.signedAt, signatureHash: esign.hash, note: 'Demo e-sign: typed name and consent only, no Aadhaar OTP, not legally binding' }
+        : { status: 'not signed' },
+      firstPremiumPayment: paymentValid
+        ? { transactionId: payment.txnId, amount: `₹${payment.amount}`, mode: payment.mode, paidAt: payment.paidAt, note: 'Demo checkout: no real money moved' }
+        : { status: 'not paid' },
       auditNonRepudiation: {
         zeroAutonomousFinalSubmission: true,
         humanInTheLoopConfirmed: true,
@@ -1668,6 +1752,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Policy Issuance
   const submitPolicyProposal = () => {
+    if (!esignValid || !paymentValid) return;
     const id = `NEXA-LIFE-2026-${Math.floor(100000 + Math.random() * 900000)}`;
     setProposalId(id);
     setPolicyIssued(true);
@@ -1682,6 +1767,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Architectural Inspector State
   const [showArchInspector, setShowArchInspector] = useState<boolean>(false);
+
+  // Bring the clause the agent is explaining into view once the drawer has slid in; forget it on close.
+  useEffect(() => {
+    if (!showTermsDrawer) {
+      setHighlightedClause(null);
+      return;
+    }
+    if (!highlightedClause) return;
+    const t = setTimeout(() => {
+      document.getElementById(`clause-${highlightedClause}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [showTermsDrawer, highlightedClause]);
 
   // Keyboard shortcut listener: ESC to instantly reclaim screen control
   useEffect(() => {
@@ -1699,6 +1797,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const stepForElement = (elementId: string): number | null => {
     if (/^step-tab-/.test(elementId)) return null;
     if (/^(field-|select-)/.test(elementId) && elementId !== 'field-section-45') return 1;
+    if (elementId === 'card-esign' || elementId === 'card-payment') return 5;
     if (/^(cover-tier-|card-)/.test(elementId) && elementId !== 'card-premium-summary') return 2;
     if (elementId === 'nomination-section') return 3;
     if (elementId === 'field-section-45') return 4;
@@ -1881,6 +1980,66 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     ]);
   };
 
+  const allNominees = [
+    ...(nomination.primaryName || true ? [{ name: nomination.primaryName || 'Nominee 1', relation: nomination.primaryRelation, share: nomination.primaryShare, age: 99 }] : []),
+    ...(nomination.hasSecondaryNominee ? [{ name: nomination.secondaryName || 'Nominee 2', relation: nomination.secondaryRelation, share: nomination.secondaryShare, age: nomination.secondaryAge }] : []),
+    ...(nomination.hasSecondaryNominee ? nomination.additionalNominees.map((n, i) => ({ name: n.name || `Nominee ${i + 3}`, relation: n.relation, share: n.share, age: n.age })) : []),
+  ];
+  const nomineeTotalShare = allNominees.reduce((sum, n) => sum + (Number(n.share) || 0), 0);
+  const anyMinorNominee = allNominees.slice(1).some((n) => n.age < 18);
+  const nomineeSummary = allNominees.map((n) => `${n.name} (${n.relation}, ${n.share}%)`).join(', ');
+
+  // What the signature covers: change any of it after signing and the signature no longer counts.
+  const proposalFingerprint = JSON.stringify({
+    name: profile.fullName,
+    dob: profile.dob,
+    income: profile.annualIncome,
+    smoker: profile.isSmoker,
+    cover: baseSumAssured,
+    riders: selectedRiders,
+    ciTier,
+    atpdOption,
+    lifeStageEscalator,
+    nominees: nomineeSummary,
+    mwpa: nomination.mwpaTrustEnabled,
+    premium: totalMonthlyPayable,
+  });
+  const esignValid = Boolean(esign.signedAt) && esign.fingerprint === proposalFingerprint;
+  const paymentValid = payment.status === 'paid' && payment.amount === totalMonthlyPayable;
+
+  const sha256Hex = async (text: string): Promise<string> => {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const signProposal = async () => {
+    const typed = esign.typedName.trim().replace(/\s+/g, ' ');
+    const expected = (profile.fullName || '').trim().replace(/\s+/g, ' ');
+    const fail = (error: string) => setEsign((e) => ({ ...e, error }));
+    if (!esign.consent) return fail('Please tick the declaration first.');
+    if (!expected) return fail('Add your full name in Step 1 first.');
+    if (typed.toLowerCase() !== expected.toLowerCase()) return fail(`Type your name exactly as it is on the form: ${expected}`);
+    const signedAt = new Date().toISOString();
+    try {
+      const hash = await sha256Hex(`${proposalFingerprint}|${typed}|${signedAt}`);
+      setEsign((e) => ({ ...e, signedAt, hash, fingerprint: proposalFingerprint, error: null }));
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: `Proposal e-signed by ${typed} (demo e-sign: no Aadhaar OTP, not legally binding). You can pay the first premium now.`, time: stampNow() }]);
+    } catch {
+      fail('Signing needs a secure (HTTPS) page. Open the app over HTTPS or on localhost.');
+    }
+  };
+
+  const payFirstPremium = () => {
+    if (!esignValid || payment.status === 'processing') return;
+    const amount = totalMonthlyPayable;
+    setPayment((p) => ({ ...p, status: 'processing' }));
+    setTimeout(() => {
+      const txnId = `NEXA-TXN-${Math.floor(100000000 + Math.random() * 900000000)}`;
+      setPayment((p) => ({ ...p, status: 'paid', txnId, paidAt: new Date().toISOString(), amount }));
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: `First premium of ₹${amount} received (demo checkout: no real money moved). Transaction ${txnId}. You can issue your policy now.`, time: stampNow() }]);
+    }, 1500);
+  };
+
   const buildPolicyCardInput = () => ({
     policyholder: profile.fullName || 'Rahul Shankar Sharma',
     sumAssured: baseSumAssured === '1cr' ? 'Rs 1 Crore' : baseSumAssured === '1.5cr' ? 'Rs 1.5 Crore' : 'Rs 2 Crore',
@@ -1891,7 +2050,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       selectedRiders.waiverOfPremium && 'Waiver of Premium',
     ].filter(Boolean) as string[],
     monthlyPremium: `Rs ${totalMonthlyPayable}`,
-    nominee: nomination.primaryName ? `${nomination.primaryName} (${nomination.primaryRelation}, ${nomination.primaryShare}%)` : null,
+    nominee: nomination.primaryName ? nomineeSummary : null,
   });
 
   // Session-worker prefetch: Muse Image renders the policy card while the customer is still on the last step,
@@ -1994,7 +2153,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     `Riders: ${[selectedRiders.criticalIllness && 'Critical Illness', selectedRiders.accidentalDeath && 'Accidental', selectedRiders.waiverOfPremium && 'Waiver', selectedRiders.hospitalCash && 'Hospital Cash'].filter(Boolean).join(', ') || 'none'}`,
     `Name: ${profile.fullName || '—'} · DOB: ${profile.dob || '—'}`,
     `Income: ${profile.annualIncome ? `₹${Number(profile.annualIncome).toLocaleString('en-IN')}` : '—'} · Pincode: ${profile.pincode || '—'}`,
-    `Nominee: ${nomination.primaryName ? `${nomination.primaryName} (${nomination.primaryShare}%)` : '—'}`,
+    `Nominees: ${nomination.primaryName ? nomineeSummary : '—'}`,
   ];
   const agentFrameLabel = isSharingPaused
     ? 'paused'
@@ -3245,6 +3404,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         secondaryShare: 30,
                         appointeeName: 'Shankar Thorat',
                         appointeeRelation: 'Grandparent',
+                        additionalNominees: [],
                         mwpaTrustEnabled: true,
                       });
                       speakText(
@@ -3394,41 +3554,155 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       </div>
                     </div>
 
-                    {/* If minor nominee (<18 yrs), Appointee Details required under IRDAI Sec 39 */}
-                    {nomination.secondaryAge < 18 && (
-                      <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
-                        <div className="flex items-center gap-1.5 text-amber-900 text-xs font-bold">
-                          <span>Minor Nominee Detected (&lt; 18 years)</span>
-                          <span className="text-[11px] tabular-nums bg-amber-100 px-2 py-0.5 rounded text-amber-800">
-                            IRDAI Section 39 Requirement: Adult Appointee Mandated</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[11px] font-semibold text-amber-900 block mb-1">Appointee Full Legal Name</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Shankar Thorat"
-                              value={nomination.appointeeName}
-                              onChange={(e) => setNomination(prev => ({ ...prev, appointeeName: e.target.value }))}
-                              className="w-full px-3 py-1.5 rounded-lg border border-amber-300 text-xs text-slate-900 font-medium"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-semibold text-amber-900 block mb-1">Relationship to Minor</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Paternal Grandfather"
-                              value={nomination.appointeeRelation}
-                              onChange={(e) => setNomination(prev => ({ ...prev, appointeeRelation: e.target.value }))}
-                              className="w-full px-3 py-1.5 rounded-lg border border-amber-300 text-xs text-slate-900 font-medium"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
+
+              {/* Third and fourth nominees, for example a second child */}
+              {nomination.hasSecondaryNominee && (
+                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900">More nominees <span className="font-normal text-slate-500">(up to 4 in total)</span></span>
+                    <button
+                      type="button"
+                      disabled={nomination.additionalNominees.length >= 2}
+                      onClick={() =>
+                        setNomination((prev) => ({
+                          ...prev,
+                          additionalNominees: [...prev.additionalNominees, { name: '', relation: 'Child', age: 5, share: 0 }].slice(0, 2),
+                        }))
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-[#582be8] hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      + Add another nominee
+                    </button>
+                  </div>
+                  {nomination.additionalNominees.map((n, i) => (
+                    <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_9rem_5rem_5rem_auto] gap-3 items-end pt-2 border-t border-slate-200">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Nominee {i + 3} name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Anaya Thorat"
+                          value={n.name}
+                          onChange={(e) => setNomination((prev) => ({ ...prev, additionalNominees: prev.additionalNominees.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)) }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Relationship</label>
+                        <select
+                          value={n.relation}
+                          onChange={(e) => setNomination((prev) => ({ ...prev, additionalNominees: prev.additionalNominees.map((x, k) => (k === i ? { ...x, relation: e.target.value } : x)) }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium"
+                        >
+                          <option value="Child">Child</option>
+                          <option value="Spouse">Spouse</option>
+                          <option value="Parent">Parent</option>
+                          <option value="Sibling">Sibling</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Age</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={99}
+                          value={n.age}
+                          onChange={(e) => setNomination((prev) => ({ ...prev, additionalNominees: prev.additionalNominees.map((x, k) => (k === i ? { ...x, age: parseInt(e.target.value, 10) || 0 } : x)) }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 tabular-nums font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Share %</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={n.share}
+                          onChange={(e) => setNomination((prev) => ({ ...prev, additionalNominees: prev.additionalNominees.map((x, k) => (k === i ? { ...x, share: parseInt(e.target.value, 10) || 0 } : x)) }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 tabular-nums font-bold"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setNomination((prev) => ({ ...prev, additionalNominees: prev.additionalNominees.filter((_, k) => k !== i) }))}
+                        className="px-2.5 py-2 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-red-600 hover:bg-red-50"
+                        title="Remove this nominee"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Shares must total 100 across every nominee */}
+              <div
+                className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${
+                  nomineeTotalShare === 100 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'
+                }`}
+              >
+                <span>
+                  {nomineeTotalShare === 100
+                    ? `Total share 100% across ${allNominees.length} nominee${allNominees.length === 1 ? '' : 's'}`
+                    : `Shares add up to ${nomineeTotalShare}%. They must total 100% before you continue.`}
+                </span>
+                {allNominees.length > 1 && nomineeTotalShare !== 100 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNomination((prev) => {
+                        const n = 1 + (prev.hasSecondaryNominee ? 1 + prev.additionalNominees.length : 0);
+                        const each = Math.floor(100 / n);
+                        return {
+                          ...prev,
+                          primaryShare: 100 - each * (n - 1),
+                          secondaryShare: each,
+                          additionalNominees: prev.additionalNominees.map((x) => ({ ...x, share: each })),
+                        };
+                      })
+                    }
+                    className="px-3 py-1 rounded-lg bg-white border border-red-300 text-red-700 hover:bg-red-100"
+                  >
+                    Split equally
+                  </button>
+                )}
+              </div>
+
+              {/* A minor nominee needs an adult appointee (Insurance Act section 39) */}
+            {/* If minor nominee (<18 yrs), Appointee Details required under IRDAI Sec 39 */}
+            {anyMinorNominee && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
+                <div className="flex items-center gap-1.5 text-amber-900 text-xs font-bold">
+                  <span>Minor nominee detected (under 18 years)</span>
+                  <span className="text-[11px] tabular-nums bg-amber-100 px-2 py-0.5 rounded text-amber-800">
+                    IRDAI Section 39 Requirement: Adult Appointee Mandated</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-amber-900 block mb-1">Appointee Full Legal Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Shankar Thorat"
+                      value={nomination.appointeeName}
+                      onChange={(e) => setNomination(prev => ({ ...prev, appointeeName: e.target.value }))}
+                      className="w-full px-3 py-1.5 rounded-lg border border-amber-300 text-xs text-slate-900 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-amber-900 block mb-1">Relationship to Minor</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Paternal Grandfather"
+                      value={nomination.appointeeRelation}
+                      onChange={(e) => setNomination(prev => ({ ...prev, appointeeRelation: e.target.value }))}
+                      className="w-full px-3 py-1.5 rounded-lg border border-amber-300 text-xs text-slate-900 font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
               <div className="flex justify-between items-center pt-2 border-t border-slate-100">
                 <button
@@ -3438,6 +3712,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   ← Back to Step 2: Benefit Ladders
                 </button>
                 <button
+                  disabled={nomineeTotalShare !== 100}
+                  title={nomineeTotalShare !== 100 ? 'Nominee shares must total 100%' : undefined}
                   onClick={() => {
                     if (!nomination.primaryName) {
                       setNomination(prev => ({ ...prev, primaryName: 'Priya Ramesh Thorat' }));
@@ -3601,7 +3877,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <div className="flex justify-between text-slate-700 pb-2 border-b border-slate-200">
                   <span className="text-slate-500">Designated Nominee & Trust:</span>
                   <span className="font-bold text-slate-900">
-                    {nomination.primaryName || 'Priya Ramesh Thorat'} ({nomination.primaryRelation}, {nomination.primaryShare}%)
+                    {nomination.primaryName ? nomineeSummary : `Priya Ramesh Thorat (${nomination.primaryRelation}, ${nomination.primaryShare}%)`}
                     {nomination.mwpaTrustEnabled ? ' • MWPA Trust Shield Active' : ''}</span>
                 </div>
 
@@ -3655,6 +3931,90 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   </button>
                 </div>
               ) : (
+                <>
+                {/* 1. E-sign the proposal */}
+                <div id="card-esign" className={`p-4 rounded-xl border space-y-3 ${esignValid ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-white'}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-slate-900">1. E-sign your proposal {esignValid ? '✓' : ''}</h3>
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Demo e-sign: no Aadhaar OTP, not legally binding</span>
+                  </div>
+                  {esignValid ? (
+                    <div className="text-xs text-emerald-900 space-y-1">
+                      <div className="font-bold">Signed by {esign.typedName.trim()} on {esign.signedAt ? new Date(esign.signedAt).toLocaleString() : ''}</div>
+                      <div className="font-mono text-[11px] break-all text-slate-500">Signature hash: {esign.hash}</div>
+                      <button type="button" onClick={() => setEsign((e) => ({ ...e, signedAt: null, hash: null, fingerprint: null }))} className="underline text-[11px]">Sign again</button>
+                    </div>
+                  ) : (
+                    <>
+                      {esign.signedAt && <p className="text-xs font-semibold text-amber-700">Your details changed after you signed, so please sign again.</p>}
+                      <label className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={esign.consent} onChange={(e) => setEsign((s2) => ({ ...s2, consent: e.target.checked, error: null }))} className="mt-0.5 size-4 rounded text-[#582be8]" />
+                        <span>I declare that the information in this proposal is true and complete, and I understand that wrong or hidden facts can let the insurer reject a claim (Insurance Act section 45). I agree to sign electronically.</span>
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">Type your full name to sign</label>
+                          <input
+                            type="text"
+                            value={esign.typedName}
+                            onChange={(e) => setEsign((s2) => ({ ...s2, typedName: e.target.value, error: null }))}
+                            placeholder={profile.fullName || 'Your full name'}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium"
+                          />
+                          {esign.typedName && (
+                            <div className="mt-1 text-xl text-slate-800" style={{ fontFamily: '"Snell Roundhand","Brush Script MT",cursive' }}>{esign.typedName}</div>
+                          )}
+                        </div>
+                        <button type="button" onClick={signProposal} className="px-5 py-2.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs">Sign (demo)</button>
+                      </div>
+                      {esign.error && <p className="text-xs text-red-600 font-medium">{esign.error}</p>}
+                    </>
+                  )}
+                </div>
+
+                {/* 2. Pay the first premium */}
+                <div id="card-payment" className={`p-4 rounded-xl border space-y-3 ${paymentValid ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-white'} ${esignValid ? '' : 'opacity-60'}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-slate-900">2. Pay your first premium {paymentValid ? '✓' : ''}</h3>
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Demo checkout: no real money is taken</span>
+                  </div>
+                  {paymentValid ? (
+                    <div className="text-xs text-emerald-900 space-y-0.5">
+                      <div className="font-bold">₹{payment.amount} received · transaction {payment.txnId}</div>
+                      <div className="text-slate-500">{payment.paidAt ? new Date(payment.paidAt).toLocaleString() : ''} · {payment.mode === 'upi' ? 'UPI' : payment.mode === 'card' ? 'Card' : payment.mode === 'netbanking' ? 'Net banking' : 'Monthly auto-pay'}</div>
+                    </div>
+                  ) : (
+                    <>
+                      {payment.status === 'paid' && <p className="text-xs font-semibold text-amber-700">The premium changed after you paid, so please pay again.</p>}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {([['upi', 'UPI'], ['card', 'Card'], ['netbanking', 'Net banking'], ['autopay', 'Monthly auto-pay']] as const).map(([m, label]) => (
+                          <button
+                            key={m}
+                            type="button"
+                            disabled={!esignValid}
+                            onClick={() => setPayment((pm) => ({ ...pm, mode: m }))}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${payment.mode === m ? 'bg-[#582be8] border-[#582be8] text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'} disabled:cursor-not-allowed`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-xs text-slate-600">First month, including 18% GST: <strong className="text-slate-900 tabular-nums">₹{totalMonthlyPayable}</strong>. Your cover starts once the first premium is received.</span>
+                        <button
+                          type="button"
+                          disabled={!esignValid || payment.status === 'processing'}
+                          onClick={payFirstPremium}
+                          className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {payment.status === 'processing' ? 'Processing…' : `Pay ₹${totalMonthlyPayable} (demo)`}
+                        </button>
+                      </div>
+                      {!esignValid && <p className="text-[11px] text-slate-500">Sign the proposal first.</p>}
+                    </>
+                  )}
+                </div>
+
                 <div className="flex flex-wrap justify-between items-center gap-3 pt-2 border-t border-slate-100">
                   <div className="flex items-center gap-2">
                     <button
@@ -3682,11 +4042,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   </div>
                   <button
                     onClick={submitPolicyProposal}
-                    className="px-7 py-3.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider shadow-sm transition-all"
+                    disabled={!esignValid || !paymentValid}
+                    title={!esignValid || !paymentValid ? 'Sign the proposal and pay the first premium first' : undefined}
+                    className="px-7 py-3.5 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Confirm & Lock Policy (₹{totalMonthlyPayable}/mo)
                   </button>
                 </div>
+                </>
               )}
             </div>
           )}
@@ -4753,10 +5116,21 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     c.category.toLowerCase().includes(termsSearchQuery.toLowerCase())
                 )
                 .map((c) => (
-                  <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-white hover:border-[#582be8]/40 transition-all space-y-2">
+                  <div
+                    key={c.id}
+                    id={`clause-${c.id}`}
+                    className={`p-4 rounded-xl border transition-all space-y-2 ${
+                      highlightedClause === c.id
+                        ? 'border-[#582be8] ring-2 ring-[#582be8]/60 bg-purple-50/60 shadow-md'
+                        : 'border-slate-200 bg-white hover:border-[#582be8]/40'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] tabular-nums font-bold px-2 py-0.5 rounded-md bg-purple-50 text-[#582be8] border border-purple-200">
                         {c.clauseNumber} • {c.category}</span>
+                      {highlightedClause === c.id && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#582be8] text-white">Being explained</span>
+                      )}
                       <span className="text-[11px] tabular-nums text-slate-400">{c.irdaiRef}</span>
                     </div>
                     <h4 className="text-xs font-bold text-slate-900">{c.title}</h4>

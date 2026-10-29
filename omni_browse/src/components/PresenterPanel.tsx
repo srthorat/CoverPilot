@@ -30,7 +30,7 @@ export interface TurnRecord {
   ttftMs?: number | null;
   totalMs?: number | null;
   wonder?: {
-    status: 'pending' | 'approve' | 'amend' | 'reject' | 'error';
+    status: 'pending' | 'approve' | 'amend' | 'reject' | 'ask' | 'error';
     actionTitle: string;
     reason?: string;
     ms?: number;
@@ -52,11 +52,11 @@ export function describeFieldAction(a: Record<string, any>): string {
     case 'cover':
       return `base cover → ${a.value}`;
     case 'ui':
-      return `ui: ${a.action}`;
+      return `ui: ${a.action}${a.clause ? ` (clause ${String(a.clause).replace(/\D/g, '')})` : ''}`;
     case 'nominate':
       return `nominate ${Object.entries(a)
         .filter(([k]) => k !== 'type')
-        .map(([k, v]) => `${k}=${v}`)
+        .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
         .join(', ')}`;
     default:
       return JSON.stringify(a).slice(0, 80);
@@ -107,6 +107,7 @@ const WONDER_COLOR: Record<string, string> = {
   approve: 'text-green-400 bg-green-400/10 border-green-400/30',
   amend: 'text-blue-400 bg-blue-400/10 border-blue-400/30',
   reject: 'text-red-400 bg-red-400/10 border-red-400/30',
+  ask: 'text-orange-300 bg-orange-400/10 border-orange-400/30',
   error: 'text-slate-400 bg-slate-400/10 border-slate-400/30',
 };
 
@@ -115,6 +116,7 @@ const WONDER_LABEL: Record<string, string> = {
   approve: '✓ Approved',
   amend: '✎ Amended',
   reject: '✗ Rejected',
+  ask: '? Needs your input',
   error: '! Error',
 };
 

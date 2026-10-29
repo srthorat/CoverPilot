@@ -32,7 +32,7 @@ export type AgentEvent =
   | {
       type: 'action_verification';
       id: string;
-      status: 'pending' | 'approve' | 'amend' | 'reject' | 'error';
+      status: 'pending' | 'approve' | 'amend' | 'reject' | 'ask' | 'error';
       model: string;
       actionTitle: string;
       reason?: string;
@@ -135,6 +135,7 @@ export class VoiceAgentClient {
   private ready = false;
   private turnCounter = 0;
   private speaking = false;
+  private connecting = false;
   lang: 'en' | 'hi' | 'mr';
 
   constructor(opts: VoiceAgentClientOptions) {
@@ -154,10 +155,7 @@ export class VoiceAgentClient {
 
   async start(): Promise<void> {
     this.stopped = false;
-    const transport = new SmallWebRTCTransport({
-      iceServers: await fetchIceServers(),
-      waitForICEGathering: false,
-    });
+    const iceServers = await fetchIceServers();
     const emit = (ev: AgentEvent) => {
       if (!this.stopped) this.opts.onEvent(ev);
     };
@@ -168,8 +166,8 @@ export class VoiceAgentClient {
       emit({ type: 'state', state: on ? 'speaking' : 'listening' });
     };
 
-    const client = new PipecatClient({
-      transport,
+    const build = () => new PipecatClient({
+      transport: new SmallWebRTCTransport({ iceServers, waitForICEGathering: false }),
       enableMic: true,
       enableCam: false,
       callbacks: {
@@ -254,31 +252,64 @@ export class VoiceAgentClient {
         onDisconnected: () => {
           this.ready = false;
           setSpeaking(false);
-          if (!this.stopped) emit({ type: 'closed', code: 1006, reason: 'disconnected' });
+          if (!this.stopped && !this.connecting) emit({ type: 'closed', code: 1006, reason: 'disconnected' });
         },
       },
     });
-    this.client = client;
-
-    try {
-      await client.initDevices();
-      // Direct SmallWebRTC offer (no /start step): the body is {sdp, type, requestData},
-      // and the runner hands requestData to the bot as its session body.
-      await client.connect({
-        webrtcRequestParams: {
-          endpoint: VOICE_AGENT_OFFER_URL,
-          requestData: {
-            lang: this.lang,
-            persona: this.opts.voice,
-            accent: this.opts.accent,
-            customerId: this.opts.customerId || null,
-            autoWelcome: this.opts.autoWelcome !== false,
-          },
-        },
-      });
-    } catch (err) {
-      this.stop();
-      throw err;
+    // The first connection after the agent starts cold can fail ICE once (seen in logs); a fresh peer
+    // connection almost always succeeds, so try twice before reporting an error.
+    const MAX_ATTEMPTS = 2;
+    const CONNECT_TIMEOUT_MS = 20_000;
+    for (let attempt = 1; ; attempt++) {
+      const client = build();
+      this.client = client;
+      this.connecting = true;
+      try {
+        await client.initDevices();
+        // Direct SmallWebRTC offer (no /start step): the body is {sdp, type, requestData},
+        // and the runner hands requestData to the bot as its session body.
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('The voice connection timed out')), CONNECT_TIMEOUT_MS);
+        });
+        try {
+          await Promise.race([
+            client.connect({
+              webrtcRequestParams: {
+                endpoint: VOICE_AGENT_OFFER_URL,
+                requestData: {
+                  lang: this.lang,
+                  persona: this.opts.voice,
+                  accent: this.opts.accent,
+                  customerId: this.opts.customerId || null,
+                  autoWelcome: this.opts.autoWelcome !== false,
+                },
+              },
+            }),
+            timeout,
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
+        this.connecting = false;
+        return;
+      } catch (err) {
+        this.connecting = false;
+        this.ready = false;
+        this.client = null;
+        try {
+          await client.disconnect();
+        } catch {
+          /* already closed */
+        }
+        const mic = (err as { name?: string })?.name;
+        const fatal = this.stopped || attempt >= MAX_ATTEMPTS || mic === 'NotAllowedError' || mic === 'PermissionDeniedError';
+        if (fatal) {
+          this.stop();
+          throw err;
+        }
+        console.warn('Voice connection failed, retrying once', err);
+      }
     }
   }
 
