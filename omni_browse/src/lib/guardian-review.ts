@@ -96,7 +96,8 @@ async function sparkReviewJson(messages: ChatMessage[]): Promise<{ data: unknown
   const env = metaEnv();
   const res = await fetch(`${env.baseUrl}/chat/completions`, {
     method: 'POST',
-    signal: AbortSignal.timeout(env.timeoutMs),
+    // A whole-document review is a long generation (30 s or more); the shared per-call timeout is for short answers.
+    signal: AbortSignal.timeout(Math.max(env.timeoutMs, 120_000)),
     headers: { Authorization: `Bearer ${env.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: env.sparkModel, temperature: 0, reasoning_effort: 'medium', messages }),
   });
@@ -130,7 +131,13 @@ export async function reviewDocument(input: { pages: GuardianPage[]; proposal: P
     { role: 'user', content: userMessage(pages, proposal) },
   ];
   const t0 = Date.now();
-  const { data, model } =
-    which === 'spark' ? await sparkReviewJson(messages) : await sparkOpenJson(messages);
+  const call = () => (which === 'spark' ? sparkReviewJson(messages) : sparkOpenJson(messages));
+  // The model occasionally returns JSON that cannot be parsed; one retry is enough in practice, and a
+  // second failure is reported rather than hidden. Configuration errors are never retried.
+  const { data, model } = await call().catch((e) => {
+    if (e instanceof GuardianConfigError) throw e;
+    console.error('[guardian] first attempt failed, retrying once:', String(e?.message || e).slice(0, 200));
+    return call();
+  });
   return { provider: which, model, ms: Date.now() - t0, review: validateReview(data, pages.map((p) => p.page)) };
 }

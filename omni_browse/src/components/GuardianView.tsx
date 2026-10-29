@@ -107,7 +107,7 @@ export function GuardianView(p: Props) {
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
         <span className="font-semibold text-slate-700">Document to review:</span>
         {p.allowOwnFile && <button onClick={() => fileInput.current?.click()} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold">Choose a PDF</button>}
-        <button disabled={!p.canUseDraft} onClick={() => p.onSample('draft')} title={p.canUseDraft ? 'Your own proposal summary, built from the application' : 'Complete the application first'} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 disabled:opacity-50 border border-slate-300 font-semibold">My draft proposal summary</button>
+        <button disabled={!p.canUseDraft} onClick={() => p.onSample('draft')} title={p.canUseDraft ? 'The proposed policy generated from your application' : 'Complete the application first'} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 disabled:opacity-50 border border-slate-300 font-semibold">My proposed policy (draft)</button>
         <button onClick={() => p.onSample('issues')} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold">Sample proposed policy (with issues)</button>
         <button onClick={() => p.onSample('sample')} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold">Sample policy</button>
         <input ref={fileInput} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) p.onFile(f); }} />
