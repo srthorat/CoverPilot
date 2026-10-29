@@ -1985,51 +1985,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const pageContent = (
     <div className="h-screen overflow-hidden bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
       
-      {/* 1. Authentic Top Regulatory Strip with Language Picker */}
-      <div className="shrink-0 bg-[#1e104f] text-white text-[11px] px-6 py-1 border-b border-[#2d1b70]">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <span className="font-semibold text-purple-200">ACKO Life Insurance Limited</span>
-            <span className="text-purple-400">|</span>
-            <span className="text-purple-300">IRDAI Reg. No. 157</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Quick Language Switcher */}
-            <div className="flex items-center gap-1 bg-[#2d1b70] p-0.5 rounded-lg border border-purple-400/30">
-              <button
-                onClick={() => handleLanguageChange('en')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                  selectedLanguage === 'en' ? 'bg-[#582be8] text-white' : 'text-purple-200 hover:text-white'
-                }`}
-              >
-                English
-              </button>
-              <button
-                onClick={() => handleLanguageChange('hi')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                  selectedLanguage === 'hi' ? 'bg-[#582be8] text-white' : 'text-purple-200 hover:text-white'
-                }`}
-              >
-                हिंदी
-              </button>
-              <button
-                onClick={() => handleLanguageChange('mr')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                  selectedLanguage === 'mr' ? 'bg-[#582be8] text-white' : 'text-purple-200 hover:text-white'
-                }`}
-              >
-                मराठी
-              </button>
-            </div>
-
-          </div>
-        </div>
-      </div>
-
       {/* 2. Main ACKO Header */}
       <header className="shrink-0 bg-white border-b border-slate-200 z-30">
-        <div className="max-w-7xl mx-auto px-6 py-2 flex items-center justify-between">
+        <div className="w-full px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="size-9 rounded-xl bg-[#582be8] text-white flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
               acko
@@ -2040,34 +1998,25 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-[#582be8] border border-purple-200">
                   Life Flexi Shield</span>
               </div>
-              <p className="text-[11px] text-slate-500">Pure Term Life Insurance with Zero Commission & Living Benefits</p>
+              <p className="text-[11px] text-slate-500 truncate max-w-[36rem]">ACKO Life Insurance Limited · IRDAI Reg. No. 157 · Pure term life with zero commission & living benefits</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Primary Co-Browsing Assist Connect / Disconnect */}
-            {!isCoBrowsingConnected ? (
-              <button
-                onClick={connectCoBrowsingSession}
-                disabled={isConnecting}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#582be8] hover:bg-[#481dd4] disabled:opacity-60 text-white text-xs font-semibold transition-colors"
-              >
-                <span>{isConnecting ? 'Connecting…' : 'Start co-browsing assist'}</span>
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                  <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Live session</span>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Language switcher */}
+            <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+              {([['en', 'English'], ['hi', 'हिंदी'], ['mr', 'मराठी']] as const).map(([l, label]) => (
                 <button
-                  onClick={disconnectCoBrowsingSession}
-                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
+                  key={l}
+                  onClick={() => handleLanguageChange(l)}
+                  className={`px-2 py-1 rounded text-[11px] font-bold transition-all ${
+                    selectedLanguage === l ? 'bg-[#582be8] text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  End Session
+                  {label}
                 </button>
-              </div>
-            )}
-
+              ))}
+            </div>
             {/* Audio Unmute & Test Button */}
             <button
               onClick={testAndUnmuteAudio}
@@ -2111,10 +2060,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
       {/* Co-Browsing Status Bar: WebRTC Screen Share & Dual-Cursor Screen Control */}
       {isCoBrowsingConnected && (
-        <div className={`shrink-0 bg-gradient-to-r from-[#180d40] via-[#24135e] to-[#180d40] text-white px-6 py-1.5 border-b border-purple-800/40 transition-all ${
+        <div className={`shrink-0 bg-gradient-to-r from-[#180d40] via-[#24135e] to-[#180d40] text-white px-4 lg:px-6 py-1.5 border-b border-purple-800/40 transition-all ${
           isScreenSharing && !isSharingPaused ? 'screen-share-active-border' : ''
         }`}>
-          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="w-full flex flex-wrap items-center justify-between gap-3 text-xs">
             
             {/* Left: Stream Telemetry */}
             <div className="flex items-center gap-3">
@@ -2226,8 +2175,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       )}
 
       {/* 3. Stepper Navigation */}
-      <nav className="shrink-0 bg-white border-b border-slate-200 px-6 py-1.5">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <nav className="shrink-0 bg-white border-b border-slate-200 px-4 lg:px-6 py-1">
+        <div className="w-full flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto text-xs py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             
             {/* Step 1 */}
@@ -2326,37 +2275,36 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       </nav>
 
       {/* 4. Main Page Layout */}
-      <main className="flex-1 min-h-0 max-w-7xl mx-auto w-full px-6 py-3 flex flex-col gap-3 relative overflow-hidden">
+      <main className="flex-1 min-h-0 w-full px-4 lg:px-6 py-2 flex flex-col gap-2 relative overflow-hidden">
 
         {/* Co-Browsing Assist Invitation Banner */}
         {!isCoBrowsingConnected && !dismissOffer && (
-          <div className="shrink-0 lg:col-span-12 p-3 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm border border-purple-400/40 animate-fade-in">
-            <div className="flex items-center gap-4">
-              <div className="size-12 rounded-2xl bg-white/10 flex items-center justify-center text-sm font-bold tracking-tight border border-white/15 shrink-0">
+          <div className="shrink-0 px-3 py-2 rounded-xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex items-center justify-between gap-3 shadow-sm border border-purple-400/40 animate-fade-in">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="size-8 rounded-lg bg-white/10 flex items-center justify-center text-[11px] font-bold border border-white/15 shrink-0">
                 OB
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold tracking-tight text-white">Need assistance with your proposal?</h3>
-                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-purple-100 font-medium border border-white/15">
-                    Live voice assistant</span>
-                </div>
-                <p className="text-xs text-purple-200 mt-0.5 max-w-2xl">
-                  Talk to the assistant while you fill in the form. It explains riders, income tiers and clauses, and can fill fields for you with your consent.
-                </p>
-              </div>
+              <h3 className="text-sm font-bold tracking-tight text-white shrink-0">Need assistance with your proposal?</h3>
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-purple-100 font-medium border border-white/15 shrink-0">
+                Live voice assistant</span>
+              <p
+                className="text-xs text-purple-200 truncate hidden xl:block"
+                title="Talk to the assistant while you fill in the form. It explains riders, income tiers and clauses, and can fill fields for you with your consent."
+              >
+                Talk to the assistant while you fill in the form. It explains riders, income tiers and clauses, and can fill fields for you with your consent.
+              </p>
             </div>
-            <div className="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={connectCoBrowsingSession}
                 disabled={isConnecting}
-                className="px-5 py-2.5 rounded-lg bg-white hover:bg-purple-50 text-[#2d1b70] font-semibold text-xs transition-colors flex items-center gap-2"
+                className="px-4 py-1.5 rounded-lg bg-white hover:bg-purple-50 text-[#2d1b70] font-semibold text-xs transition-colors flex items-center gap-2"
               >
                 <span>Accept and start co-browsing</span>
               </button>
               <button
                 onClick={() => setDismissOffer(true)}
-                className="px-3.5 py-2.5 rounded-lg bg-transparent hover:bg-white/10 text-purple-100 font-medium text-xs border border-white/20 transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-transparent hover:bg-white/10 text-purple-100 font-medium text-xs border border-white/20 transition-colors"
               >
                 Fill manually
               </button>
@@ -2364,26 +2312,25 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           </div>
         )}
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_clamp(340px,30%,440px)] gap-3">
         {/* Form Body (8 Columns): scrolls on its own */}
-        <div ref={formBodyRef} className="lg:col-span-8 min-h-0 overflow-y-auto pr-2 flex flex-col gap-6">
+        <div ref={formBodyRef} className="@container min-h-0 overflow-y-auto pr-2 flex flex-col gap-4">
 
           {/* STEP 1: Blank Profile (Click any field -> auto-played regional guidance!) */}
           {activeStep === 1 && (
-            <div className="acko-card p-6 flex flex-col gap-5">
-              <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+            <div className="acko-card p-4 flex flex-col gap-3">
+              <div className="pb-2 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 1: Applicant Profile & Eligibility</h2>
                   <p className="text-xs text-slate-500">
                     Select a field to hear guidance in <strong>{selectedLanguage === 'hi' ? 'हिंदी' : selectedLanguage === 'mr' ? 'मराठी' : 'English'}</strong>.
                   </p>
                 </div>
-                <div className="text-[11px] text-slate-500">Voice guidance plays when you select a field</div>
               </div>
 
               {/* Feature 3: 1-Click Sample KYC Document Ingestion (Meta Muse Image OCR Demo) */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <span className="text-2xl"></span>
                   <div>
                     <div className="flex items-center gap-2">
@@ -2391,12 +2338,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-white text-slate-600 border border-slate-200">
                         Private parts hidden before reading</span>
                     </div>
-                    <p className="text-[11px] text-slate-600">
+                    <p className="text-[11px] text-slate-600 line-clamp-2">
                       Photos, signatures, QR codes and ID numbers (Aadhaar, PAN, UAN, bank account) are located and pixelated on your device before the image is read. Your name and date of birth stay readable so the form can be filled.
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto shrink-0">
                   <button
                     type="button"
                     onClick={() => handleRunSampleKycOcr('pan')}
@@ -2475,7 +2422,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               )}
 
               {/* Input Fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-3 gap-x-3 gap-y-0 text-xs">
                 
                 {/* 1. Full Legal Name (Auto-Play on Click/Focus) */}
                 <div
@@ -2498,7 +2445,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>Why we ask</span>
+                        <span>Why?</span>
                       </button>
                     </div>
                     <button
@@ -2549,7 +2496,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>Why we ask</span>
+                        <span>Why?</span>
                       </button>
                     </div>
                     <button
@@ -2644,7 +2591,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>Why we ask</span>
+                        <span>Why?</span>
                       </button>
                     </div>
                     <button
@@ -2698,7 +2645,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
                         title="Why does ACKO ask this?"
                       >
-                        <span>Why we ask</span>
+                        <span>Why?</span>
                       </button>
                     </div>
                     <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
@@ -2774,31 +2721,17 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
               </div>
 
-              {/* Masked Sensitive Records (Zero-PII guarantee) */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-800">
-                     Confidential Identity Records (Zero-PII Protected)</span>
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800">
-                    Masked from OmniCB Agent</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs tabular-nums text-slate-700">
-                  <div className="p-2.5 rounded-lg bg-white border border-slate-200">
-                    <span className="text-[11px] text-slate-400 block mb-0.5">Aadhaar Card:</span>
-                    <span className="font-bold tracking-wider">{profile.aadhaarNumber}</span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-white border border-slate-200">
-                    <span className="text-[11px] text-slate-400 block mb-0.5">PAN Card:</span>
-                    <span className="font-bold tracking-wider">{profile.panNumber}</span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-white border border-slate-200">
-                    <span className="text-[11px] text-slate-400 block mb-0.5">Mobile Number:</span>
-                    <span className="font-bold tracking-wider">{profile.mobileNumber}</span>
-                  </div>
-                </div>
+              {/* Masked identity placeholders: the agent only ever sees these masked values */}
+              <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs tabular-nums text-slate-700">
+                <span className="font-bold text-slate-800">Identity records</span>
+                <span><span className="text-[11px] text-slate-400">Aadhaar </span><span className="font-bold tracking-wider">{profile.aadhaarNumber}</span></span>
+                <span><span className="text-[11px] text-slate-400">PAN </span><span className="font-bold tracking-wider">{profile.panNumber}</span></span>
+                <span><span className="text-[11px] text-slate-400">Mobile </span><span className="font-bold tracking-wider">{profile.mobileNumber}</span></span>
+                <span className="ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800">
+                  Masked from OmniCB Agent</span>
               </div>
 
-              <div className="flex justify-end pt-2 border-t border-slate-100">
+              <div className="flex justify-end pt-1.5 border-t border-slate-100">
                 <button
                   onClick={() => {
                     if (!profile.fullName) {
@@ -2812,7 +2745,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     setActiveStep(2);
                     setIdleSeconds(0);
                   }}
-                  className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
+                  className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
                   <span>Continue to Step 2: Cover & Riders</span>
                   <span>→</span>
@@ -2826,7 +2759,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             <div className="flex flex-col gap-6">
 
               {/* Base Plan Selection */}
-              <div className="acko-card p-6">
+              <div className="acko-card p-4">
                 <div className="pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="text-base font-bold text-[#111827]">Step 2.1: Base Life Protection Cover</h2>
@@ -2876,7 +2809,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               </div>
 
               {/* Add-on Riders (Clicking auto-plays guidance) */}
-              <div className="acko-card p-6">
+              <div className="acko-card p-4">
                 <div className="pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="text-base font-bold text-[#111827] flex items-center gap-2">
@@ -2894,7 +2827,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-4 gap-3">
                   
                   {/* Rider 1: Critical Illness */}
                   <div
@@ -2917,7 +2850,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Critical Illness Cover</h3>
-                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹149/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8] whitespace-nowrap shrink-0">+₹149/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       ₹25,00,000 cash lump sum paid on first diagnosis of 36 critical illnesses including Heart Attack, Cancer, and Stroke.
@@ -2947,7 +2880,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Accidental Death Cover</h3>
-                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹79/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8] whitespace-nowrap shrink-0">+₹79/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       Doubles total payout (additional ₹1.00 Crore) in case of accidental demise or permanent occupational disability.
@@ -2978,7 +2911,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Waiver of Premium (WOP)</h3>
-                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹42/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8] whitespace-nowrap shrink-0">+₹42/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       If you suffer permanent disability, all future premiums for the next 30 years are 100% waived; policy stays active.
@@ -3008,7 +2941,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     )}
                     <div className="flex items-baseline justify-between mb-1 pr-6">
                       <h3 className="text-sm font-bold text-[#111827]">Hospital Daily Cash Allowance</h3>
-                      <span className="text-xs tabular-nums font-bold text-[#582be8]">+₹55/mo</span>
+                      <span className="text-xs tabular-nums font-bold text-[#582be8] whitespace-nowrap shrink-0">+₹55/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       Fixed ₹5,000 cash allowance per 24 hours of hospitalization to cover incidental expenses and loss of daily income.
@@ -3175,7 +3108,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           {/* STEP 3: Beneficiary Nomination & Statutory Trust (IRDAI Section 39 & MWPA 1874) */}
           {activeStep === 3 && (
-            <div id="nomination-section"className="acko-card p-6 flex flex-col gap-5">
+            <div id="nomination-section"className="acko-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827] flex items-center gap-2">
@@ -3439,7 +3372,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           {/* STEP 4: Medical Disclosures */}
           {activeStep === 4 && (
-            <div className="acko-card p-6 flex flex-col gap-5">
+            <div className="acko-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 4: Medical & Underwriting Disclosures</h2>
@@ -3539,7 +3472,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           {/* STEP 5: Summary & Issuance */}
           {activeStep === 5 && (
-            <div className="acko-card p-6 flex flex-col gap-5">
+            <div className="acko-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 5: Policy Schedule, Terms & Instant Issuance</h2>
@@ -3677,7 +3610,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         </div>
 
         {/* Right Sticky Sidebar: Premium Breakdown & Docked OmniCB Advisor */}
-        <div className="lg:col-span-4 min-h-0 overflow-y-auto flex flex-col gap-3">
+        <div className="min-h-0 overflow-y-auto flex flex-col gap-3">
           
           {/* Premium Breakdown Card */}
           <div className="acko-card p-3 shrink-0">
@@ -4780,8 +4713,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       )}
 
       {/* 7. Authentic ACKO Modern Footer */}
-      <footer className="shrink-0 bg-[#1e104f] text-white text-[10px] px-6 py-1 border-t border-[#2d1b70]">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+      <footer className="shrink-0 bg-[#1e104f] text-white text-[10px] px-4 lg:px-6 py-1 border-t border-[#2d1b70]">
+        <div className="w-full flex items-center justify-between gap-3">
           <span
             className="truncate text-purple-300/80"
             title="ACKO Life Insurance Limited. Registered Office: #36/5, Hustlehub One East, 27th Main Rd, Sector 2, HSR Layout, Bengaluru, Karnataka 560102. Insurance is the subject matter of solicitation. ACKO Life Flexi Shield is a Non-Linked Non-Participating Individual Pure Risk Life Insurance Plan (UIN: 157N001V01)."
