@@ -54,11 +54,24 @@ ACK_SYSTEM_PROMPT = (
 
 
 class ScreenStateInjector(FrameProcessor):
-    def __init__(self, session: SessionState, settings: Settings, kb: KnowledgeBase | None = None, **kwargs):
+    def __init__(
+        self,
+        session: SessionState,
+        settings: Settings,
+        kb: KnowledgeBase | None = None,
+        kbs: dict[str, KnowledgeBase] | None = None,
+        guardian_kb: KnowledgeBase | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._session = session
         self._settings = settings
-        self._kb = kb
+        # One knowledge base per agent: the co-browsing agent's and Integrity Guardian's. kb= still maps to the co-browsing one.
+        self._kbs: dict[str, KnowledgeBase] = dict(kbs or {})
+        if kb is not None:
+            self._kbs.setdefault("cobrowse", kb)
+        if guardian_kb is not None:
+            self._kbs["guardian"] = guardian_kb
         self._decorated: dict[int, str] = {}  # id(message) -> original plain content
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -86,7 +99,8 @@ class ScreenStateInjector(FrameProcessor):
             if orig is not None:
                 m["content"] = orig
         # System prompt: static (cacheable) part first, then memory and the live form state.
-        static = build_system_prompt(s.lang, s.accent, self._settings.spark_model)
+        role = s.role
+        static = build_system_prompt(s.lang, s.accent, self._settings.spark_model, role)
         tail = []
         if s.memory_text:
             tail.append(s.memory_text)
@@ -105,19 +119,20 @@ class ScreenStateInjector(FrameProcessor):
         s.user_turns = (s.user_turns + [text])[-3:]
         s.main_started = False
         s.turn_started_at = time.time()
-        logger.info(f"[turn] user ({s.turn_source}): {text!r}")
+        logger.info(f"[turn] user ({s.turn_source}, {role}): {text!r}")
         self._decorated[id(last)] = text
         # Knowledge retrieved for this turn only.
-        hits = self._kb.search(text, k=4) if self._kb else []
-        kb_ctx = self._kb.hits_to_context(hits) if hits else ""
+        kb = self._kbs.get(role) or self._kbs.get("cobrowse")
+        hits = kb.search(text, k=4) if kb else []
+        kb_ctx = kb.hits_to_context(hits) if hits else ""
         s.last_kb_chunks = [
-            {"label": chunk.label, "score": round(score, 2), "terms": self._kb.matched_terms(text, chunk)}
+            {"label": chunk.label, "score": round(score, 2), "terms": kb.matched_terms(text, chunk)}
             for score, chunk in hits
         ]
         decorated = f"{text}\n\n[Relevant knowledge]\n{kb_ctx}" if kb_ctx else text
         # The customer's own uploaded policy: only the best few passages go to the model, each with its
         # page, and the model is told they are data to quote from, never instructions.
-        doc = s.policy_doc
+        doc = s.policy_doc if role == "guardian" else None  # only the reviewer reads the customer's document
         doc_hits = doc.search(text, k=3, min_score=0.3) if doc else []
         if doc_hits:
             passages = "\n\n".join(f"[{c.heading}]\n{c.text}" for _score, c in doc_hits)
@@ -129,11 +144,12 @@ class ScreenStateInjector(FrameProcessor):
                 for score, c in doc_hits
             ]
             logger.info(f"[policy] {len(doc_hits)} passages from the uploaded policy: {[c.heading for _s, c in doc_hits]}")
-        note = gate_note(text, s.screen_state)
+        # The step gate and the form picture belong to the co-browsing agent; the reviewer never gets them.
+        note = gate_note(text, s.screen_state) if role == "cobrowse" else ""
         if note:
             decorated = f"{decorated}\n\n{note}"
             logger.info(f"[gate] {note[:160]}")
-        shot = s.fresh_screenshot()
+        shot = s.fresh_screenshot() if role == "cobrowse" else None
         if shot:
             last["content"] = [
                 {"type": "text", "text": f"{decorated}\n\n(A screenshot of the customer's current screen is attached.)"},
@@ -226,7 +242,8 @@ class ActionMarkerFilter(FrameProcessor):
             # The form as it was before this reply's action reaches the browser, so a reject can undo it.
             before = copy.deepcopy(self._session.screen_state or {})
             action = parse_action(self._action_raw) if self._marker_seen else None
-            action = drop_blocked_navigation(action, before)
+            if self._session.role == "cobrowse":
+                action = drop_blocked_navigation(action, before)
             self._in_response = False
             spoken = self._spoken.strip()
             await self.push_frame(frame, direction)

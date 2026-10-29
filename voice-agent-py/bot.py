@@ -46,12 +46,24 @@ from coverpilot.memory import MemoryStore, MemoryWriter
 from coverpilot.meta_stt import MetaRealtimeSTTService
 from coverpilot.processors import AckProcessor, ActionMarkerFilter, ScreenStateInjector, WonderVerifier
 from coverpilot.prompt import build_system_prompt
-from coverpilot.session import ACCENTS, LANGS, LANGUAGE_BIAS, PERSONAS, SessionState, voice_for
+from coverpilot.session import ACCENTS, AGENT_NAMES, LANGS, LANGUAGE_BIAS, PERSONAS, SessionState, voice_for
 
 AUDIO_IN_RATE = 16000  # Silero + Smart Turn need 16 kHz
 AUDIO_OUT_RATE = 24000
 
-KNOWLEDGE = KnowledgeBase()  # loaded once per process
+KNOWLEDGE = KnowledgeBase()  # the co-browsing agent's: every file, loaded once per process
+# Integrity Guardian's own knowledge base: the rules and terms needed to read a policy document, without
+# the files about using the application (faq, process-and-payment).
+KNOWLEDGE_GUARDIAN = KnowledgeBase(
+    include={
+        "policy-terms",
+        "claims-and-grievance",
+        "nomination-and-trust",
+        "benefit-ladders-tax-underwriting",
+        "disclosure-consequences",
+        "choosing-cover-and-riders",
+    }
+)
 MEMORY = MemoryStore()
 
 WELCOME = {
@@ -79,7 +91,7 @@ def build_processors(settings: Settings, session: SessionState, *, sample_rate_i
             extra={"reasoning_effort": settings.reasoning_effort},
         ),
     )
-    lang_code, voice = voice_for(session.persona, session.lang, session.accent)
+    lang_code, voice = voice_for(session.active_persona(), session.lang, session.accent)
     tts = GoogleRestTTSService(api_key=settings.google_tts_api_key, voice=voice, language_code=lang_code, sample_rate=sample_rate_out)
 
     context = LLMContext([{"role": "system", "content": build_system_prompt(session.lang, session.accent, settings.spark_model)}])
@@ -126,7 +138,7 @@ def build_processors(settings: Settings, session: SessionState, *, sample_rate_i
         task.add_done_callback(case_tasks.discard)
 
     actions = ActionMarkerFilter(session, on_action=verifier.verify, on_turn_complete=on_turn_complete, on_escalate=on_escalate)
-    injector = ScreenStateInjector(session, settings, kb=KNOWLEDGE)
+    injector = ScreenStateInjector(session, settings, kb=KNOWLEDGE, guardian_kb=KNOWLEDGE_GUARDIAN)
     ack = AckProcessor(session, settings, downstream=actions)
     return stt, llm, tts, context, aggregators, injector, ack, actions, verifier
 
@@ -218,11 +230,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
                 "turnDetection": "pipecat-smart-turn-v3",
                 "vad": "silero",
                 "knowledgeChunks": len(KNOWLEDGE.chunks),
+                "guardianKnowledgeChunks": len(KNOWLEDGE_GUARDIAN.chunks),
                 "memoryFacts": len(memory.get("facts", [])),
             }
         )
         if memory.get("facts") or memory.get("summary"):
             await rtvi_proc.send_server_message({"type": "memory", **memory})
+        await rtvi_proc.send_server_message({"type": "agent_role", "role": session.role, "name": AGENT_NAMES[session.role]})
         if auto_welcome:  # the web app may sequence its own greeting first and then ask via "speak"
             await task.queue_frames([TTSSpeakFrame(text=WELCOME.get(session.lang, WELCOME["en"]))])
 
@@ -287,7 +301,20 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
                     session.persona = data["persona"]
                 if data.get("accent") in ACCENTS:
                     session.accent = data["accent"]
-                tts.set_voice(*voice_for(session.persona, session.lang, session.accent))
+                tts.set_voice(*voice_for(session.active_persona(), session.lang, session.accent))
+            elif kind == "set_mode":
+                # Two different agents share the session: switch the role (prompt, knowledge base, voice).
+                mode = data.get("mode")
+                if mode in AGENT_NAMES:
+                    session.role = mode
+                    session.last_kb_chunks = []
+                    tts.set_voice(*voice_for(session.active_persona(), session.lang, session.accent))
+                    new_system = build_system_prompt(session.lang, session.accent, settings.spark_model, session.role)
+                    if context.messages and context.messages[0].get("role") == "system":
+                        context.messages[0]["content"] = new_system
+                    else:
+                        context.messages.insert(0, {"role": "system", "content": new_system})
+                    await rtvi_proc.send_server_message({"type": "agent_role", "role": mode, "name": AGENT_NAMES[mode]})
             elif kind == "set_customer":
                 mem = load_customer_memory(session, str(data.get("customerId") or "").strip()[:64] or None)
                 await rtvi_proc.send_server_message({"type": "memory", **mem})
@@ -299,11 +326,11 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
             elif kind == "set_language":
                 if data.get("lang") in LANGS:
                     session.lang = data["lang"]
-                    tts.set_voice(*voice_for(session.persona, session.lang, session.accent))
+                    tts.set_voice(*voice_for(session.active_persona(), session.lang, session.accent))
                     await stt.set_language_bias(LANGUAGE_BIAS[session.lang])
                     # Refresh the system prompt immediately so Spark replies in the new language
                     # on this very turn rather than the next one.
-                    new_system = build_system_prompt(session.lang, session.accent, settings.spark_model)
+                    new_system = build_system_prompt(session.lang, session.accent, settings.spark_model, session.role)
                     if context.messages and context.messages[0].get("role") == "system":
                         context.messages[0]["content"] = new_system
                     else:

@@ -113,8 +113,10 @@ class Chunk:
 
 
 class KnowledgeBase:
-    def __init__(self, directory: Path = _KB_DIR):
+    def __init__(self, directory: Path = _KB_DIR, include: set[str] | None = None):
+        # include: file stems to load (for example {'policy-terms'}); None loads every file.
         self.chunks: list[Chunk] = []
+        self._include = include
         self._load(directory)
         self._index()
 
@@ -131,6 +133,8 @@ class KnowledgeBase:
         if not directory.exists():
             return
         for path in sorted(directory.glob("*.md")):
+            if self._include is not None and path.stem not in self._include:
+                continue
             source = path.stem.replace("-", " ").replace("_", " ").title()
             heading, buf = "", []
             for line in path.read_text(encoding="utf-8").splitlines():

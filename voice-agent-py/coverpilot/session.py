@@ -25,6 +25,11 @@ LANGUAGE_BIAS = {
 }
 
 
+# The two agents speak in different voices so the customer can tell who is talking.
+GUARDIAN_PERSONA = "rishi"
+AGENT_NAMES = {"cobrowse": "OmniCB co-browsing agent", "guardian": "Integrity Guardian"}
+
+
 def voice_for(persona: str, lang: str, accent: str) -> tuple[str, str]:
     """Return (language_code, voice_name) for Google Cloud TTS."""
     code = ("en-US" if accent == "us" else "en-IN") if lang == "en" else _LANG_CODE.get(lang, "en-IN")
@@ -50,11 +55,17 @@ class SessionState:
     last_kb_chunks: list[dict] = field(default_factory=list)  # [{label, score}] for current turn
     policy_doc: Any = None  # KnowledgeBase over the customer's uploaded policy pages (in memory only)
     policy_name: str = ""
+    role: str = "cobrowse"  # which agent answers: "cobrowse" (fills the application) or "guardian" (reviews the document)
     policy_chunks: dict[str, Any] = field(default_factory=dict)  # id -> {total, parts} while a document arrives
 
     def set_screenshot(self, data_url: str) -> None:
         self.screenshot_data_url = data_url
         self.screenshot_at = time.time()
+
+    def active_persona(self) -> str:
+        """The voice persona for the agent that is answering: the customer's choice for the co-browsing
+        agent, a fixed different voice for Integrity Guardian."""
+        return GUARDIAN_PERSONA if self.role == "guardian" else self.persona
 
     def fresh_screenshot(self, max_age_s: float = 90.0) -> str | None:
         if self.screenshot_data_url and time.time() - self.screenshot_at < max_age_s:
