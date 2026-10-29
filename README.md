@@ -29,6 +29,12 @@ Digital term life insurance conversion suffers from a **78% drop-off rate** in I
 | **📜 Application Guardian Audit Certificate** | Downloadable compliance certificate (`.json`) with an independent auditor's narrative written by **Meta Muse Wonder** from the certificate payload. |
 | **🖼️ Policy summary card** | Personalised policy card rendered by **Meta Muse Image 1.0**, pre-generated in the background on the last step so it is ready at issuance. |
 | **💼 Income proof OCR** | Sample salary slip goes through the same shield (PAN, UAN and bank account number pixelated first), then is read by Muse Spark; annual income is autofilled. |
+| **Confirm or Undo for material answers** | Income, smoking status and nominees entered by the agent show a Confirm / Undo card and block the step until the customer clicks; a spoken yes does not count, because speech recognition can be wrong. Values the customer types or picks need no approval. |
+| **Documents never overwrite typed answers** | A scanned card or slip fills only empty fields. If it differs from what was typed, a card shows both values (Keep mine / Use the document's) and the step stays blocked until resolved. Step 5 has an Application check listing each check and what is still open. |
+| **Policy or CIS PDF with page-cited answers** | The customer picks a PDF (or the sample at `/samples/sample-policy.pdf`). Text is read in the browser with pdf.js, Aadhaar, PAN, mobile, account and email patterns are masked there, and the agent's session keeps it in memory only. Each question retrieves the best few passages, the agent answers with the page, and the transcript shows the quoted source. Scanned PDFs (no selectable text) are not supported. |
+| **Untrusted-document defences** | OCR output is validated field by field (`omni_browse/src/lib/ocr-clean.ts`: name, date of birth, PIN, gender and address must look like what they claim to be, long sentences become null); the agent prompt treats screen state, documents and excerpts as data, not instructions. A live test (`voice-agent-py/tests/integration/test_injection_live.py`) passed 9 of 9, but the same 9 also passed with the prompt rule removed, so the rule is defence in depth and the model already resisted these payloads. A short instruction made only of letters can still pass the field shape check. |
+| **Model usage and failure handling** | The presenter panel shows per-session model usage: calls, average and maximum latency, and tokens where the API reports them. No dollar cost is claimed because prices are not configured. If the Wonder verifier fails, the customer is told the change was not verified. |
+| **Pause and resume** | Every proposal has a unique code (`NXP-` plus 8 characters). Progress autosaves in this browser only, never including Aadhaar, PAN, mobile, signature or payment. Pause saves and ends the live session; Resume lists saved proposals. It does not resume on another device. |
 
 ---
 
@@ -154,6 +160,14 @@ deploy/deploy.sh my-ec2-alias app.example.com             # or your own domain
 - **Only Caddy is public.** The app and the voice agent are reachable only through it.
 - **Keys** are copied to `~/coverpilot/secrets/.env.local` on the host (mode 600) and mounted read-only into the container.
 - Update later by running the same command again; customer memory and cases persist in a Docker volume.
+
+## Testing
+
+- **Unit tests:** `cd voice-agent-py && uv run --with pytest python -m pytest -q tests/ --ignore=tests/harness_offline.py --ignore=tests/integration` and `cd omni_browse && pnpm test:unit`.
+- **Live injection test (uses the Meta API key):** `uv run --with pytest python -m pytest -q tests/integration -s`.
+- **Acceptance run:** `scripts/run-acceptance.sh` runs the Playwright suite in `omni_browse/e2e` (the 13-item acceptance scenario plus a prompt-injection check) against the Docker image on :3000, and a failure check (a failing model call changes no data) against a second instance started with an invalid key. Set `BROWSER=firefox` for Firefox. It talks to the live Meta models, and questions are typed into the same pipeline that voice uses. Reports are written to `docs/acceptance-report-<browser>.md`.
+- Latest results: see docs/acceptance-report-chromium.md and docs/acceptance-report-firefox.md.
+
 
 ## 📄 License
 MIT License. Built for the **Meta Hackathon 2026**.
