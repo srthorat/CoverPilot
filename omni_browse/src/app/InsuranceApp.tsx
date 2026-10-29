@@ -2320,7 +2320,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         Private parts hidden before reading</span>
                     </div>
                     <p className="text-[11px] text-slate-600">
-                      The photo, ID number and QR code are located and pixelated on your device; only the redacted image is read.
+                      Photos, signatures, QR codes and Aadhaar numbers are located and pixelated on your device before the image is read. Other printed text, such as a PAN, UAN or account number, is still read and then masked in the results.
                     </p>
                   </div>
                 </div>
@@ -3955,7 +3955,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     </div>
                   </div>
                   {kycRedaction?.redactedDataUrl && (
-                    <div className="text-slate-400">Document read by the agent: the pixelated version shown in the privacy shield above. The ID number was never sent.</div>
+                    <div className="text-slate-400">Document read by the agent: the version shown in the privacy shield above, with photos, signatures, QR codes and Aadhaar numbers pixelated.</div>
                   )}
                   <div className="flex items-center justify-between pt-1 border-t border-slate-200">
                     <button
@@ -4497,7 +4497,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   ))}
                 </ul>
                 <div className="mt-3 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] leading-snug">
-                  Not sent: Aadhaar, PAN and mobile numbers. Only masked placeholders leave this device.
+                  Form details and screenshots contain only masked placeholders for Aadhaar, PAN and mobile numbers. A document you choose to scan is read separately, with photos, signatures, QR codes and Aadhaar numbers pixelated first.
                 </div>
                 <p className="mt-3 text-slate-500 text-[11px] leading-snug">
                   Frames are taken when you change steps, not streamed. Pause sharing stops frames and form details; voice stays on.
