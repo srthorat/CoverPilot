@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_FILL_FIELDS = ("fullName", "dob", "annualIncome", "city", "pincode")
+_FILL_FIELDS = ("fullName", "dob", "gender", "annualIncome", "city", "pincode")
 _RIDERS = ("criticalIllness", "accidentalDeath", "waiverOfPremium", "hospitalCash")
 # A tier or option change also switches its rider on, so undoing it restores the rider too.
 _LADDER_RIDER = {"ciTier": "criticalIllness", "atpdOption": "accidentalDeath"}

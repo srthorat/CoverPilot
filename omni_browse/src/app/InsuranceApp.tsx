@@ -832,6 +832,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             aim: 'select-annual-income',
             apply: () => setProfile((p) => ({ ...p, annualIncome: incomeRangeFor(value) || p.annualIncome })),
           },
+          gender: {
+            el: 'field-gender',
+            aim: /^f/i.test(value) ? 'option-gender-female' : 'option-gender-male',
+            apply: () => setProfile((p) => ({ ...p, gender: /^f/i.test(value) ? 'Female' : /^m/i.test(value) ? 'Male' : p.gender })),
+          },
           pincode: { el: 'field-city', aim: 'input-pincode', apply: () => setProfile((p) => ({ ...p, pincode: value })) },
           city: { el: 'field-city', aim: 'input-city', apply: () => setProfile((p) => ({ ...p, city: value })) },
         };
@@ -878,7 +883,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         } else if (action.field === 'isSmoker') {
           glideAgentCursorToElement('field-smoking', title || `Setting Smoker Status: ${on ? 'Yes' : 'No'}`, () => {
             setProfile((p) => ({ ...p, isSmoker: on }));
-          });
+          }, on ? 'option-smoker-yes' : 'option-smoker-no');
         }
       }
     };
@@ -1824,7 +1829,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   const stepForElement = (elementId: string): number | null => {
     if (/^step-tab-/.test(elementId)) return null;
-    if (/^(field-|select-|input-)/.test(elementId) && elementId !== 'field-section-45') return 1;
+    if (/^(field-|select-|input-|option-)/.test(elementId) && elementId !== 'field-section-45') return 1;
     if (elementId === 'card-esign' || elementId === 'card-payment') return 5;
     if (/^(cover-tier-|card-)/.test(elementId) && elementId !== 'card-premium-summary') return 2;
     if (elementId === 'nomination-section') return 3;
@@ -2043,7 +2048,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ...(!profile.gender ? [{ id: 'field-gender', msg: 'Choose your gender.' }] : []),
       ...(!profile.annualIncome ? [{ id: 'field-annual-income', msg: 'Enter your annual income.' }] : []),
       ...(profile.isSmoker === null ? [{ id: 'field-smoking', msg: 'Say whether you use tobacco.' }] : []),
-      ...(!profile.city.trim() ? [{ id: 'field-city', msg: 'Enter your city.' }] : []),
+      ...(!profile.city.trim() ? [{ id: 'input-city', msg: 'Enter your city.' }] : []),
+      ...(!/^\d{6}$/.test(profile.pincode.trim()) ? [{ id: 'input-pincode', msg: 'Enter your 6-digit PIN code.' }] : []),
+      ...(!/^\d{12}$/.test(profile.aadhaarNumber) ? [{ id: 'field-identity', msg: 'Enter your 12-digit Aadhaar number (type it, or scan a sample document).' }] : []),
+      ...(!/^[A-Z]{5}\d{4}[A-Z]$/.test(profile.panNumber) ? [{ id: 'field-identity', msg: 'Enter your PAN (like ABCDE1234F).' }] : []),
+      ...(!/^[6-9]\d{9}$/.test(profile.mobileNumber) ? [{ id: 'field-identity', msg: 'Enter your 10-digit mobile number.' }] : []),
     ],
     2: [],
     3: [
@@ -2838,6 +2847,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     {['Male', 'Female'].map((g) => (
                       <button
                         key={g}
+                        id={`option-gender-${g.toLowerCase()}`}
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -2936,6 +2946,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   </div>
                   <div className="flex gap-2">
                     <button
+                      id="option-smoker-no"
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -2951,6 +2962,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       {profile.isSmoker === false ? '✓ ' : ''}Non-Smoker (20% Discount)
                     </button>
                     <button
+                      id="option-smoker-yes"
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -3008,12 +3020,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               </div>
 
               {/* Identity records: filled by a sample scan or typed by the user; kept on this device, shown masked */}
-              <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+              <div id="field-identity" className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
                 <span
                   className="font-bold text-slate-800 shrink-0"
-                  title="Optional. Scan a sample document above or enter your own numbers. They stay on this device and the agent only ever sees them masked."
+                  title="Required. Scan a sample document above or enter your own numbers. They stay on this device and the agent only ever sees them masked."
                 >
-                  Identity records <span className="font-normal text-slate-400">(optional)</span>
+                  Identity records <span className="text-red-500">*</span>
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1 min-w-[18rem]">
                   <MaskedIdField
