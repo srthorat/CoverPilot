@@ -29,7 +29,11 @@ The agent sees your live form answers, such as name, date of birth and income, a
 Source: NexaSure app behaviour (not a regulation).
 
 ## What are the sample documents
-The three sample buttons load demo documents: a PAN card, an Aadhaar card and a salary slip. They are fictional. Press a button and the app hides the private parts on your device, reads the name and date of birth, or the income from the slip, and fills those fields. You can also type everything yourself, and you can enter your own identity numbers in the identity fields instead.
+The three sample buttons load demo documents: a PAN card, an Aadhaar card and a salary slip. They are fictional. Press a button and the app hides the private parts in your browser before the reading model sees the card, then reads the name and date of birth, or the income from the slip, and fills those fields. You can also type everything yourself, and you can enter your own identity numbers in the identity fields instead.
+Source: NexaSure app behaviour (not a regulation).
+
+## Who sees my identity documents
+In this demo only the three fictional sample cards are used, and there is no upload, so no real document leaves your device. For a sample, Meta's SAM model is shown the original card to find the photo, signature, QR code and Aadhaar number, and a second Meta model finds the PAN, UAN and bank account number on blurred copies where the digits cannot be read. Your browser then pixelates all of those areas, and only that redacted image goes to the model that reads the name and date of birth. Identity numbers you type yourself are kept in your browser and are never sent to the assistant. A real product should not show the original card to any outside model.
 Source: NexaSure app behaviour (not a regulation).
 
 ## Is this a real insurance offer

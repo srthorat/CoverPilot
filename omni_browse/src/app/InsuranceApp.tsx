@@ -1397,7 +1397,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const located = await locateTextIds('salary-slip', slipImg);
       const slipRedacted = pixelateRegions(slipImg, located.regions);
       setKycRedaction((prev) => prev && { ...prev, regions: located.regions, redactedDataUrl: slipRedacted, locateMs: located.ms, status: 'Pixelated in your browser. Sending redacted image to Muse Spark…' });
-      setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? `Muse Spark located ${located.regions.length} identifiers on a blurred copy (${located.ms} ms): ${located.regions.map((r) => r.concept).join(', ')}.` : `Hidden on your device before reading: ${located.regions.map((r) => r.concept).join(', ')}.`, time: stampNow() }]);
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? `Muse Spark located ${located.regions.length} identifiers on a blurred copy (${located.ms} ms): ${located.regions.map((r) => r.concept).join(', ')}.` : `Hidden in your browser before the reader model: ${located.regions.map((r) => r.concept).join(', ')}.`, time: stampNow() }]);
       const t0 = performance.now();
       const res = await fetch('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentType: 'salary-slip', imageDataUrl: slipRedacted }) });
       const data = await res.json();
@@ -1497,8 +1497,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         {
           sender: 'agent',
           text: devRef.current
-            ? `SAM 3.1 found ${regions.length} region${regions.length === 1 ? '' : 's'}: ${found || 'none'}${samMs !== null ? `in ${samMs} ms${samCached ? '(pre-computed at startup)' : ''}` : ''}. Pixelated locally before OCR.`
-            : `Hidden on your device before reading: ${regions.map((r) => r.concept).join(', ') || 'nothing found'}.`,
+            ? `SAM 3.1 found ${regions.length} region${regions.length === 1 ? '' : 's'}: ${found || 'none'}${samMs !== null ? `in ${samMs} ms${samCached ? '(pre-computed at startup)' : ''}` : ''}. Pixelated in the browser before OCR.`
+            : `Hidden in your browser before the reader model: ${regions.map((r) => r.concept).join(', ') || 'nothing found'}.`,
           time: stampNow(),
         },
       ]);
@@ -1543,7 +1543,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const voice =
         selectedLanguage === 'hi'
           ? `आपके ${type === 'pan' ? 'पैन' : 'आधार'} कार्ड की निजी जानकारी आपके डिवाइस पर छिपा दी गई और म्यूज़ स्पार्क ने बाकी विवरण पढ़ लिया है। मैं फॉर्म भर रहा हूँ।`
-          : `The private regions of your ${label} card were hidden on your device and Muse Spark read the rest${f.fullName ? ` for ${f.fullName}` : ''}. Populating the form now.`;
+          : `The private regions of your ${label} card were hidden in your browser before Muse Spark read the rest${f.fullName ? ` for ${f.fullName}` : ''}. Populating the form now.`;
       speakText(voice, selectedLanguage);
       const gender = f.gender ? (/^m/i.test(f.gender) ? 'Male' : /^f/i.test(f.gender) ? 'Female' : '') : '';
       glideAgentCursorToElement(type === 'pan' ? 'field-full-name' : 'field-city', `Populate ${label} OCR fields`, () => {
@@ -2618,10 +2618,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-slate-900">Read a sample document</span>
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-white text-slate-600 border border-slate-200">
-                        Private parts hidden before reading</span>
+                        Hidden before the reader sees it</span>
                     </div>
                     <p className="text-[11px] text-slate-600 line-clamp-2">
-                      Photos, signatures, QR codes and ID numbers (Aadhaar, PAN, UAN, bank account) are located and pixelated on your device before the image is read. Your name and date of birth stay readable so the form can be filled.
+                      Photos, signatures, QR codes and ID numbers (Aadhaar, PAN, UAN, bank account) are pixelated in your browser before the reading model sees the card. Meta's SAM locator is shown the original image to find them. Name and date of birth stay readable.
                     </p>
                   </div>
                 </div>
@@ -2701,7 +2701,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       </svg>
                     </div>
                     <div>
-                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '2. What Muse Spark receives (pixelated in your browser)' : '2. What the agent reads (hidden parts pixelated on your device)'}</div>
+                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '2. What Muse Spark receives (pixelated in your browser)' : '2. What the agent reads (hidden parts pixelated in your browser)'}</div>
                       {kycRedaction.redactedDataUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={kycRedaction.redactedDataUrl} alt="Redacted document sent to OCR"className="w-full rounded-lg border border-slate-200" />
