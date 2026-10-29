@@ -395,6 +395,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [showAgentView, setShowAgentView] = useState<boolean>(false);
   const [showAgentFrameModal, setShowAgentFrameModal] = useState<boolean>(false);
   const [showTaxBreakdownWidget, setShowTaxBreakdownWidget] = useState<boolean>(true);
+  const [showPremiumDetail, setShowPremiumDetail] = useState<boolean>(false);
   const [showSessionControls, setShowSessionControls] = useState<boolean>(false);
   const [activeWhyAskField, setActiveWhyAskField] = useState<string | null>(null);
 
@@ -609,9 +610,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Auto-scroll chat
   useEffect(() => {
-    // Scroll only the transcript list; scrollIntoView would also scroll the page and hide the form.
+    // Pin only the transcript list to the newest message. Instant, not smooth: a smooth scroll falls
+    // behind while an answer streams in. scrollIntoView would also scroll the page and hide the form.
     const el = chatBottomRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
   }, [chatMessages]);
 
   // Main Guidance Trigger: Spotlights field, speaks voice guidance directly without any popups
@@ -740,7 +746,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         const step = Math.min(5, Math.max(1, Number(action.step) || 1));
         glideAgentCursorToElement(`step-tab-${step}`, title || `Opening step ${step}`, () => {
           setActiveStep(step);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          formBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         });
       } else if (action.type === 'ui') {
         if (action.action === 'open_terms') setShowTermsDrawer(true);
@@ -1905,10 +1911,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   };
 
   const pageContent = (
-    <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
+    <div className="h-screen overflow-hidden bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
       
       {/* 1. Authentic Top Regulatory Strip with Language Picker */}
-      <div className="bg-[#1e104f] text-white text-[11px] px-6 py-2 border-b border-[#2d1b70]">
+      <div className="shrink-0 bg-[#1e104f] text-white text-[11px] px-6 py-1 border-b border-[#2d1b70]">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <span className="font-semibold text-purple-200">ACKO Life Insurance Limited</span>
@@ -1950,8 +1956,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       </div>
 
       {/* 2. Main ACKO Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
+      <header className="shrink-0 bg-white border-b border-slate-200 z-30">
+        <div className="max-w-7xl mx-auto px-6 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="size-9 rounded-xl bg-[#582be8] text-white flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
               acko
@@ -2033,7 +2039,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
       {/* Co-Browsing Status Bar: WebRTC Screen Share & Dual-Cursor Screen Control */}
       {isCoBrowsingConnected && (
-        <div className={`bg-gradient-to-r from-[#180d40] via-[#24135e] to-[#180d40] text-white px-6 py-2.5 border-b border-purple-800/40 transition-all ${
+        <div className={`shrink-0 bg-gradient-to-r from-[#180d40] via-[#24135e] to-[#180d40] text-white px-6 py-1.5 border-b border-purple-800/40 transition-all ${
           isScreenSharing && !isSharingPaused ? 'screen-share-active-border' : ''
         }`}>
           <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -2117,6 +2123,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               {screenControlStatus === 'granted' ? (
                 <button
                   onClick={revokeScreenControl}
+                  title="The agent can demonstrate field navigation. Click here or press ESC to reclaim control at any time."
                   className="px-3 py-1 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold border border-red-400/40 transition-all flex items-center gap-1"
                 >
                   <span></span>
@@ -2147,9 +2154,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       )}
 
       {/* 3. Stepper Navigation */}
-      <nav className="bg-white border-b border-slate-200 px-6 py-3">
+      <nav className="shrink-0 bg-white border-b border-slate-200 px-6 py-1.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3 sm:gap-6 overflow-x-auto text-xs py-1">
+          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto text-xs py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             
             {/* Step 1 */}
             <button
@@ -2239,7 +2246,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           <div className="hidden xl:block text-xs text-slate-500 shrink-0 ml-8 pl-6 border-l border-slate-200">
             {profile.fullName ? (
               <span>Applicant: <strong className="text-slate-800">{profile.fullName}</strong></span>
-            ) : (
+            ) : presenterMode ? null : (
               <span className="text-slate-400">Select a field to hear guidance</span>
             )}
           </div>
@@ -2247,11 +2254,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       </nav>
 
       {/* 4. Main Page Layout */}
-      <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative items-start">
+      <main className="flex-1 min-h-0 max-w-7xl mx-auto w-full px-6 py-3 flex flex-col gap-3 relative overflow-hidden">
 
         {/* Co-Browsing Assist Invitation Banner */}
         {!isCoBrowsingConnected && !dismissOffer && (
-          <div className="lg:col-span-12 p-5 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm border border-purple-400/40 animate-fade-in">
+          <div className="shrink-0 lg:col-span-12 p-3 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm border border-purple-400/40 animate-fade-in">
             <div className="flex items-center gap-4">
               <div className="size-12 rounded-2xl bg-white/10 flex items-center justify-center text-sm font-bold tracking-tight border border-white/15 shrink-0">
                 OB
@@ -2262,7 +2269,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-purple-100 font-medium border border-white/15">
                     Live voice assistant</span>
                 </div>
-                <p className="text-xs text-purple-200 mt-1 max-w-2xl">
+                <p className="text-xs text-purple-200 mt-0.5 max-w-2xl">
                   Talk to the assistant while you fill in the form. It explains riders, income tiers and clauses, and can fill fields for you with your consent.
                 </p>
               </div>
@@ -2285,28 +2292,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           </div>
         )}
 
-        {/* Emergency Dual-Cursor Screen Control Banner across full width */}
-        {screenControlStatus === 'granted' && (
-          <div className="lg:col-span-12 p-3.5 rounded-2xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-wrap items-center justify-between gap-3 shadow-sm border border-purple-500/40">
-            <div className="flex items-center gap-2.5">
-              <span className="size-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-xs font-bold"> Co-Browsing Screen Control: OmniCB Agent Active</span>
-              <span className="text-[11px] text-purple-200 hidden sm:inline">• Dual-cursor active. The agent can demonstrate field navigation. Click anywhere or press ESC to reclaim instant control.</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={revokeScreenControl}
-                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-1.5"
-              >
-                <span></span>
-                <span>Emergency Revoke (ESC)</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Form Body (8 Columns) */}
-        <div ref={formBodyRef} className="lg:col-span-8 flex flex-col gap-6">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Form Body (8 Columns): scrolls on its own */}
+        <div ref={formBodyRef} className="lg:col-span-8 min-h-0 overflow-y-auto pr-2 flex flex-col gap-6">
 
           {/* STEP 1: Blank Profile (Click any field -> auto-played regional guidance!) */}
           {activeStep === 1 && (
@@ -3616,19 +3604,31 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         </div>
 
         {/* Right Sticky Sidebar: Premium Breakdown & Docked OmniCB Advisor */}
-        <div className="lg:col-span-4 flex flex-col gap-5">
+        <div className="lg:col-span-4 min-h-0 overflow-y-auto flex flex-col gap-3">
           
           {/* Premium Breakdown Card */}
-          <div className="acko-card p-5">
-            <div className="pb-3 border-b border-slate-100 mb-3 flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Premium Summary
-              </h3>
-              <span className="text-[11px] tabular-nums text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
-                30-Yr Locked Rate</span>
+          <div className="acko-card p-3 shrink-0">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Premium Summary</h3>
+              <button
+                type="button"
+                onClick={() => setShowPremiumDetail((v) => !v)}
+                className="text-[11px] text-slate-500 hover:text-[#582be8]"
+              >
+                {showPremiumDetail ? 'Hide breakdown ▾' : 'Breakdown ▸'}
+              </button>
             </div>
-
-            <div className="space-y-2 text-xs tabular-nums text-slate-600">
+            <div className="flex items-baseline justify-between mt-0.5 font-sans">
+              <span className="flex items-baseline gap-2">
+                <span className="font-bold text-sm text-[#111827]">Monthly Payable:</span>
+                <span className="text-2xl font-bold text-[#582be8] tabular-nums">₹{totalMonthlyPayable}</span>
+              </span>
+              <span className="text-[11px] text-emerald-700">
+                saves <span className="font-bold tabular-nums">₹{annualTaxSavings}</span>/yr
+              </span>
+            </div>
+            {showPremiumDetail && (<>
+            <div className="space-y-2 text-xs tabular-nums text-slate-600 mt-2 pt-2 border-t border-slate-100">
               <div className="flex justify-between">
                 <span>Base Cover ({baseSumAssured === '1cr' ? '₹1 Cr' : baseSumAssured === '1.5cr' ? '₹1.5 Cr' : '₹2 Cr'}):</span>
                 <span className="text-slate-900 font-semibold">₹{monthlyBase}</span>
@@ -3672,20 +3672,73 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <span>+₹{gst18Percent}</span>
               </div>
 
-              <div className="border-t border-slate-200 pt-3 mt-2 flex justify-between items-baseline font-sans">
-                <span className="font-bold text-sm text-[#111827]">Monthly Payable:</span>
-                <span className="text-2xl font-bold text-[#582be8] tabular-nums">₹{totalMonthlyPayable}</span>
+            </div>
+            <div className="mt-2">
+            {/* Feature 1: Interactive Dual Tax & Net Cost Widget (80C + 80D) */}
+            <div className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-800 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm"></span>
+                  <button type="button" onClick={() => setShowTaxBreakdownWidget((v) => !v)} className="text-xs font-bold text-emerald-950 hover:text-[#582be8]">Dual Tax & Net Cost {showTaxBreakdownWidget ? '▾' : '▸'}</button>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowEvidenceDrawer(true)}
+                    className="text-[11px] text-[#582be8] hover:underline font-bold"
+                  >
+                    View Clause 7.3 
+                  </button>
+                  <span className="text-[11px] tabular-nums font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    80C + 80D</span>
+                </div>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-sans flex items-center justify-between mt-3">
-                <span>Annual Tax Savings (Sec 80D):</span>
-                <span className="font-bold tabular-nums">₹{annualTaxSavings}</span>
+              {showTaxBreakdownWidget && (<>
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-0.5">
+                <div className="p-2 rounded-xl bg-white/90 border border-emerald-100">
+                  <span className="text-[11px] text-slate-500 block">Gross Premium:</span>
+                  <strong className="text-xs text-slate-900 font-bold tabular-nums">₹{totalMonthlyPayable}/mo</strong>
+                  <span className="text-[11px] text-slate-400 block tabular-nums">(₹{(totalMonthlyPayable * 12).toLocaleString()}/yr)</span>
+                </div>
+                <div className="p-2 rounded-xl bg-emerald-100/70 border border-emerald-200">
+                  <span className="text-[11px] text-emerald-700 block font-semibold">Total Tax Saved:</span>
+                  <strong className="text-xs text-emerald-900 font-bold tabular-nums">
+                    -₹{(Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)).toLocaleString()}/yr
+                  </strong>
+                  <span className="text-[11px] text-emerald-700 block font-bold">
+                    {selectedRiders.criticalIllness ? 'Sec 80C + 80D Active' : 'Sec 80C Active'}</span>
+                </div>
               </div>
+
+              <div className="p-2 rounded-xl bg-white border border-emerald-200 flex justify-between items-center text-[11px]">
+                <div>
+                  <span className="text-[11px] text-slate-500 block">Net Effective Cost:</span>
+                  <strong className="text-sm font-bold text-[#582be8] tabular-nums">
+                    ₹{Math.round(Math.max(0, (totalMonthlyPayable * 12) - (Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0))) / 12)}/mo
+                  </strong>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] font-bold text-emerald-700 block">
+                    Saves {Math.round(((Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)) / (totalMonthlyPayable * 12)) * 100)}%</span>
+                  <span className="text-[11px] text-slate-400 tabular-nums">after tax refund</span>
+                </div>
+              </div>
+
+              {selectedRiders.criticalIllness && (
+                <p className="text-[11px] text-emerald-800 bg-emerald-100/60 p-1.5 rounded-lg border border-emerald-200 leading-tight">
+                   <strong>Actuarial Insight:</strong> ₹5,580 Sec 80D tax savings exceeds the ₹1,788 annual rider premium, making your ₹25 Lakhs Critical Illness cover <strong>net cost-negative</strong>!
+                </p>
+              )}
+            </>)}
             </div>
+
+            </div>
+            </>)}
           </div>
 
           {/* DOCKED OMNICB CO-BROWSE AGENT (MINIMAL: CONTROLS & TRANSCRIPT ONLY) */}
-          <div className="acko-card p-4 rounded-2xl flex flex-col gap-3.5 bg-white sticky top-20">
+          <div className="acko-card p-3 rounded-2xl flex flex-col gap-2 bg-white flex-1 min-h-[300px] overflow-y-auto [&>*]:shrink-0">
             
             {/* Header with Connection Status & Connect/Disconnect Button */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -3861,6 +3914,67 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 ))}
               </div>
             </div>
+            {/* What the agent sees: exactly what is sent to Muse Spark, with a pause control */}
+            <div className="rounded-xl bg-slate-50 text-slate-800 border border-slate-200 overflow-hidden">
+              <button type="button"onClick={() => setShowAgentView((v) => !v)} className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold">
+                <span>What the agent sees</span>
+                <span className="font-normal text-slate-400">{agentFrameLabel} {showAgentView ? '▾' : '▸'}</span>
+              </button>
+              {showAgentView && (
+                <div className="px-3 pb-3 flex flex-col gap-2 text-[11px]">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-slate-400 mb-1">Last frame sent{agentView.step ? `(step ${agentView.step})` : ''}</div>
+                      {agentView.frameDataUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowAgentFrameModal(true)}
+                          title="Open full size"
+                          className="group relative w-full rounded-lg border border-slate-200 bg-white overflow-hidden cursor-zoom-in"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={agentView.frameDataUrl} alt="The reduced-size frame of this form last sent to the agent" className="w-full block" />
+                          <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] font-bold py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            Click to view full size
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="w-full aspect-[4/3] rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-slate-500">
+                          {isCoBrowsingConnected ? 'Sent on step changes' : 'Not connected'}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-slate-400 mb-1">Form details sent</div>
+                      <ul className="space-y-0.5 text-slate-700">
+                        {agentDetailLines.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                        <li className="text-slate-400">Not sent: Aadhaar, PAN and mobile numbers (masked placeholders only)</li>
+                      </ul>
+                    </div>
+                  </div>
+                  {kycRedaction?.redactedDataUrl && (
+                    <div className="text-slate-400">Document read by the agent: the pixelated version shown in the privacy shield above. The ID number was never sent.</div>
+                  )}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsSharingPaused((p) => !p)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${isSharingPaused ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-slate-900'}`}
+                    >
+                      {isSharingPaused ? 'Resume sharing' : 'Pause sharing'}
+                    </button>
+                    <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer">
+                      <input type="checkbox"checked={showDevPanel} onChange={(e) => setShowDevPanel(e.target.checked)} className="accent-[#582be8]" />
+                      Under the hood (models, timings)
+                    </label>
+                  </div>
+                  <p className="text-slate-500 leading-tight">Frames are reduced-size snapshots taken when you change steps, not a video stream. Pausing stops frames and form details from being sent; voice stays on.</p>
+                </div>
+              )}
+            </div>
+
             </div>
             )}
 
@@ -3936,19 +4050,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
               {/* Dynamic Mic Decibel Level & Transcript */}
               {isListeningVoice && (
-                <div className="p-2 rounded-xl bg-red-50 border border-red-200 text-red-950 text-[11px] flex flex-col gap-1">
-                  <div className="flex justify-between items-center text-[11px] text-red-700 tabular-nums font-bold">
-                    <span className="flex items-center gap-1">
-                      <span className="size-1.5 rounded-full bg-red-500 animate-ping" />
-                      <span>LIVE MIC VOLUME</span></span>
+                <div className="px-2 py-1 rounded-xl bg-red-50 border border-red-200 text-red-950 text-[11px] flex flex-col gap-0.5">
+                  <div className="flex items-center gap-2 text-[11px] text-red-700 tabular-nums font-bold">
+                    <span className="size-1.5 rounded-full bg-red-500 animate-ping" />
+                    <span>MIC</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-red-200 overflow-hidden">
+                      <div
+                        ref={micDecibelBarRef}
+                        className="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-red-600 transition-all duration-75"
+                        style={{ width: '10%' }}
+                      />
+                    </div>
                     <span ref={micDecibelTextRef}>0%</span>
-                  </div>
-                  <div className="w-full h-1.5 rounded-full bg-red-200 overflow-hidden">
-                    <div
-                      ref={micDecibelBarRef}
-                      className="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-red-600 transition-all duration-75"
-                      style={{ width: '10%' }}
-                    />
                   </div>
                   <p className="text-[11px] text-red-900 truncate">
                     {voiceTranscriptLive ? `"${voiceTranscriptLive}"` : 'Listening to your voice now...'}
@@ -3966,132 +4079,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               )}
             </div>
 
-            {/* What the agent sees: exactly what is sent to Muse Spark, with a pause control */}
-            <div className="rounded-xl bg-slate-50 text-slate-800 border border-slate-200 overflow-hidden">
-              <button type="button"onClick={() => setShowAgentView((v) => !v)} className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold">
-                <span>What the agent sees</span>
-                <span className="font-normal text-slate-400">{agentFrameLabel} {showAgentView ? '▾' : '▸'}</span>
-              </button>
-              {showAgentView && (
-                <div className="px-3 pb-3 flex flex-col gap-2 text-[11px]">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <div className="text-slate-400 mb-1">Last frame sent{agentView.step ? `(step ${agentView.step})` : ''}</div>
-                      {agentView.frameDataUrl ? (
-                        <button
-                          type="button"
-                          onClick={() => setShowAgentFrameModal(true)}
-                          title="Open full size"
-                          className="group relative w-full rounded-lg border border-slate-200 bg-white overflow-hidden cursor-zoom-in"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={agentView.frameDataUrl} alt="The reduced-size frame of this form last sent to the agent" className="w-full block" />
-                          <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] font-bold py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            Click to view full size
-                          </span>
-                        </button>
-                      ) : (
-                        <div className="w-full aspect-[4/3] rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-slate-500">
-                          {isCoBrowsingConnected ? 'Sent on step changes' : 'Not connected'}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-slate-400 mb-1">Form details sent</div>
-                      <ul className="space-y-0.5 text-slate-700">
-                        {agentDetailLines.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                        <li className="text-slate-400">Not sent: Aadhaar, PAN and mobile numbers (masked placeholders only)</li>
-                      </ul>
-                    </div>
-                  </div>
-                  {kycRedaction?.redactedDataUrl && (
-                    <div className="text-slate-400">Document read by the agent: the pixelated version shown in the privacy shield above. The ID number was never sent.</div>
-                  )}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setIsSharingPaused((p) => !p)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${isSharingPaused ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-slate-900'}`}
-                    >
-                      {isSharingPaused ? 'Resume sharing' : 'Pause sharing'}
-                    </button>
-                    <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer">
-                      <input type="checkbox"checked={showDevPanel} onChange={(e) => setShowDevPanel(e.target.checked)} className="accent-[#582be8]" />
-                      Under the hood (models, timings)
-                    </label>
-                  </div>
-                  <p className="text-slate-500 leading-tight">Frames are reduced-size snapshots taken when you change steps, not a video stream. Pausing stops frames and form details from being sent; voice stays on.</p>
-                </div>
-              )}
-            </div>
-
-            {/* Feature 1: Interactive Dual Tax & Net Cost Widget (80C + 80D) */}
-            <div className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-800 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm"></span>
-                  <span className="text-xs font-bold text-emerald-950">Dual Tax & Net Cost</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowEvidenceDrawer(true)}
-                    className="text-[11px] text-[#582be8] hover:underline font-bold"
-                  >
-                    View Clause 7.3 
-                  </button>
-                  <span className="text-[11px] tabular-nums font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    80C + 80D</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px] pt-0.5">
-                <div className="p-2 rounded-xl bg-white/90 border border-emerald-100">
-                  <span className="text-[11px] text-slate-500 block">Gross Premium:</span>
-                  <strong className="text-xs text-slate-900 font-bold tabular-nums">₹{totalMonthlyPayable}/mo</strong>
-                  <span className="text-[11px] text-slate-400 block tabular-nums">(₹{(totalMonthlyPayable * 12).toLocaleString()}/yr)</span>
-                </div>
-                <div className="p-2 rounded-xl bg-emerald-100/70 border border-emerald-200">
-                  <span className="text-[11px] text-emerald-700 block font-semibold">Total Tax Saved:</span>
-                  <strong className="text-xs text-emerald-900 font-bold tabular-nums">
-                    -₹{(Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)).toLocaleString()}/yr
-                  </strong>
-                  <span className="text-[11px] text-emerald-700 block font-bold">
-                    {selectedRiders.criticalIllness ? 'Sec 80C + 80D Active' : 'Sec 80C Active'}</span>
-                </div>
-              </div>
-
-              <div className="p-2 rounded-xl bg-white border border-emerald-200 flex justify-between items-center text-[11px]">
-                <div>
-                  <span className="text-[11px] text-slate-500 block">Net Effective Cost:</span>
-                  <strong className="text-sm font-bold text-[#582be8] tabular-nums">
-                    ₹{Math.round(Math.max(0, (totalMonthlyPayable * 12) - (Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0))) / 12)}/mo
-                  </strong>
-                </div>
-                <div className="text-right">
-                  <span className="text-[11px] font-bold text-emerald-700 block">
-                    Saves {Math.round(((Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)) / (totalMonthlyPayable * 12)) * 100)}%</span>
-                  <span className="text-[11px] text-slate-400 tabular-nums">after tax refund</span>
-                </div>
-              </div>
-
-              {selectedRiders.criticalIllness && (
-                <p className="text-[11px] text-emerald-800 bg-emerald-100/60 p-1.5 rounded-lg border border-emerald-200 leading-tight">
-                   <strong>Actuarial Insight:</strong> ₹5,580 Sec 80D tax savings exceeds the ₹1,788 annual rider premium, making your ₹25 Lakhs Critical Illness cover <strong>net cost-negative</strong>!
-                </p>
-              )}
-            </div>
-
             {/* Live Conversation Transcript */}
-            <div className="flex flex-col flex-1 min-h-[260px] max-h-[360px]">
+            <div className="flex flex-col flex-1 min-h-[90px]">
               <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 pb-1.5 border-b border-slate-100">
                 <span>Conversation Transcript</span>
                 <span className="text-[11px] font-normal text-slate-400">{chatMessages.length} entries</span>
               </div>
               
-              <div ref={chatBottomRef} className="flex-1 overflow-y-auto space-y-2 py-2 pr-1 text-xs">
+              <div ref={chatBottomRef} className="flex-1 min-h-0 overflow-y-auto space-y-2 py-2 pr-1 text-xs">
                 {chatMessages.map((msg, i) => (
                   <div
                     key={i}
@@ -4153,6 +4148,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
           </div>
 
+        </div>
         </div>
       </main>
 
@@ -4711,18 +4707,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       )}
 
       {/* 7. Authentic ACKO Modern Footer */}
-      <footer className="mt-auto bg-[#1e104f] text-white text-[11px] py-8 border-t border-[#2d1b70] px-6">
-        <div className="max-w-7xl mx-auto flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between pb-4 border-b border-purple-900/50 gap-2">
-            <div className="flex items-center gap-3">
-              <span className="font-bold text-sm text-white">ACKO Life Insurance</span>
-              <span className="text-[11px] text-purple-300 tabular-nums">CIN: U66010KA2022PLC164741</span>
-            </div>
-            <span className="text-purple-300 text-xs">Powered by Meta Model API: Muse Spark 1.3 • Muse Voice Transcribe 1.0</span>
-          </div>
-          <p className="text-purple-300/80 leading-relaxed">
-            ACKO Life Insurance Limited. Registered Office: #36/5, Hustlehub One East, 27th Main Rd, Sector 2, HSR Layout, Bengaluru, Karnataka 560102. Insurance is the subject matter of solicitation. ACKO Life Flexi Shield is a Non-Linked Non-Participating Individual Pure Risk Life Insurance Plan (UIN: 157N001V01).
-          </p>
+      <footer className="shrink-0 bg-[#1e104f] text-white text-[10px] px-6 py-1 border-t border-[#2d1b70]">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+          <span
+            className="truncate text-purple-300/80"
+            title="ACKO Life Insurance Limited. Registered Office: #36/5, Hustlehub One East, 27th Main Rd, Sector 2, HSR Layout, Bengaluru, Karnataka 560102. Insurance is the subject matter of solicitation. ACKO Life Flexi Shield is a Non-Linked Non-Participating Individual Pure Risk Life Insurance Plan (UIN: 157N001V01)."
+          >
+            ACKO Life Insurance Limited · CIN U66010KA2022PLC164741 · Insurance is the subject matter of solicitation · UIN 157N001V01
+          </span>
+          <span className="shrink-0 text-purple-300">Powered by Meta Model API</span>
         </div>
       </footer>
 
@@ -4732,7 +4725,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   if (presenterMode) {
     return (
       <div className="flex h-screen overflow-hidden bg-[#0d0921]">
-        <div className="flex-1 min-w-0 overflow-y-auto">{pageContent}</div>
+        <div className="flex-1 min-w-0 overflow-hidden">{pageContent}</div>
         <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} stats={sessionStats} cases={cases} onDownloadCase={downloadCase} />
       </div>
     );
