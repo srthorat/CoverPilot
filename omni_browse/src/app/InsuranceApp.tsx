@@ -3401,6 +3401,373 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <span className="text-slate-500">Your original is never uploaded.</span>
               </div>
 
+
+              {kycRedaction && (
+                <div className={`${kycPanelOpen ? 'p-3' : 'px-3 py-1'} rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (kycCollapseTimer.current) clearTimeout(kycCollapseTimer.current);
+                      setKycPanelOpen((v) => !v);
+                    }}
+                    className="flex flex-wrap items-center justify-between gap-2 text-[11px] w-full text-left"
+                    title={kycPanelOpen ? 'Hide the documents' : 'Show the documents'}
+                  >
+                    <span className="font-bold"> Privacy shield • {kycRedaction.type.replace('-', ' ').toUpperCase()}</span>
+                    <span className={kycRedaction.status.startsWith('Warning') || kycRedaction.status.startsWith('Failed') ? 'text-red-600 font-semibold' : 'text-slate-500'}>
+                      {kycRedaction.status}
+                      {showDevPanel && kycRedaction.samMs !== null ? ` • SAM 3.1 ${kycRedaction.samMs} ms${kycRedaction.samCached ? '(cached)' : ''}` : ''}
+                      {showDevPanel && kycRedaction.locateMs !== null ? ` • Spark locate ${kycRedaction.locateMs} ms` : ''}
+                      {showDevPanel && kycRedaction.ocrMs !== null ? ` • Spark OCR ${kycRedaction.ocrMs} ms` : ''}
+                      {kycRedaction.status === 'Done' ? ' ✓' : ''} {kycPanelOpen ? '▾' : '▸'}</span>
+                  </button>
+                  {kycPanelOpen && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '1. SAM 3.1 boxes + pixel masks (one request per concept)' : '1. Private regions found on your card'}</div>
+                      <svg viewBox={`0 0 ${kycRedaction.width} ${kycRedaction.height}`} className="w-full rounded-lg border border-slate-200 bg-white">
+                        <image href={kycRedaction.imageUrl} width={kycRedaction.width} height={kycRedaction.height} />
+                        {kycRedaction.regions.map((r, i) => (
+                          <g key={i}>
+                            {r.masks.map((m, k) => (
+                              <path key={k} d={m.path} transform={`translate(${m.left} ${m.top})`} fill="rgba(244,63,94,0.5)" />
+                            ))}
+                            <rect
+                              x={r.box.left}
+                              y={r.box.top}
+                              width={r.box.right - r.box.left}
+                              height={r.box.bottom - r.box.top}
+                              fill="none"
+                              stroke="#f43f5e"
+                              strokeWidth={3}
+                            />
+                            <text x={r.box.left} y={Math.max(16, r.box.top - 6)} fill="#be123c"fontSize={18} fontWeight={700}>
+                              {r.concept}
+                              {showDevPanel && r.confidence !== null ? ` ${(r.confidence * 100).toFixed(0)}%` : ''}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '2. What Muse Spark receives (pixelated in your browser)' : '2. What the agent reads (hidden parts pixelated in your browser)'}</div>
+                      {kycRedaction.redactedDataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={kycRedaction.redactedDataUrl} alt="Redacted document sent to OCR"className="w-full rounded-lg border border-slate-200" />
+                      ) : (
+                        <div className="w-full aspect-[1000/630] rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
+                      )}
+                    </div>
+                  </div>
+                  )}
+                </div>
+              )}
+
+              {/* Input Fields */}
+              <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-3 gap-x-3 gap-y-0 text-xs">
+                
+                {/* 1. Full Legal Name (Auto-Play on Click/Focus) */}
+                <div
+                  id="field-full-name"
+                  onClick={() => handleFieldClickOrFocus('field-full-name')}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    spotlightedElementId === 'input-full-name'
+                      ? 'co-browse-spotlight'
+                      : 'border-transparent hover:border-purple-200 hover:bg-purple-50/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <label className="text-slate-700 font-semibold">
+                        Full Legal Name <span className="text-red-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={(e) => handleWhyAskThis('field-full-name', e)}
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
+                        title="Why does NexaSure ask this?"
+                      >
+                        <span>Why?</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerFieldGuidance('field-full-name');
+                      }}
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
+                    >
+                      <span>Hear guidance</span>
+                    </button>
+                  </div>
+                  <input
+                    id="input-full-name"
+                    type="text"
+                    value={profile.fullName}
+                    onFocus={() => handleFieldClickOrFocus('field-full-name')}
+                    onChange={(e) => {
+                      setProfile(prev => ({ ...prev, fullName: e.target.value }));
+                      setIdleSeconds(0);
+                    }}
+                    placeholder="e.g. Ramesh Shankar Thorat (as on Aadhaar/PAN)"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
+                  />
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    Refer to your Aadhaar or PAN card. Use Hear guidance for spoken advice.</span>
+                </div>
+
+                {/* 2. Date of Birth (Auto-Play DD/MM/YYYY explanation on click) */}
+                <div
+                  id="field-dob"
+                  onClick={() => handleFieldClickOrFocus('field-dob')}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    spotlightedElementId === 'input-dob'
+                      ? 'co-browse-spotlight'
+                      : 'border-transparent hover:border-purple-200 hover:bg-purple-50/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <label className="text-slate-700 font-semibold">
+                        Date of Birth (DD/MM/YYYY) <span className="text-red-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={(e) => handleWhyAskThis('field-dob', e)}
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
+                        title="Why does NexaSure ask this?"
+                      >
+                        <span>Why?</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerFieldGuidance('field-dob');
+                      }}
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
+                    >
+                      <span>Hear guidance</span>
+                    </button>
+                  </div>
+                  <input
+                    id="input-dob"
+                    type="text"
+                    value={profile.dob}
+                    onFocus={() => handleFieldClickOrFocus('field-dob')}
+                    onChange={(e) => {
+                      setProfile(prev => ({ ...prev, dob: e.target.value }));
+                      setIdleSeconds(0);
+                    }}
+                    placeholder="DD/MM/YYYY (e.g. 14/05/1994)"
+                    maxLength={10}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
+                  />
+                  <span className="text-[11px] text-purple-700 mt-1 block font-medium">
+                    Day/Month/Year format. Use Hear guidance for a spoken explanation.</span>
+                </div>
+
+                {/* 3. Gender */}
+                <div
+                  id="field-gender"
+                  onClick={() => handleFieldClickOrFocus('field-gender')}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    spotlightedElementId === 'field-gender' ? 'co-browse-spotlight' : 'border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-slate-700 font-semibold">
+                      Gender <span className="text-red-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerFieldGuidance('field-gender');
+                      }}
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
+                    >
+                      <span>Hear guidance</span>
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    {['Male', 'Female'].map((g) => (
+                      <button
+                        key={g}
+                        id={`option-gender-${g.toLowerCase()}`}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setProfile(prev => ({ ...prev, gender: g }));
+                          handleFieldClickOrFocus('field-gender');
+                        }}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                          profile.gender === g
+                            ? 'border-[#582be8] bg-purple-50 text-[#582be8] ring-2 ring-purple-200'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. Annual Income */}
+                <div
+                  id="field-annual-income"
+                  onClick={() => handleFieldClickOrFocus('field-annual-income')}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    spotlightedElementId === 'select-annual-income' ? 'co-browse-spotlight' : 'border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <label className="text-slate-700 font-semibold">
+                        Annual Income (Gross) <span className="text-red-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={(e) => handleWhyAskThis('field-income', e)}
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
+                        title="Why does NexaSure ask this?"
+                      >
+                        <span>Why?</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerFieldGuidance('field-annual-income');
+                      }}
+                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
+                    >
+                      <span>Hear guidance</span>
+                    </button>
+                  </div>
+                  <select
+                    id="select-annual-income"
+                    value={profile.annualIncome}
+                    onFocus={() => handleFieldClickOrFocus('field-annual-income')}
+                    onChange={(e) => {
+                      setProfile(prev => ({ ...prev, annualIncome: e.target.value }));
+                      setIdleSeconds(0);
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium bg-white focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
+                  >
+                    <option value="">-- Select Annual Income Range --</option>
+                    <option value="5L-10L">₹5,00,000 - ₹10,00,000</option>
+                    <option value="10L-15L">₹10,00,000 - ₹15,00,000</option>
+                    <option value="15L-20L">₹15,00,000 - ₹20,00,000 (Recommended)</option>
+                    <option value="20L-35L">₹20,00,000 - ₹35,00,000</option>
+                    <option value="35L+">Above ₹35,00,000</option>
+                  </select>
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    Gross income before taxes as per Form 16 / ITR</span>
+                </div>
+
+                {/* 5. Tobacco / Smoking Status */}
+                <div
+                  id="field-smoking"
+                  onClick={() => handleFieldClickOrFocus('field-smoking')}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    spotlightedElementId === 'field-smoking' ? 'co-browse-spotlight' : 'border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <label className="text-slate-700 font-semibold">
+                        Tobacco / Smoking Habit <span className="text-red-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={(e) => handleWhyAskThis('field-smoker', e)}
+                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
+                        title="Why does NexaSure ask this?"
+                      >
+                        <span>Why?</span>
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      id="option-smoker-no"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setProfile(prev => ({ ...prev, isSmoker: false }));
+                        handleFieldClickOrFocus('field-smoking');
+                      }}
+                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                        profile.isSmoker === false
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-200'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      {profile.isSmoker === false ? '✓ ' : ''}Non-Smoker (20% Discount)
+                    </button>
+                    <button
+                      id="option-smoker-yes"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setProfile(prev => ({ ...prev, isSmoker: true }));
+                        handleFieldClickOrFocus('field-smoking');
+                      }}
+                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                        profile.isSmoker === true
+                          ? 'border-orange-500 bg-orange-50 text-orange-800 ring-2 ring-orange-200'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      Smoker / Tobacco
+                    </button>
+                  </div>
+                  <span className="text-[11px] text-slate-400 mt-1 block">
+                    No tobacco consumption in last 12 months</span>
+                </div>
+
+                {/* 6. City & Pincode */}
+                <div
+                  id="field-city"
+                  onClick={() => handleFieldClickOrFocus('field-city')}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    spotlightedElementId === 'field-city' ? 'co-browse-spotlight' : 'border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-slate-700 font-semibold">City & PIN Code</label>
+                    <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      id="input-city"
+                      type="text"
+                      value={profile.city}
+                      onFocus={() => handleFieldClickOrFocus('field-city')}
+                      onChange={(e) => setProfile(prev => ({ ...prev, city: e.target.value }))}
+                      placeholder="e.g. Pune"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8]"
+                    />
+                    <input
+                      id="input-pincode"
+                      type="text"
+                      value={profile.pincode}
+                      onFocus={() => handleFieldClickOrFocus('field-city')}
+                      onChange={(e) => setProfile(prev => ({ ...prev, pincode: e.target.value }))}
+                      placeholder="e.g. 411038"
+                      maxLength={6}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8]"
+                    />
+                  </div>
+                </div>
+
+              </div>
+
               {docDiscrepancies.length > 0 && (
                 <div id="field-discrepancies" className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 flex flex-col gap-1.5">
                   <strong>A document does not match what you typed. Pick the correct value:</strong>
