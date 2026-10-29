@@ -16,27 +16,37 @@ const agentLines = async () => {
 
 /** Type a message to the agent and return its next reply (waits for a new one that satisfies `ok`). */
 async function ask(text: string, ok: (reply: string) => boolean = () => true, timeout = 90_000): Promise<string> {
-  // Explaining a clause opens the terms drawer, which covers the ask box; close it first.
-  await page.evaluate(() => {
-    const drawer = [...document.querySelectorAll('div')].find((d) => d.textContent?.startsWith('Statutory Terms & Conditions (T&C)') && d.querySelector('button'));
-    [...(drawer?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === '✕')?.click();
-  });
+  await closeTermsDrawer();
   const before = (await agentLines()).length;
   await page.getByTestId('ask-input').fill(text);
   await page.getByTestId('ask-button').click();
   let reply = '';
-  await expect
-    .poll(
-      async () => {
-        const lines = await agentLines();
-        reply = lines.length > before ? lines[lines.length - 1] : '';
-        return reply && ok(reply);
-      },
-      { timeout, intervals: [1000] }
-    )
-    .toBeTruthy();
+  try {
+    await expect
+      .poll(
+        async () => {
+          const lines = await agentLines();
+          reply = lines.length > before ? lines[lines.length - 1] : '';
+          return reply && ok(reply);
+        },
+        { timeout, intervals: [1000] }
+      )
+      .toBeTruthy();
+  } catch (e) {
+    const lines = await agentLines();
+    throw new Error(`no matching reply to "${text}". New replies: ${JSON.stringify(lines.slice(before))}`);
+  }
   await page.waitForTimeout(2500); // let any form action and its cursor glide finish
   return reply;
+}
+
+// Explaining a clause opens the terms drawer, which covers the page; close it before the next step.
+async function closeTermsDrawer() {
+  await page.evaluate(() => {
+    const drawer = [...document.querySelectorAll('div')].find((d) => d.textContent?.startsWith('Statutory Terms & Conditions (T&C)') && d.querySelector('button'));
+    [...(drawer?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === '✕')?.click();
+  });
+  await page.waitForTimeout(400);
 }
 
 const input = (id: string) => page.locator(`#${id} input, input#${id}`).first();
