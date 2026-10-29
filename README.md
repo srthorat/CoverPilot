@@ -137,5 +137,20 @@ docker run --rm -p 3000:3000 \
 - **Building for another architecture** (for example an amd64 server from an Apple Silicon Mac): `docker build --platform linux/amd64 -t coverpilot:amd64 .`, or publish both at once with `docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/coverpilot --push .`.
 - The container exits if either process stops, so a restart policy (`--restart unless-stopped`) restarts both together. Health is reported by a built-in check on both services.
 
+### Deploy to a public host (EC2 or any Docker host)
+
+`deploy/` holds a production stack: CoverPilot behind Caddy, which obtains and renews the HTTPS certificate automatically (the microphone only works on an HTTPS page). One command builds the image, copies it and your keys to the host over SSH (no registry), and starts everything:
+
+```bash
+deploy/deploy.sh ubuntu@<public-ip> <public-ip>          # served at https://<public-ip>.sslip.io
+deploy/deploy.sh my-ec2-alias app.example.com             # or your own domain
+# PLATFORM=linux/arm64 for Graviton; SSH_OPTS="-i key.pem" for a key file
+```
+
+- **Host needs:** Docker with the compose plugin, and a security group allowing 22, 80 and 443. UDP ports are not needed because voice audio relays through the configured TURN server (`TURN_*` in the env file).
+- **Only Caddy is public.** The app and the voice agent are reachable only through it.
+- **Keys** are copied to `~/coverpilot/secrets/.env.local` on the host (mode 600) and mounted read-only into the container.
+- Update later by running the same command again; customer memory and cases persist in a Docker volume.
+
 ## 📄 License
 MIT License. Built for the **Meta Hackathon 2026**.

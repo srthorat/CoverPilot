@@ -1,0 +1,35 @@
+# Production stack for a single public host: CoverPilot (web app + voice agent) behind Caddy,
+# which gets and renews the HTTPS certificate automatically (the microphone needs HTTPS).
+#
+# Needs next to this file:
+#   .env                 PUBLIC_HOST=<hostname>   (written by deploy.sh)
+#   secrets/.env.local   the app's keys (META_MODEL_API_KEY, GOOGLE_TTS_API_KEY, TURN_*)
+services:
+  coverpilot:
+    image: ${COVERPILOT_IMAGE:-coverpilot:amd64}
+    restart: unless-stopped
+    expose:
+      - "3000"
+    volumes:
+      - ./secrets/.env.local:/app/omni_browse/.env.local:ro
+      - coverpilot-data:/app/voice-agent-py/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - coverpilot
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  coverpilot-data:
+  caddy-data:
+  caddy-config:
