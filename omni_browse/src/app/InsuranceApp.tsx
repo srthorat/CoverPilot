@@ -2,6 +2,10 @@
 
 import { blurCopy } from '@/lib/kyc-blur';
 import { extractPolicyPages, type PolicyPage } from '@/lib/pdf-text';
+import { GuardianView, type GuardianReviewState } from '@/components/GuardianView';
+import { runChecks, countIssues } from '@/lib/guardian-checks';
+import { buildDraftSummaryPdf, type DraftSummary } from '@/lib/draft-pdf';
+import type { GuardianResponse, ProposalFacts } from '@/lib/guardian-types';
 import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
 import React, { useState, useEffect, useRef } from 'react';
@@ -227,6 +231,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Real per-turn latency telemetry from the live Meta voice loop
   const voiceTelemetryRef = useRef<{ sparkModel?: string | null }>({});
+  const modeRef = useRef<'cobrowse' | 'guardian'>('cobrowse');
+  const guardianSectionRef = useRef(0);
   const [voiceTelemetry, setVoiceTelemetry] = useState<{
     asrModel: string | null;
     asrSessionId: string | null;
@@ -406,7 +412,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   };
   // The customer's own policy or CIS: read and masked in this browser; the agent gets only matching passages.
   const [policyDoc, setPolicyDoc] = useState<{ name: string; pages: PolicyPage[]; masked: number; status: 'reading' | 'ready' | 'sent' | 'error'; error?: string } | null>(null);
-  const policyInputRef = useRef<HTMLInputElement | null>(null);
+  // Two capabilities on one agent: build the application (co-browse), then review the proposed policy (Guardian).
+  const [mode, setMode] = useState<'cobrowse' | 'guardian'>('cobrowse');
+  const [guardianReview, setGuardianReview] = useState<GuardianReviewState>({ status: 'idle', checks: [], history: [] });
+  const [guardianSection, setGuardianSection] = useState(0);
+  const [reviewedSections, setReviewedSections] = useState<number[]>([]);
+  const [askedQuestions, setAskedQuestions] = useState<string[]>([]);
   const [docDiscrepancies, setDocDiscrepancies] = useState<DocDiscrepancy[]>([]);
   // Pause and resume: every proposal in progress has its own code, saved in this browser only.
   const [draftId, setDraftId] = useState('');
@@ -423,6 +434,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     maxReachable: 1,
   });
   voiceTelemetryRef.current = voiceTelemetry;
+  modeRef.current = mode;
+  guardianSectionRef.current = guardianSection;
   const profileRef = useRef(profile);
   profileRef.current = profile;
   const nominationRef = useRef<any>(null);
@@ -613,6 +626,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return {
       activeStep,
       proposalCode: draftId,
+      mode,
+      guardian:
+        mode === 'guardian' && guardianReview.response
+          ? {
+              sections: guardianReview.response.review.sections.map((s, i) => `${i + 1}. ${s.title}`),
+              currentSection: guardianSection + 1,
+              possibleIssues: guardianReview.checks.filter((f) => f.kind !== 'ok').map((f) => `${f.text}${f.page ? ` (page ${f.page})` : ''}`).slice(0, 10),
+              suggestedQuestions: Array.from(new Set(guardianReview.response.review.sections.flatMap((s) => s.suggestedQuestions))).slice(0, 10),
+              reviewedSections: reviewedSections.length,
+            }
+          : mode === 'guardian'
+          ? { note: 'No review has been run yet.' }
+          : undefined,
       documentDiscrepancies: docDiscrepancies,
       pendingApprovals: pendingApprovals.map((a) => ({ item: a.label, value: approvalSummary(a.key) })),
       stepGate: {
@@ -914,6 +940,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         }
       } else if (action.type === 'navigate') {
         const step = Math.min(5, Math.max(1, Number(action.step) || 1));
+        if (modeRef.current !== 'cobrowse') setMode('cobrowse');
         glideAgentCursorToElement(`step-tab-${step}`, title || `Opening step ${step}`, () => {
           if (goToStep(step)) formBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         });
@@ -927,6 +954,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           setShowTermsDrawer(true);
         } else if (action.action === 'close_terms') setShowTermsDrawer(false);
         else if (action.action === 'pause_proposal') window.setTimeout(() => pauseProposal(), 1500);
+        else if (action.action === 'open_guardian') setMode('guardian');
+        else if (action.action === 'open_cobrowse') setMode('cobrowse');
+        else if (action.action === 'guardian_next') openGuardianSection(guardianSectionRef.current + 1, true);
+        else if (action.action === 'guardian_prev') openGuardianSection(guardianSectionRef.current - 1, true);
+        else if (action.action === 'guardian_section') openGuardianSection(Math.max(0, Number(action.section) - 1), true);
       } else if (action.type === 'select') {
         const on = Boolean(action.value);
         if (action.field === 'criticalIllness') {
@@ -1513,6 +1545,150 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       setPolicyDoc((p) => p && { ...p, status: 'error', error: e?.message || String(e) });
     }
   }, [policyDoc?.status, policyDoc?.name, isListeningVoice]);
+
+  // ---- Integrity Guardian ----
+  const proposalFacts = (): ProposalFacts => ({
+    sumAssured: baseSumAssured,
+    monthlyPremium: totalMonthlyPayable,
+    termYears: 30,
+    riders: [
+      ...(selectedRiders.criticalIllness ? [`Critical illness ${ciTier === 'tier1' ? '10' : ciTier === 'tier3' ? '50' : '25'} lakh`] : []),
+      ...(selectedRiders.accidentalDeath ? ['Accidental death and disability'] : []),
+      ...(selectedRiders.waiverOfPremium ? ['Waiver of premium'] : []),
+      ...(selectedRiders.hospitalCash ? ['Hospital daily cash'] : []),
+    ],
+    nomineeCount: allNominees.length,
+    nomineesTotalShare: nomineeTotalShare,
+    anyMinorNominee,
+    smoker: profile.isSmoker,
+  });
+
+  const draftSummary = (): DraftSummary => ({
+    draftNumber: draftId || 'NXP-DRAFT',
+    date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+    sumAssuredLabel: baseSumAssured === '1cr' ? '1 crore rupees' : baseSumAssured === '1.5cr' ? '1.5 crore rupees' : '2 crore rupees',
+    monthlyPremium: totalMonthlyPayable,
+    termYears: 30,
+    riders: [
+      ...(selectedRiders.criticalIllness ? [{ name: `Critical illness ${ciTier === 'tier1' ? '10' : ciTier === 'tier3' ? '50' : '25'} lakh`, monthlyCost: riderRates.criticalIllness }] : []),
+      ...(selectedRiders.accidentalDeath ? [{ name: 'Accidental death and disability', monthlyCost: riderRates.accidentalDeath }] : []),
+      ...(selectedRiders.waiverOfPremium ? [{ name: 'Waiver of premium', monthlyCost: riderRates.waiverOfPremium }] : []),
+      ...(selectedRiders.hospitalCash ? [{ name: 'Hospital daily cash', monthlyCost: riderRates.hospitalCash }] : []),
+    ],
+    nomineeCount: allNominees.length,
+    nomineesTotalShare: nomineeTotalShare,
+    anyMinorNominee,
+    appointeeNamed: Boolean(nomination.appointeeName.trim()),
+    smoker: profile.isSmoker,
+    declarations: { section45Declared: underwriting.section45Consent, familyHistoryDeclared: underwriting.familyCardiacHistory, hospitalizationDeclared: underwriting.priorHospitalization },
+  });
+
+  const loadGuardianDoc = async (which: 'sample' | 'issues' | 'draft') => {
+    try {
+      let blob: Blob;
+      let name: string;
+      if (which === 'draft') {
+        blob = await buildDraftSummaryPdf(draftSummary());
+        name = `proposal-summary-draft-${draftId}.pdf`;
+      } else {
+        const file = which === 'issues' ? 'sample-policy-with-issues.pdf' : 'sample-policy.pdf';
+        blob = await (await fetch(`/samples/${file}`)).blob();
+        name = file;
+      }
+      setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history });
+      await loadPolicyFile(new File([blob], name, { type: 'application/pdf' }));
+    } catch (e: any) {
+      setPolicyDoc({ name: 'document', pages: [], masked: 0, status: 'error', error: e?.message || String(e) });
+    }
+  };
+
+  const downloadDraftSummary = async () => {
+    const blob = await buildDraftSummaryPdf(draftSummary());
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `proposal-summary-draft-${draftId}.pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+
+  const runGuardian = async () => {
+    if (!policyDoc || !policyDoc.pages.length) return;
+    setGuardianReview((r) => ({ ...r, status: 'running', error: undefined }));
+    try {
+      const facts = proposalFacts();
+      const res = await fetch('/api/guardian', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pages: policyDoc.pages, proposal: facts }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.review) throw new Error(data.error || `Guardian HTTP ${res.status}`);
+      const response = data as GuardianResponse;
+      const checks = runChecks(response.review.facts, facts);
+      recordModel(response.model, 'document review', response.ms);
+      setGuardianSection(0);
+      setReviewedSections([]);
+      setGuardianReview((r) => ({ status: 'done', response, checks, history: [...r.history, { at: Date.now(), issues: countIssues(checks), model: response.model }] }));
+    } catch (e: any) {
+      setGuardianReview((r) => ({ ...r, status: 'error', error: `Review failed (no fallback): ${e?.message || e}` }));
+    }
+  };
+
+  // The agent reads one section aloud: what the document says, what to watch, one question to put to the insurer.
+  const sectionScript = (i: number): string => {
+    const r = guardianReview.response?.review;
+    const sec = r?.sections[i];
+    if (!r || !sec) return '';
+    const watch = [...sec.findings.filter((f) => f.kind !== 'ok').map((f) => f.text), ...(i === 0 ? guardianReview.checks.filter((f) => f.kind !== 'ok').map((f) => f.text) : [])].slice(0, 3);
+    return [
+      `Section ${i + 1} of ${r.sections.length}: ${sec.title}.`,
+      sec.summary,
+      watch.length ? `Worth noting: ${watch.join(' ')}` : 'I found nothing in this section that needs attention.',
+      sec.suggestedQuestions[0] ? `You could ask the insurer: ${sec.suggestedQuestions[0]}` : '',
+      'Ask me anything about this section, or say next section.',
+    ].filter(Boolean).join(' ');
+  };
+  const openGuardianSection = (i: number, speak: boolean) => {
+    const n = guardianReview.response?.review.sections.length ?? 0;
+    if (!n) return;
+    const idx = Math.min(n - 1, Math.max(0, i));
+    setGuardianSection(idx);
+    setReviewedSections((prev) => (prev.includes(idx) ? prev : [...prev, idx]));
+    if (speak) speakText(sectionScript(idx), selectedLanguage);
+  };
+  const askGuardian = (q: string) => {
+    setAskedQuestions((prev) => (prev.includes(q) ? prev : [...prev, q]));
+    processUserSpokenQuestion(q);
+  };
+  const fixInApplication = (step: 1 | 2 | 3 | 4 | 5) => {
+    setMode('cobrowse');
+    window.setTimeout(() => goToStep(step), 50);
+  };
+  const downloadGuardianReport = () => {
+    const r = guardianReview.response?.review;
+    if (!r) return;
+    const issues = guardianReview.checks.filter((f) => f.kind !== 'ok');
+    const lines = [
+      `# Integrity Guardian readiness report`,
+      `Proposal ${draftId} · reviewed ${new Date().toLocaleString()} · ${guardianReview.response?.model}`,
+      ``,
+      `This is not legal or financial advice and does not predict any claim decision. You decide whether to proceed.`,
+      ``,
+      `## Possible issues (${issues.length})`,
+      ...(issues.length ? issues.map((f) => `- ${f.text}${f.page ? ` (page ${f.page})` : ''}`) : ['- none found']),
+      ``,
+      `## Sections reviewed with you: ${reviewedSections.length} of ${r.sections.length}`,
+      ...r.sections.map((s, i) => `- ${reviewedSections.includes(i) ? '[x]' : '[ ]'} ${s.title}`),
+      ``,
+      `## Questions to put to the insurer`,
+      ...Array.from(new Set(r.sections.flatMap((s) => s.suggestedQuestions))).map((q) => `- [${askedQuestions.includes(q) ? 'x' : ' '}] ${q}`),
+    ];
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/markdown' }));
+    a.download = `guardian-report-${draftId}.md`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
 
   const requestApproval = (key: PendingApproval['key'], label: string, undo: () => void) => {
     setPendingApprovals((prev) => (prev.some((a) => a.key === key) ? prev : [...prev, { key, label, undo }]));
@@ -2843,8 +3019,27 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         </div>
       )}
 
+      {/* Two capabilities, one agent */}
+      <div className="shrink-0 bg-white border-b border-slate-200 px-4 lg:px-6 pt-1.5 flex items-center gap-1.5 text-xs">
+        {(
+          [
+            ['cobrowse', '1. Co-browse your application'],
+            ['guardian', '2. Integrity Guardian: review your proposed policy'],
+          ] as const
+        ).map(([m, label]) => (
+          <button
+            key={m}
+            id={`mode-tab-${m}`}
+            onClick={() => setMode(m)}
+            className={`px-3 py-1.5 rounded-t-lg font-semibold border border-b-0 ${mode === m ? 'bg-white text-[#582be8] border-slate-300' : 'bg-slate-100 text-slate-500 border-transparent hover:text-slate-700'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* 3. Stepper Navigation */}
-      <nav className="shrink-0 bg-white border-b border-slate-200 px-4 lg:px-6 py-1">
+      <nav hidden={mode !== 'cobrowse'} className="shrink-0 bg-white border-b border-slate-200 px-4 lg:px-6 py-1">
         <div className="w-full flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto text-xs py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             
@@ -3024,8 +3219,28 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             </div>
           )}
 
+          {mode === 'guardian' && (
+            <GuardianView
+              doc={policyDoc}
+              review={guardianReview}
+              currentSection={guardianSection}
+              reviewedSections={reviewedSections}
+              askedQuestions={askedQuestions}
+              canUseDraft={maxReachableStep >= 5 || stepIssues[1].length === 0}
+              onFile={(f) => { setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history }); loadPolicyFile(f); }}
+              onSample={loadGuardianDoc}
+              onClear={() => { setPolicyDoc(null); agentRef.current?.clearPolicyDoc(); setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history }); }}
+              onRun={runGuardian}
+              onSection={(i) => openGuardianSection(i, isListeningVoice)}
+              onVoiceReview={() => openGuardianSection(0, true)}
+              onAsk={askGuardian}
+              onFix={fixInApplication}
+              onDownloadReport={downloadGuardianReport}
+            />
+          )}
+
           {/* STEP 1: Blank Profile (Click any field -> auto-played regional guidance!) */}
-          {activeStep === 1 && (
+          {mode === 'cobrowse' && activeStep === 1 && (
             <div className="nx-card p-4 flex flex-col gap-3">
               <div className="pb-2 border-b border-slate-100 flex items-center justify-between">
                 <div>
@@ -3117,423 +3332,6 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <span className="text-slate-500">Your original is never uploaded.</span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 -mt-1">
-                <span className="font-semibold text-slate-700">Your policy or CIS (PDF):</span>
-                <button
-                  type="button"
-                  onClick={() => policyInputRef.current?.click()}
-                  className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-[11px]"
-                >
-                  Choose a PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={loadSamplePolicy}
-                  className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-[11px]"
-                >
-                  Use the sample policy
-                </button>
-                <input
-                  ref={policyInputRef}
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = '';
-                    if (file) loadPolicyFile(file);
-                  }}
-                />
-                {policyDoc && (
-                  <span className={policyDoc.status === 'error' ? 'text-red-600' : 'text-slate-500'}>
-                    {policyDoc.status === 'reading'
-                      ? 'Reading the PDF in your browser…'
-                      : policyDoc.status === 'error'
-                      ? policyDoc.error
-                      : `${policyDoc.name}: ${policyDoc.pages.length} pages${policyDoc.masked ? `, ${policyDoc.masked} personal numbers masked` : ''}. ${
-                          policyDoc.status === 'sent' ? 'Ready: ask the agent about it.' : 'Start a session to ask about it.'
-                        }`}
-                    {policyDoc.status !== 'reading' && (
-                      <button
-                        onClick={() => {
-                          setPolicyDoc(null);
-                          agentRef.current?.clearPolicyDoc();
-                        }}
-                        className="ml-2 underline"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </span>
-                )}
-              </div>
-
-              {kycRedaction && (
-                <div className={`${kycPanelOpen ? 'p-3' : 'px-3 py-1'} rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (kycCollapseTimer.current) clearTimeout(kycCollapseTimer.current);
-                      setKycPanelOpen((v) => !v);
-                    }}
-                    className="flex flex-wrap items-center justify-between gap-2 text-[11px] w-full text-left"
-                    title={kycPanelOpen ? 'Hide the documents' : 'Show the documents'}
-                  >
-                    <span className="font-bold"> Privacy shield • {kycRedaction.type.replace('-', ' ').toUpperCase()}</span>
-                    <span className={kycRedaction.status.startsWith('Warning') || kycRedaction.status.startsWith('Failed') ? 'text-red-600 font-semibold' : 'text-slate-500'}>
-                      {kycRedaction.status}
-                      {showDevPanel && kycRedaction.samMs !== null ? ` • SAM 3.1 ${kycRedaction.samMs} ms${kycRedaction.samCached ? '(cached)' : ''}` : ''}
-                      {showDevPanel && kycRedaction.locateMs !== null ? ` • Spark locate ${kycRedaction.locateMs} ms` : ''}
-                      {showDevPanel && kycRedaction.ocrMs !== null ? ` • Spark OCR ${kycRedaction.ocrMs} ms` : ''}
-                      {kycRedaction.status === 'Done' ? ' ✓' : ''} {kycPanelOpen ? '▾' : '▸'}</span>
-                  </button>
-                  {kycPanelOpen && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '1. SAM 3.1 boxes + pixel masks (one request per concept)' : '1. Private regions found on your card'}</div>
-                      <svg viewBox={`0 0 ${kycRedaction.width} ${kycRedaction.height}`} className="w-full rounded-lg border border-slate-200 bg-white">
-                        <image href={kycRedaction.imageUrl} width={kycRedaction.width} height={kycRedaction.height} />
-                        {kycRedaction.regions.map((r, i) => (
-                          <g key={i}>
-                            {r.masks.map((m, k) => (
-                              <path key={k} d={m.path} transform={`translate(${m.left} ${m.top})`} fill="rgba(244,63,94,0.5)" />
-                            ))}
-                            <rect
-                              x={r.box.left}
-                              y={r.box.top}
-                              width={r.box.right - r.box.left}
-                              height={r.box.bottom - r.box.top}
-                              fill="none"
-                              stroke="#f43f5e"
-                              strokeWidth={3}
-                            />
-                            <text x={r.box.left} y={Math.max(16, r.box.top - 6)} fill="#be123c"fontSize={18} fontWeight={700}>
-                              {r.concept}
-                              {showDevPanel && r.confidence !== null ? ` ${(r.confidence * 100).toFixed(0)}%` : ''}
-                            </text>
-                          </g>
-                        ))}
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-[11px] text-slate-400 mb-1">{showDevPanel ? '2. What Muse Spark receives (pixelated in your browser)' : '2. What the agent reads (hidden parts pixelated in your browser)'}</div>
-                      {kycRedaction.redactedDataUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={kycRedaction.redactedDataUrl} alt="Redacted document sent to OCR"className="w-full rounded-lg border border-slate-200" />
-                      ) : (
-                        <div className="w-full aspect-[1000/630] rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
-                      )}
-                    </div>
-                  </div>
-                  )}
-                </div>
-              )}
-
-              {/* Input Fields */}
-              <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-3 gap-x-3 gap-y-0 text-xs">
-                
-                {/* 1. Full Legal Name (Auto-Play on Click/Focus) */}
-                <div
-                  id="field-full-name"
-                  onClick={() => handleFieldClickOrFocus('field-full-name')}
-                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                    spotlightedElementId === 'input-full-name'
-                      ? 'co-browse-spotlight'
-                      : 'border-transparent hover:border-purple-200 hover:bg-purple-50/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <label className="text-slate-700 font-semibold">
-                        Full Legal Name <span className="text-red-500">*</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={(e) => handleWhyAskThis('field-full-name', e)}
-                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does NexaSure ask this?"
-                      >
-                        <span>Why?</span>
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerFieldGuidance('field-full-name');
-                      }}
-                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
-                    >
-                      <span>Hear guidance</span>
-                    </button>
-                  </div>
-                  <input
-                    id="input-full-name"
-                    type="text"
-                    value={profile.fullName}
-                    onFocus={() => handleFieldClickOrFocus('field-full-name')}
-                    onChange={(e) => {
-                      setProfile(prev => ({ ...prev, fullName: e.target.value }));
-                      setIdleSeconds(0);
-                    }}
-                    placeholder="e.g. Ramesh Shankar Thorat (as on Aadhaar/PAN)"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
-                  />
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Refer to your Aadhaar or PAN card. Use Hear guidance for spoken advice.</span>
-                </div>
-
-                {/* 2. Date of Birth (Auto-Play DD/MM/YYYY explanation on click) */}
-                <div
-                  id="field-dob"
-                  onClick={() => handleFieldClickOrFocus('field-dob')}
-                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                    spotlightedElementId === 'input-dob'
-                      ? 'co-browse-spotlight'
-                      : 'border-transparent hover:border-purple-200 hover:bg-purple-50/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <label className="text-slate-700 font-semibold">
-                        Date of Birth (DD/MM/YYYY) <span className="text-red-500">*</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={(e) => handleWhyAskThis('field-dob', e)}
-                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does NexaSure ask this?"
-                      >
-                        <span>Why?</span>
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerFieldGuidance('field-dob');
-                      }}
-                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
-                    >
-                      <span>Hear guidance</span>
-                    </button>
-                  </div>
-                  <input
-                    id="input-dob"
-                    type="text"
-                    value={profile.dob}
-                    onFocus={() => handleFieldClickOrFocus('field-dob')}
-                    onChange={(e) => {
-                      setProfile(prev => ({ ...prev, dob: e.target.value }));
-                      setIdleSeconds(0);
-                    }}
-                    placeholder="DD/MM/YYYY (e.g. 14/05/1994)"
-                    maxLength={10}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
-                  />
-                  <span className="text-[11px] text-purple-700 mt-1 block font-medium">
-                    Day/Month/Year format. Use Hear guidance for a spoken explanation.</span>
-                </div>
-
-                {/* 3. Gender */}
-                <div
-                  id="field-gender"
-                  onClick={() => handleFieldClickOrFocus('field-gender')}
-                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                    spotlightedElementId === 'field-gender' ? 'co-browse-spotlight' : 'border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-slate-700 font-semibold">
-                      Gender <span className="text-red-500">*</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerFieldGuidance('field-gender');
-                      }}
-                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
-                    >
-                      <span>Hear guidance</span>
-                    </button>
-                  </div>
-                  <div className="flex gap-2">
-                    {['Male', 'Female'].map((g) => (
-                      <button
-                        key={g}
-                        id={`option-gender-${g.toLowerCase()}`}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setProfile(prev => ({ ...prev, gender: g }));
-                          handleFieldClickOrFocus('field-gender');
-                        }}
-                        className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
-                          profile.gender === g
-                            ? 'border-[#582be8] bg-purple-50 text-[#582be8] ring-2 ring-purple-200'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 4. Annual Income */}
-                <div
-                  id="field-annual-income"
-                  onClick={() => handleFieldClickOrFocus('field-annual-income')}
-                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                    spotlightedElementId === 'select-annual-income' ? 'co-browse-spotlight' : 'border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <label className="text-slate-700 font-semibold">
-                        Annual Income (Gross) <span className="text-red-500">*</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={(e) => handleWhyAskThis('field-income', e)}
-                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does NexaSure ask this?"
-                      >
-                        <span>Why?</span>
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerFieldGuidance('field-annual-income');
-                      }}
-                      className="text-[11px] text-[#582be8] hover:underline font-semibold transition-colors flex items-center gap-1"
-                    >
-                      <span>Hear guidance</span>
-                    </button>
-                  </div>
-                  <select
-                    id="select-annual-income"
-                    value={profile.annualIncome}
-                    onFocus={() => handleFieldClickOrFocus('field-annual-income')}
-                    onChange={(e) => {
-                      setProfile(prev => ({ ...prev, annualIncome: e.target.value }));
-                      setIdleSeconds(0);
-                    }}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium bg-white focus:outline-none focus:border-[#582be8] focus:ring-2 focus:ring-purple-100"
-                  >
-                    <option value="">-- Select Annual Income Range --</option>
-                    <option value="5L-10L">₹5,00,000 - ₹10,00,000</option>
-                    <option value="10L-15L">₹10,00,000 - ₹15,00,000</option>
-                    <option value="15L-20L">₹15,00,000 - ₹20,00,000 (Recommended)</option>
-                    <option value="20L-35L">₹20,00,000 - ₹35,00,000</option>
-                    <option value="35L+">Above ₹35,00,000</option>
-                  </select>
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Gross income before taxes as per Form 16 / ITR</span>
-                </div>
-
-                {/* 5. Tobacco / Smoking Status */}
-                <div
-                  id="field-smoking"
-                  onClick={() => handleFieldClickOrFocus('field-smoking')}
-                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                    spotlightedElementId === 'field-smoking' ? 'co-browse-spotlight' : 'border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <label className="text-slate-700 font-semibold">
-                        Tobacco / Smoking Habit <span className="text-red-500">*</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={(e) => handleWhyAskThis('field-smoker', e)}
-                        className="text-[11px] text-slate-500 hover:text-[#582be8] font-medium transition-colors flex items-center gap-1"
-                        title="Why does NexaSure ask this?"
-                      >
-                        <span>Why?</span>
-                      </button>
-                    </div>
-                    <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      id="option-smoker-no"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setProfile(prev => ({ ...prev, isSmoker: false }));
-                        handleFieldClickOrFocus('field-smoking');
-                      }}
-                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
-                        profile.isSmoker === false
-                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-200'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      {profile.isSmoker === false ? '✓ ' : ''}Non-Smoker (20% Discount)
-                    </button>
-                    <button
-                      id="option-smoker-yes"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setProfile(prev => ({ ...prev, isSmoker: true }));
-                        handleFieldClickOrFocus('field-smoking');
-                      }}
-                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
-                        profile.isSmoker === true
-                          ? 'border-orange-500 bg-orange-50 text-orange-800 ring-2 ring-orange-200'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      Smoker / Tobacco
-                    </button>
-                  </div>
-                  <span className="text-[11px] text-slate-400 mt-1 block">
-                    No tobacco consumption in last 12 months</span>
-                </div>
-
-                {/* 6. City & Pincode */}
-                <div
-                  id="field-city"
-                  onClick={() => handleFieldClickOrFocus('field-city')}
-                  className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                    spotlightedElementId === 'field-city' ? 'co-browse-spotlight' : 'border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-slate-700 font-semibold">City & PIN Code</label>
-                    <span className="text-[11px] text-[#582be8] font-bold"> Auto-guidance</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      id="input-city"
-                      type="text"
-                      value={profile.city}
-                      onFocus={() => handleFieldClickOrFocus('field-city')}
-                      onChange={(e) => setProfile(prev => ({ ...prev, city: e.target.value }))}
-                      placeholder="e.g. Pune"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8]"
-                    />
-                    <input
-                      id="input-pincode"
-                      type="text"
-                      value={profile.pincode}
-                      onFocus={() => handleFieldClickOrFocus('field-city')}
-                      onChange={(e) => setProfile(prev => ({ ...prev, pincode: e.target.value }))}
-                      placeholder="e.g. 411038"
-                      maxLength={6}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8]"
-                    />
-                  </div>
-                </div>
-
-              </div>
-
               {docDiscrepancies.length > 0 && (
                 <div id="field-discrepancies" className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 flex flex-col gap-1.5">
                   <strong>A document does not match what you typed. Pick the correct value:</strong>
@@ -3619,7 +3417,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           )}
 
           {/* STEP 2: Cover & Rider Selection */}
-          {activeStep === 2 && (
+          {mode === 'cobrowse' && activeStep === 2 && (
             <div className="flex flex-col gap-6">
 
               {/* Base Plan Selection */}
@@ -3991,7 +3789,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           )}
 
           {/* STEP 3: Beneficiary Nomination & Statutory Trust (IRDAI Section 39 & MWPA 1874) */}
-          {activeStep === 3 && (
+          {mode === 'cobrowse' && activeStep === 3 && (
             <div id="nomination-section"className="nx-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
@@ -4366,7 +4164,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           )}
 
           {/* STEP 4: Medical Disclosures */}
-          {activeStep === 4 && (
+          {mode === 'cobrowse' && activeStep === 4 && (
             <div className="nx-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
@@ -4462,7 +4260,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           )}
 
           {/* STEP 5: Summary & Issuance */}
-          {activeStep === 5 && (
+          {mode === 'cobrowse' && activeStep === 5 && (
             <div className="nx-card p-4 flex flex-col gap-5">
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div>
@@ -4502,6 +4300,21 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   ))}
                 </ul>
                 <p className="mt-1.5 text-[11px] text-slate-500">Nothing here is decided for you: you make the declarations, sign and pay.</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button onClick={downloadDraftSummary} className="px-3 py-1 rounded-lg bg-white border border-slate-300 font-semibold">
+                    Download draft proposal summary
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setMode('guardian');
+                      await loadGuardianDoc('draft');
+                    }}
+                    className="px-3 py-1 rounded-lg bg-[#582be8] text-white font-semibold"
+                  >
+                    Review it with Integrity Guardian
+                  </button>
+                  <span className="text-[11px] text-slate-500">A draft summary of your application, not an issued policy and not proof of insurance.</span>
+                </div>
               </div>
 
               <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs text-slate-700">

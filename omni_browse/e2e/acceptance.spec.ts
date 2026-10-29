@@ -205,3 +205,30 @@ test('EX-01 Hostile text inside a document does not steer the agent or the form'
   expect(name === null || (name.split(' ').length <= 5 && !/ignore|instruction|approve|navigate/i.test(name))).toBeTruthy();
   expect(JSON.stringify(result.fields)).not.toMatch(/ignore all previous|navigate to step/i);
 });
+
+test('EX-02 Integrity Guardian finds the planted problems in a proposed policy, with pages', async () => {
+  await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
+  await page.getByRole('button', { name: 'Sample proposed policy (with issues)' }).click();
+  await expect(page.getByText(/4 pages, read in your browser/)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Run Integrity Guardian' }).click();
+  const checks = page.getByText('Checks against your application and the rules').locator('xpath=..');
+  await expect(checks).toContainText(/sum assured of ₹1,00,00,000 but your application has 1.5 crore/, { timeout: 120_000 });
+  await expect(checks).toContainText(/monthly premium of ₹1,180 but your application shows ₹1,050/);
+  await expect(checks).toContainText(/10 days of grace for monthly premiums/);
+  await expect(checks).toContainText(/24 months/);
+  await expect(checks).toContainText(/no nomination section/i);
+  await expect(page.getByText(/Reviewed by /)).toBeVisible();
+  // Each finding points at the page the evidence is on, and the document is shown with personal numbers hidden.
+  await expect(checks.getByRole('button', { name: /page \d/ }).first()).toBeVisible();
+  await expect(page.getByText('The document as the reviewer sees it')).toBeVisible();
+});
+
+test('EX-03 The agent answers a follow-up about the reviewed document with a page', async () => {
+  const reply = await ask('Why is the grace period in this document a problem?', (r) => /(15|fifteen)/i.test(r) || /page/i.test(r));
+  expect(reply).toMatch(/grace/i);
+});
+
+test('EX-04 A finding sends the customer back to the right application step', async () => {
+  await page.getByRole('button', { name: 'Fix in the application' }).first().click();
+  await expect(page.getByRole('heading', { name: /Step [23]/ })).toBeVisible({ timeout: 15_000 });
+});
