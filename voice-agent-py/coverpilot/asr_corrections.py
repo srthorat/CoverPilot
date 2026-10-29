@@ -1,7 +1,7 @@
 """Post-ASR term correction for domain-specific product names.
 
 Meta Realtime Transcribe has no custom vocabulary, so common mishears of
-ACKO Life product terms are corrected here before the text reaches Spark.
+NexaSure product terms are corrected here before the text reaches Spark.
 Corrections are simple whole-word case-insensitive replacements.
 """
 
@@ -21,7 +21,7 @@ _CORRECTIONS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bfree\s+look\s+period\b", re.I), "free look period"),
     (re.compile(r"\bsection\s+45\b", re.I), "Section 45"),
     (re.compile(r"\birdai\b", re.I), "IRDAI"),
-    (re.compile(r"\backo\s+life\b", re.I), "ACKO Life"),
+    (re.compile(r"\bnex(?:a|us|o)\s*(?:sure|shore|sher)\b", re.I), "NexaSure"),
     (re.compile(r"\bflexible\s+shield\b", re.I), "Flexi Shield"),
     (re.compile(r"\bflexy\s+shield\b", re.I), "Flexi Shield"),
     # Amount misreads

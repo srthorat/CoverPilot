@@ -1,4 +1,4 @@
-# What happens if a field is declared wrongly (ACKO Life Flexi Shield)
+# What happens if a field is declared wrongly (NexaSure Flexi Shield)
 
 ## Smoking status declared wrongly for the 20% discount
 If you use tobacco in any form (cigarettes, bidi, gutka, khaini, vaping, nicotine gum) in the last 12 months and still declare non-smoker, that is a material misrepresentation under Clause 5. The 20% non-smoker discount is obtained on a false basis. Under Section 45 of the Insurance Act (Clause 1) the insurer can call the policy in question within 3 years of issue; a tobacco-related or any death claim in that window can be investigated with medical records and cotinine tests and repudiated, with only premiums refunded. After 3 continuous years the policy cannot be questioned on this ground except for proven fraud. Declaring smoker honestly costs about 25% more premium but the claim is fully protected from day one. If you quit, you can request reclassification as non-smoker after 12 tobacco-free months with a fresh declaration and test.

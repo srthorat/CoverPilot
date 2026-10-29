@@ -35,16 +35,16 @@ _LANGUAGE_NAME = {
 }
 
 INSURANCE_KNOWLEDGE_BASE = """
-ACKO LIFE FLEXI SHIELD (PURE TERM LIFE INSURANCE) - IRDAI UIN: 157N001V01
+NEXASURE FLEXI SHIELD (PURE TERM LIFE INSURANCE) - DEMO PRODUCT FROM NEXASURE, AN AI-FIRST DIGITAL INSURANCE COMPANY
 
 I. STATUTORY TERMS & CONDITIONS (T&C) AND CONSUMER SAFEGUARDS:
 1. Clause 1 (Section 45 Incontestability Rule): Under Section 45 of the Insurance Act 1938, no life insurance policy can be called in question or repudiated by the insurer after the expiry of 3 continuous years from the policy inception date on ANY grounds whatsoever (fraud excepted if legally documented).
 2. Clause 2 (Grace Period): 30 calendar days grace period for quarterly, half-yearly, and annual premium frequencies; 15 days for monthly mode. The policy remains in FULL FORCE during the grace period.
 3. Clause 3 (Free-Look Cancellation & 100% Refund): 30-day Free-Look Period from the date of electronic policy receipt. Cancel for a 100% refund with zero cancellation penalty (deducting only stamp duty and medical test charges).
 4. Clause 4 (Suicide Exclusion Clause): Death due to suicide within the first 12 months: 80% of total premiums paid are refunded to the nominee. After 12 continuous months, 100% of the sum assured is payable.
-5. Clause 5 (Pre-Existing Diseases & Medical Disclosure): Full disclosure of past surgeries, hospitalizations, or family cardiac history is statutory. Once declared and accepted, ACKO Life cannot dispute coverage post-issuance.
+5. Clause 5 (Pre-Existing Diseases & Medical Disclosure): Full disclosure of past surgeries, hospitalizations, or family cardiac history is statutory. Once declared and accepted, NexaSure cannot dispute coverage post-issuance.
 6. Clause 6 (Critical Illness Waiting & Survival Periods): 90-day initial waiting period from inception. 14-day survival period post-diagnosis for the lump sum payout.
-7. Clause 7 (Claim Settlement Ratio & Turnaround): 99.1% IRDAI-audited Claim Settlement Ratio. Claims initiated digitally in 2 hours with 0 physical paperwork.
+7. Clause 7 (Digital Claims): claims are registered digitally with a 2-hour response target and no physical paperwork. These are demo targets, not audited results; never state a claim settlement ratio.
 8. Clause 8 (Policy Revival Guarantee): A lapsed policy can be revived within 5 continuous years by clearing unpaid premiums and medical declarations.
 
 II. NOMINATION & TRUST ALLOCATION (IRDAI SECTION 39 & MWPA 1874):
@@ -72,7 +72,7 @@ def language_label(lang: str, accent: str = "in") -> str:
 
 def build_system_prompt(lang: str, accent: str, model_name: str) -> str:
     """Static part of the system prompt (cacheable). Live screen state is appended per turn."""
-    return f"""You are OmniCB Agent, a licensed-advisor-style voice assistant powered by {model_name}. You are co-browsing the ACKO Life term insurance proposal form with the customer and can see their live form state. You hear them through a live microphone and your reply is spoken aloud immediately, so write for the ear. The customer may interrupt you mid-sentence; if the previous assistant turn in the history looks cut off, that is why.
+    return f"""You are OmniCB Agent, a licensed-advisor-style voice assistant powered by {model_name}. You are co-browsing the NexaSure term insurance proposal form with the customer. NexaSure is an AI-first digital insurance company and this is a demo product: never present claim statistics, audit results, registration numbers or policy numbers as facts beyond what the knowledge base states and can see their live form state. You hear them through a live microphone and your reply is spoken aloud immediately, so write for the ear. The customer may interrupt you mid-sentence; if the previous assistant turn in the history looks cut off, that is why.
 
 LANGUAGE: Reply only in {language_label(lang, accent)}.
 
@@ -140,7 +140,7 @@ def parse_action(raw: str) -> dict[str, Any] | None:
     }
 
 
-VERIFIER_SYSTEM_PROMPT = """You are the compliance verifier for an insurance co-browsing agent (ACKO Life Flexi Shield, IRDAI UIN 157N001V01). You receive the customer's recent turns (one request is often split across several short turns, so judge the actions against all of them) and the form actions the agent has just applied. Decide whether they are correct, allowed, and complete. Reply ONLY with JSON:
+VERIFIER_SYSTEM_PROMPT = """You are the compliance verifier for an insurance co-browsing agent (NexaSure Flexi Shield, a demo product). You receive the customer's recent turns (one request is often split across several short turns, so judge the actions against all of them) and the form actions the agent has just applied. Decide whether they are correct, allowed, and complete. Reply ONLY with JSON:
 {"verdict":"approve"|"amend"|"reject","reason":"<one short plain-English sentence for the customer, maximum 18 words>","clause":"<policy rule reference or null>","amendedAction":<a corrected fieldAction object, or null>}
 
 POLICY RULES:

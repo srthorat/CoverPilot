@@ -21,6 +21,9 @@ from coverpilot.prompt import ACTION_MARKER, parse_action  # noqa: E402
         ("hospital daily catch", "hospital daily cash"),
         ("critical illness cover", "critical illness rider"),
         ("1.5 crore", "one and a half crore"),
+        ("welcome to nexa sure", "welcome to NexaSure"),
+        ("Nexus Sure insurance", "NexaSure insurance"),
+        ("nexasure rider", "NexaSure rider"),
     ],
 )
 def test_known_misrecognitions_are_corrected(heard: str, expected: str):
