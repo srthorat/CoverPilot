@@ -16,30 +16,33 @@ const RIDER_WORDS: Array<[RegExp, RegExp]> = [
 
 const money = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
-export function runChecks(doc: DocumentFacts, p: ProposalFacts): GuardianFinding[] {
+export function runChecks(doc: DocumentFacts, p: ProposalFacts, opts: { compareApplication?: boolean } = {}): GuardianFinding[] {
+  const compare = opts.compareApplication !== false;
   const out: GuardianFinding[] = [];
   const add = (kind: GuardianFinding['kind'], text: string, page?: number, fixStep?: GuardianFinding['fixStep']) =>
     out.push({ kind, text, page, fixStep, source: 'check' });
 
+  if (compare) {
   // Cover and premium: document against application.
-  if (doc.sumAssuredRupees === null) add('missing', 'The document does not state one clear sum assured, so it cannot be compared with the cover you chose.', doc.pageOf.sumAssured, 2);
-  else if (doc.sumAssuredRupees !== RUPEES[p.sumAssured])
-    add('inconsistent', `Possible mismatch: the document shows a sum assured of ${money(doc.sumAssuredRupees)} but your application has ${LABEL[p.sumAssured]}.`, doc.pageOf.sumAssured, 2);
-  else add('ok', `Sum assured matches your application (${LABEL[p.sumAssured]}).`, doc.pageOf.sumAssured);
-
-  if (doc.monthlyPremium === null) add('missing', 'The document does not state a monthly premium to compare with the one in your application.', doc.pageOf.premium, 2);
-  else if (doc.monthlyPremium !== p.monthlyPremium)
-    add('inconsistent', `Possible mismatch: the document shows a monthly premium of ${money(doc.monthlyPremium)} but your application shows ${money(p.monthlyPremium)}.`, doc.pageOf.premium, 2);
-  else add('ok', `Monthly premium matches your application (${money(p.monthlyPremium)}).`, doc.pageOf.premium);
-
-  if (doc.termYears !== null && doc.termYears !== p.termYears)
-    add('inconsistent', `Possible mismatch: the document shows a ${doc.termYears}-year term but your application is for ${p.termYears} years. The term is set by the insurer, so ask them which is right.`, doc.pageOf.term);
-
-  // Riders the customer chose against the riders the document lists.
-  for (const chosen of p.riders) {
-    const rule = RIDER_WORDS.find(([chosenRe]) => chosenRe.test(chosen));
-    if (rule && !doc.riders.some((r) => rule[1].test(r)))
-      add('inconsistent', `Possible omission: you chose "${chosen}" but the document does not list that rider as included.`, doc.pageOf.premium, 2);
+    if (doc.sumAssuredRupees === null) add('missing', 'The document does not state one clear sum assured, so it cannot be compared with the cover you chose.', doc.pageOf.sumAssured, 2);
+    else if (doc.sumAssuredRupees !== RUPEES[p.sumAssured])
+      add('inconsistent', `Possible mismatch: the document shows a sum assured of ${money(doc.sumAssuredRupees)} but your application has ${LABEL[p.sumAssured]}.`, doc.pageOf.sumAssured, 2);
+    else add('ok', `Sum assured matches your application (${LABEL[p.sumAssured]}).`, doc.pageOf.sumAssured);
+  
+    if (doc.monthlyPremium === null) add('missing', 'The document does not state a monthly premium to compare with the one in your application.', doc.pageOf.premium, 2);
+    else if (doc.monthlyPremium !== p.monthlyPremium)
+      add('inconsistent', `Possible mismatch: the document shows a monthly premium of ${money(doc.monthlyPremium)} but your application shows ${money(p.monthlyPremium)}.`, doc.pageOf.premium, 2);
+    else add('ok', `Monthly premium matches your application (${money(p.monthlyPremium)}).`, doc.pageOf.premium);
+  
+    if (doc.termYears !== null && doc.termYears !== p.termYears)
+      add('inconsistent', `Possible mismatch: the document shows a ${doc.termYears}-year term but your application is for ${p.termYears} years. The term is set by the insurer, so ask them which is right.`, doc.pageOf.term);
+  
+    // Riders the customer chose against the riders the document lists.
+    for (const chosen of p.riders) {
+      const rule = RIDER_WORDS.find(([chosenRe]) => chosenRe.test(chosen));
+      if (rule && !doc.riders.some((r) => rule[1].test(r)))
+        add('inconsistent', `Possible omission: you chose "${chosen}" but the document does not list that rider as included.`, doc.pageOf.premium, 2);
+    }
   }
 
   // Fixed rules (IRDAI master circulars and the Insurance Act), stated as possible issues.
@@ -57,11 +60,11 @@ export function runChecks(doc: DocumentFacts, p: ProposalFacts): GuardianFinding
     add('risk', `The document says a policy can be questioned for ${doc.contestabilityYears} years. Section 45 of the Insurance Act says three years, so ask the insurer to confirm.`, doc.pageOf.contestability);
 
   // Nomination.
-  if (doc.nomineeSectionPresent === false) {
+  if (compare && doc.nomineeSectionPresent === false) {
     add('missing', `The document has no nomination section, although your application names ${p.nomineeCount} nominee${p.nomineeCount === 1 ? '' : 's'}. Ask the insurer where nominees are recorded.`, doc.pageOf.nominee, 3);
     if (p.anyMinorNominee) add('question', 'You named a nominee under 18; the document does not mention an appointee. Ask how the insurer records the appointee.', doc.pageOf.nominee, 3);
   }
-  if (p.nomineesTotalShare !== 100) add('inconsistent', `Your nominee shares total ${p.nomineesTotalShare}%, not 100%.`, undefined, 3);
+  if (compare && p.nomineesTotalShare !== 100) add('inconsistent', `Your nominee shares total ${p.nomineesTotalShare}%, not 100%.`, undefined, 3);
 
   return out;
 }

@@ -38,3 +38,9 @@ test('facts the document does not state become missing, never guessed', () => {
   const f = runChecks({ ...good, sumAssuredRupees: null, monthlyPremium: null }, proposal);
   assert.equal(f.filter((x) => x.kind === 'missing').length, 2);
 });
+
+test('with no application started only the fixed rules are checked', () => {
+  const f = runChecks({ ...good, sumAssuredRupees: 10_000_000, monthlyPremium: 1180, graceDaysMonthly: 10 }, proposal, { compareApplication: false });
+  assert.equal(f.filter((x) => x.kind === 'inconsistent').length, 0);
+  assert.equal(f.filter((x) => x.kind === 'risk').length, 1);
+});

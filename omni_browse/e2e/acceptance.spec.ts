@@ -61,6 +61,10 @@ test.beforeAll(async ({ browser }) => {
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
   await page.goto('/');
+  // The page opens on a choice: a new policy or a review of an existing one.
+  await expect(page.getByRole('button', { name: /Start a new policy/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Review a policy/ })).toBeVisible();
+  await page.getByRole('button', { name: /Start a new policy/ }).click();
 });
 
 test('AC-01 Customer explicitly accepts the co-browsing invitation', async () => {

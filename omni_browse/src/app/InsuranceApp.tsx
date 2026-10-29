@@ -414,6 +414,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [policyDoc, setPolicyDoc] = useState<{ name: string; pages: PolicyPage[]; masked: number; status: 'reading' | 'ready' | 'sent' | 'error'; error?: string } | null>(null);
   // Two capabilities on one agent: build the application (co-browse), then review the proposed policy (Guardian).
   const [mode, setMode] = useState<'cobrowse' | 'guardian'>('cobrowse');
+  // On opening the page the customer chooses: a new policy (co-browse) or a review of a policy they already have.
+  const [entry, setEntry] = useState<'choose' | 'done'>('choose');
   const [guardianReview, setGuardianReview] = useState<GuardianReviewState>({ status: 'idle', checks: [], history: [] });
   const [guardianSection, setGuardianSection] = useState(0);
   const [reviewedSections, setReviewedSections] = useState<number[]>([]);
@@ -1624,7 +1626,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const data = await res.json();
       if (!res.ok || !data.review) throw new Error(data.error || `Guardian HTTP ${res.status}`);
       const response = data as GuardianResponse;
-      const checks = runChecks(response.review.facts, facts);
+      const checks = runChecks(response.review.facts, facts, { compareApplication: draftHasContent });
       recordModel(response.model, 'document review', response.ms);
       setGuardianSection(0);
       setReviewedSections([]);
@@ -2728,12 +2730,78 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const pageContent = (
     <div className="h-screen overflow-hidden bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
       
+      {entry === 'choose' && (
+        <div className="fixed inset-0 z-[60] bg-[#f8fafc] overflow-y-auto" id="entry-chooser">
+          <div className="min-h-full flex flex-col items-center justify-center gap-6 px-4 py-8">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/nexasure-logo.png" alt="NexaSure" className="w-56 rounded-2xl" />
+            <div className="text-center">
+              <h1 className="text-xl font-bold text-[#111827]">What would you like to do?</h1>
+              <p className="text-sm text-slate-500">One voice assistant, two ways to help. Demo product, not a real insurer.</p>
+            </div>
+            {pendingResume && (
+              <div className="rounded-xl border border-purple-300 bg-purple-50 px-3 py-2 text-xs text-purple-900 flex flex-wrap items-center gap-2">
+                <span>
+                  You have a saved proposal <strong className="font-mono">{pendingResume.id}</strong> (step {pendingResume.step}).
+                </span>
+                <button
+                  onClick={() => {
+                    if (applyDraft(pendingResume.id)) {
+                      setMode('cobrowse');
+                      setEntry('done');
+                    }
+                  }}
+                  className="px-3 py-1 rounded-lg bg-[#582be8] text-white font-semibold"
+                >
+                  Resume it
+                </button>
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-3xl">
+              <button
+                id="entry-new-policy"
+                onClick={() => {
+                  setMode('cobrowse');
+                  setEntry('done');
+                }}
+                className="text-left rounded-2xl border-2 border-slate-200 hover:border-[#582be8] bg-white p-5 shadow-sm transition-colors"
+              >
+                <div className="text-base font-bold text-[#111827]">Start a new policy</div>
+                <p className="mt-1 text-sm text-slate-600">
+                  The voice assistant explains each question and fills your application with you, step by step. You only click where a declaration, signature or payment is yours to make.
+                </p>
+                <span className="mt-3 inline-block text-sm font-semibold text-[#582be8]">Co-browse my application →</span>
+              </button>
+              <button
+                id="entry-review-policy"
+                onClick={() => {
+                  setMode('guardian');
+                  setEntry('done');
+                }}
+                className="text-left rounded-2xl border-2 border-slate-200 hover:border-[#582be8] bg-white p-5 shadow-sm transition-colors"
+              >
+                <div className="text-base font-bold text-[#111827]">Review a policy</div>
+                <p className="mt-1 text-sm text-slate-600">
+                  Upload the proposed policy your insurer gave you. Integrity Guardian explains it section by section, checks it against your application and the rules, and answers every question with page references.
+                </p>
+                <span className="mt-3 inline-block text-sm font-semibold text-[#582be8]">Review my policy →</span>
+              </button>
+            </div>
+            <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-500">
+              <div className="font-semibold text-slate-700">Shared Meta-powered agent runtime</div>
+              Muse Spark · Muse Voice Transcribe · Muse Wonder · SAM 3.1 · Muse Image
+              <div className="mt-1 text-slate-600">Review → Resolve → Regenerate → Review again</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2. Main NexaSure Header */}
       <header className="shrink-0 bg-white border-b border-slate-200 z-30">
         <div className="w-full px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/nexasure-mark.png" alt="NexaSure logo" width={36} height={36} className="size-9 rounded-xl shadow-sm" />
+            <img src="/brand/nexasure-mark.png" alt="NexaSure logo" width={54} height={44} className="h-11 w-auto rounded-lg shadow-sm" />
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold tracking-tight text-[#111827]">NexaSure</span>
@@ -3226,6 +3294,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               currentSection={guardianSection}
               reviewedSections={reviewedSections}
               askedQuestions={askedQuestions}
+              comparing={draftHasContent}
               canUseDraft={maxReachableStep >= 5 || stepIssues[1].length === 0}
               onFile={(f) => { setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history }); loadPolicyFile(f); }}
               onSample={loadGuardianDoc}

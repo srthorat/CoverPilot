@@ -26,6 +26,7 @@ interface Props {
   reviewedSections: number[];
   askedQuestions: string[];
   canUseDraft: boolean;
+  comparing: boolean; // false when no application has been started, so only the fixed rules are checked
   onFile: (file: File) => void;
   onSample: (which: 'sample' | 'issues' | 'draft') => void;
   onClear: () => void;
@@ -179,6 +180,11 @@ export function GuardianView(p: Props) {
                 {/* Deterministic checks first: these are comparisons, not model opinions */}
                 <div className="rounded-xl border border-slate-200 bg-white p-2.5">
                   <div className="text-xs font-bold text-slate-900 mb-1">Checks against your application and the rules</div>
+                  {!p.comparing && (
+                    <div className="mb-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                      No application has been started in this session, so the document is checked against the fixed rules only. Build an application in Co-browse to compare cover, premium, riders and nominees.
+                    </div>
+                  )}
                   <ul className="flex flex-col gap-1.5">
                     {p.review.checks.map((f, i) => (
                       <li key={i} className="text-xs flex flex-wrap items-start gap-1.5">
