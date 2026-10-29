@@ -1400,9 +1400,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       body: JSON.stringify({
         documentType: type,
         // Measured with this blur: the Aadhaar number is partly readable at 63 px and 72 px wide
-        // and fully at 80 px, so it is located on 48 to 54 px copies; the PAN card and salary slip
-        // were unreadable at 90 px (the PAN number leaks at 130 px).
-        blurredDataUrls: (type === 'aadhaar' ? [48, 50, 54] : [70, 80, 90]).map((width) => blurForLocating(img, width)),
+        // and fully at 80 px, so it is located on 48 to 54 px copies. The PAN number is unreadable
+        // up to 100 px and leaks at 130 px, but below 85 px the locator often picks the wrong line,
+        // so the PAN card uses 85 to 95 px; the salary slip IDs were unreadable at 105 px.
+        blurredDataUrls: (type === 'aadhaar' ? [48, 50, 54] : type === 'pan' ? [85, 90, 95] : [70, 80, 90]).map((width) => blurForLocating(img, width)),
       }),
     });
     const data = await res.json();
