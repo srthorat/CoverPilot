@@ -64,8 +64,7 @@ test('AC-02 A Hindi question gets an understandable reply in Hindi', async () =>
 });
 
 test('AC-03 The agent identifies the current field from live page context', async () => {
-  await page.locator('#select-annual-income').focus();
-  await page.locator('#select-annual-income').click({ force: true }).catch(() => {});
+  await page.locator('#select-annual-income').focus(); // focusing is enough; opening the native list would cover the page
   await page.waitForTimeout(1500);
   const reply = await ask('Which field am I on right now?', (r) => /income/i.test(r));
   expect(reply).toMatch(/income/i);
