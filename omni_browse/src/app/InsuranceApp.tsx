@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent, type CaseRecord } from '@/lib/voice-client';
+import { MaskedIdField, maskAadhaar, maskPan, maskMobile } from '@/components/MaskedIdField';
 import { PresenterPanel, describeFieldAction, type SessionStats, type TurnRecord, type TurnMarks } from '@/components/PresenterPanel';
 import { toJpeg } from 'html-to-image';
 
@@ -13,6 +14,10 @@ type KycRegion = {
   masks: Array<{ path: string; left: number; top: number }>;
   members: number;
 };
+
+// The privacy shield hides the ID number from the model, so after a sample scan the masked display
+// uses the bundled sample card's known number. It is shown on this device only and never sent.
+const SAMPLE_IDS = { aadhaar: '432187659012', pan: 'ABCPS1234K' } as const;
 
 // Multilingual Guidance Knowledge Base (English, Hindi, Marathi)
 const GUIDANCE_CONTENT: Record<
@@ -163,11 +168,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     isSmoker: null as boolean | null,
     city: '',
     pincode: '',
-    // Client-side masked fields (Zero-PII guarantee: AI cannot see these)
-    aadhaarNumber: 'XXXX - XXXX - 8492',
-    panNumber: 'ABCDE••••F',
-    mobileNumber: '+91 98XXX ••240',
+    // Identity numbers stay in the browser: they are not part of the screen state sent to the agent,
+    // are shown masked unless the field has focus, and their fields are left out of form screenshots.
+    aadhaarNumber: '',
+    panNumber: '',
+    mobileNumber: '',
   });
+  // Where a value came from, so a sample scan is labelled as such (typing replaces it)
+  const [idFromSample, setIdFromSample] = useState<{ aadhaar: boolean; pan: boolean }>({ aadhaar: false, pan: false });
 
   // Step 2: Plan & Rider Customization
   const [baseSumAssured, setBaseSumAssured] = useState<'1cr' | '1.5cr' | '2cr'>('1.5cr');
@@ -1430,13 +1438,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       speakText(voice, selectedLanguage);
       const gender = f.gender ? (/^m/i.test(f.gender) ? 'Male' : /^f/i.test(f.gender) ? 'Female' : '') : '';
       glideAgentCursorToElement(type === 'pan' ? 'field-full-name' : 'field-pincode', `Populate ${label} OCR fields`, () => {
+        setIdFromSample((prev) => ({ ...prev, [type]: true }));
         setProfile((prev) => ({
           ...prev,
           fullName: f.fullName || prev.fullName,
           dob: f.dob || prev.dob,
           pincode: f.pincode || prev.pincode,
           gender: gender || prev.gender,
-          ...(type === 'pan' && f.idNumberMasked ? { panNumber: f.idNumberMasked } : {}),
+          ...(type === 'pan' ? { panNumber: SAMPLE_IDS.pan } : { aadhaarNumber: SAMPLE_IDS.aadhaar }),
         }));
       });
     } catch (e: any) {
@@ -1775,7 +1784,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     setTimeout(() => {
       glideAgentCursorToElement(
         'field-full-name',
-        'Guiding Full Legal Name & verifying SAM 3 Zero-PII Shield',
+        'Guiding Full Legal Name & verifying the ID privacy shield',
         () => {
           const inputEl = document.getElementById('input-full-name') as HTMLInputElement | null;
           if (inputEl) inputEl.focus();
@@ -1903,7 +1912,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     const step = activeStep;
     const t = setTimeout(async () => {
       try {
-        const dataUrl = await toJpeg(el, { quality: 0.6, pixelRatio: 0.6, backgroundColor: '#ffffff', cacheBust: false });
+        // Identity-number fields (data-sensitive) are left out of the picture, even if one has focus.
+        const dataUrl = await toJpeg(el, {
+          quality: 0.6,
+          pixelRatio: 0.6,
+          backgroundColor: '#ffffff',
+          cacheBust: false,
+          filter: (node) => !(node instanceof HTMLElement && node.dataset.sensitive === 'true'),
+        });
         if (!cancelled && dataUrl.length < 1_800_000) {
           agentRef.current?.sendScreenshot(dataUrl);
           setAgentView({ frameDataUrl: dataUrl, sentAt: Date.now(), step });
@@ -2119,7 +2135,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 title="Meta SAM 3 Real-time Video Privacy Filter (Blinds Aadhaar/PAN)"
               >
                 <span>{privacyShieldActive ? '' : ''}</span>
-                <span>SAM 3 PII Shield: {privacyShieldActive ? 'ACTIVE' : 'OFF'}</span>
+                <span>ID privacy shield: {privacyShieldActive ? 'ACTIVE' : 'OFF'}</span>
               </button>
 
               {/* Screen Control Status Pill */}
@@ -2721,13 +2737,54 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
               </div>
 
-              {/* Masked identity placeholders: the agent only ever sees these masked values */}
-              <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs tabular-nums text-slate-700">
-                <span className="font-bold text-slate-800">Identity records</span>
-                <span><span className="text-[11px] text-slate-400">Aadhaar </span><span className="font-bold tracking-wider">{profile.aadhaarNumber}</span></span>
-                <span><span className="text-[11px] text-slate-400">PAN </span><span className="font-bold tracking-wider">{profile.panNumber}</span></span>
-                <span><span className="text-[11px] text-slate-400">Mobile </span><span className="font-bold tracking-wider">{profile.mobileNumber}</span></span>
-                <span className="ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800">
+              {/* Identity records: filled by a sample scan or typed by the user; kept on this device, shown masked */}
+              <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+                <span
+                  className="font-bold text-slate-800 shrink-0"
+                  title="Optional. Scan a sample document above or enter your own numbers. They stay on this device and the agent only ever sees them masked."
+                >
+                  Identity records <span className="font-normal text-slate-400">(optional)</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1 min-w-[18rem]">
+                  <MaskedIdField
+                    label="Aadhaar"
+                    value={profile.aadhaarNumber}
+                    placeholder="12 digits"
+                    inputMode="numeric"
+                    mask={maskAadhaar}
+                    sanitize={(r) => r.replace(/\D/g, '').slice(0, 12)}
+                    valid={(v) => /^\d{12}$/.test(v)}
+                    fromSample={idFromSample.aadhaar}
+                    onChange={(v) => {
+                      setIdFromSample((p) => ({ ...p, aadhaar: false }));
+                      setProfile((p) => ({ ...p, aadhaarNumber: v }));
+                    }}
+                  />
+                  <MaskedIdField
+                    label="PAN"
+                    value={profile.panNumber}
+                    placeholder="ABCDE1234F"
+                    mask={maskPan}
+                    sanitize={(r) => r.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10)}
+                    valid={(v) => /^[A-Z]{5}\d{4}[A-Z]$/.test(v)}
+                    fromSample={idFromSample.pan}
+                    onChange={(v) => {
+                      setIdFromSample((p) => ({ ...p, pan: false }));
+                      setProfile((p) => ({ ...p, panNumber: v }));
+                    }}
+                  />
+                  <MaskedIdField
+                    label="Mobile"
+                    value={profile.mobileNumber}
+                    placeholder="10 digits"
+                    inputMode="numeric"
+                    mask={maskMobile}
+                    sanitize={(r) => r.replace(/\D/g, '').slice(0, 10)}
+                    valid={(v) => /^[6-9]\d{9}$/.test(v)}
+                    onChange={(v) => setProfile((p) => ({ ...p, mobileNumber: v }))}
+                  />
+                </div>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 shrink-0">
                   Masked from OmniCB Agent</span>
               </div>
 
@@ -4291,7 +4348,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                           <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
                         <td className="p-3"><strong>Native 60 FPS Video Segmentation & Memory Tracking</strong><br />Tracks dynamic viewport frames, modals, and elements across WebRTC screenshare video streams.</td>
-                        <td className="p-3"><strong>Zero-PII Privacy Redaction</strong>:<br />Detects Aadhaar/PAN fields and applies client-side polygonal blur before WebRTC video encoding.</td>
+                        <td className="p-3"><strong>ID Privacy Shield</strong>:<br />SAM 3.1 finds photos, signatures, QR codes and Aadhaar numbers; Muse Spark locates printed IDs on a blurred copy; the browser pixelates them before a document is read.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">
