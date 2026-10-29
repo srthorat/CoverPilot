@@ -26,6 +26,7 @@ interface Props {
   reviewedSections: number[];
   askedQuestions: string[];
   canUseDraft: boolean;
+  allowOwnFile: boolean; // hidden in the demo build, which uses sample documents only
   comparing: boolean; // false when no application has been started, so only the fixed rules are checked
   onFile: (file: File) => void;
   onSample: (which: 'sample' | 'issues' | 'draft') => void;
@@ -105,7 +106,7 @@ export function GuardianView(p: Props) {
       {/* 1. The document */}
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
         <span className="font-semibold text-slate-700">Document to review:</span>
-        <button onClick={() => fileInput.current?.click()} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold">Choose a PDF</button>
+        {p.allowOwnFile && <button onClick={() => fileInput.current?.click()} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold">Choose a PDF</button>}
         <button disabled={!p.canUseDraft} onClick={() => p.onSample('draft')} title={p.canUseDraft ? 'Your own proposal summary, built from the application' : 'Complete the application first'} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 disabled:opacity-50 border border-slate-300 font-semibold">My draft proposal summary</button>
         <button onClick={() => p.onSample('issues')} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold">Sample proposed policy (with issues)</button>
         <button onClick={() => p.onSample('sample')} className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold">Sample policy</button>
@@ -122,7 +123,7 @@ export function GuardianView(p: Props) {
 
       {!p.doc || p.doc.status === 'reading' || p.doc.status === 'error' ? (
         <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">
-          Add the proposed policy, benefit illustration or summary your insurer gave you. Aadhaar, PAN, mobile, email and account numbers are hidden in your browser before the text is used anywhere.
+          Pick a sample proposed policy or your draft proposal summary above. Aadhaar, PAN, mobile, email and account numbers in the document are hidden in your browser before the text is used anywhere.
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 min-h-0">

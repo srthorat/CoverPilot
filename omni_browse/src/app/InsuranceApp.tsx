@@ -1,6 +1,7 @@
 'use client';
 
 import { blurCopy } from '@/lib/kyc-blur';
+import { ALLOW_OWN_FILES } from '@/lib/flags';
 import { extractPolicyPages, type PolicyPage } from '@/lib/pdf-text';
 import { GuardianView, type GuardianReviewState } from '@/components/GuardianView';
 import { runChecks, countIssues } from '@/lib/guardian-checks';
@@ -2819,7 +2820,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               >
                 <div className="text-base font-bold text-[#111827]">Review a policy</div>
                 <p className="mt-1 text-sm text-slate-600">
-                  Upload the proposed policy your insurer gave you. Integrity Guardian explains it section by section, checks it against your application and the rules, and answers every question with page references.
+                  Review a proposed policy (this demo uses sample documents). Integrity Guardian explains it section by section, checks it against your application and the rules, and answers every question with page references.
                 </p>
                 <span className="mt-3 inline-block text-sm font-semibold text-[#582be8]">Review my policy →</span>
               </button>
@@ -3332,6 +3333,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               reviewedSections={reviewedSections}
               askedQuestions={askedQuestions}
               comparing={draftHasContent}
+              allowOwnFile={ALLOW_OWN_FILES}
               canUseDraft={maxReachableStep >= 5 || stepIssues[1].length === 0}
               onFile={(f) => { setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history }); loadPolicyFile(f); }}
               onSample={loadGuardianDoc}
@@ -3363,7 +3365,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <span className="text-2xl"></span>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-900">Read a document</span>
+                      <span className="text-xs font-semibold text-slate-900">Read a sample document</span>
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-white text-slate-600 border border-slate-200">
                         Original stays in your browser</span>
                     </div>
@@ -3400,6 +3402,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 </div>
               </div>
 
+              {ALLOW_OWN_FILES && (
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 -mt-1">
                 <span className="font-semibold text-slate-700">Or use your own file:</span>
                 <select
@@ -3437,6 +3440,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 />
                 <span className="text-slate-500">Your original is never uploaded.</span>
               </div>
+              )}
 
 
               {kycRedaction && (

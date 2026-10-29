@@ -1,5 +1,8 @@
 <p align="center"><img src="omni_browse/public/brand/nexasure-logo.png" alt="NexaSure logo" width="360"></p>
 
+> **Demo build:** the demo works on the bundled sample documents only. Reading a file the customer picks is implemented and tested but its controls are hidden unless the image is built with `NEXT_PUBLIC_ALLOW_OWN_FILES=true`.
+
+
 # 🛡️ CoverPilot (OmniBrowse)
 
 > **Autonomous Multimodal Co-Browsing & Voice Agent for Regulated Digital Insurance**  
