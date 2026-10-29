@@ -59,7 +59,7 @@ IDENT = """
 <table>
 <tr><td class="k">Insurer</td><td>NexaSure, an AI-first digital insurance company <span class="demo">(fictional demo insurer)</span></td></tr>
 <tr><td class="k">Product</td><td>NexaSure Flexi Shield, individual pure term life insurance</td></tr>
-<tr><td class="k">UIN</td><td>NXSDEMO001V01 <span class="demo">(demo product, not registered with IRDAI)</span></td></tr>
+<tr><td class="k">UIN</td><td>000N001V01 <span class="demo">(demo product, not registered with IRDAI)</span></td></tr>
 <tr><td class="k">IRDAI registration / CIN</td><td>Not applicable, fictional demo insurer / Not applicable (fictional)</td></tr>
 <tr><td class="k">Registered office</td><td>NexaSure Demo Tower, 1 Sample Road, Pune 411000 <span class="demo">(fictional address)</span></td></tr>
 <tr><td class="k">Customer care</td><td>1800-000-0000 <span class="demo">(demo)</span> · care@nexasure.example · nexasure.example</td></tr>
@@ -79,11 +79,11 @@ def page(n, total, body, first=False, kind="good"):
     if first:
         title = "Policy Document and Schedule" if kind == "good" else "Proposed Policy Document"
         head = f"""<div class="lh"><div class="brand"><span class="logo"></span><div><div class="name">NexaSure</div><div class="tag">AI-first digital insurance company</div></div></div>
-<div class="meta">Policy no. NXS-DEMO-2026-000123<br>Proposal no. NXP-DEMO-4821<br>UIN NXSDEMO001V01 (demo)</div></div>
+<div class="meta">Policy no. NXS-DEMO-2026-000123<br>Proposal no. NXP-DEMO-4821<br>UIN 000N001V01 (demo)</div></div>
 <h1>{title}</h1><div class="sub">NexaSure Flexi Shield · individual pure term life insurance · SAMPLE DOCUMENT FOR DEMONSTRATION, fictional insurer, not an issued policy</div>"""
     else:
         head = """<div class="lh small"><div class="brand"><span class="logo"></span><div><div class="name">NexaSure</div></div></div>
-<div class="meta">Policy no. NXS-DEMO-2026-000123 · Flexi Shield · UIN NXSDEMO001V01 (demo)</div></div>"""
+<div class="meta">Policy no. NXS-DEMO-2026-000123 · Flexi Shield · UIN 000N001V01 (demo)</div></div>"""
     return f"""<section class="page"><div class="wm">SAMPLE</div>{head}{body}
 <div class="foot"><span><b>NexaSure Flexi Shield</b> · SAMPLE DOCUMENT FOR DEMONSTRATION · fictional insurer, not an issued policy</span><span>Page {n} of {total}</span></div></section>"""
 
@@ -133,6 +133,7 @@ def good():
 <h3>12. Tax</h3><p>Under the old tax regime premiums may qualify for a deduction within the overall limit of 1.5 lakh rupees a year under sections 123 and 126 of the Income-tax Act 2025. A death benefit is generally tax free under section 10(10D). This is general information, not tax advice.</p>"""
     p5 = """<h2>Customer Information Sheet (summary)</h2>
 <table><tr><th>Item</th><th>What this policy says</th></tr>
+<tr><td>Product UIN</td><td>000N001V01 (demo product, not registered with IRDAI)</td></tr>
 <tr><td>What it is</td><td>Pure term life cover, no maturity benefit</td></tr>
 <tr><td>Sum assured / term</td><td>1.5 crore rupees / 30 years</td></tr>
 <tr><td>Premium</td><td>₹1,050 a month, fixed, no GST</td></tr>
@@ -191,6 +192,7 @@ def issues():
 <li><b>Insurance Ombudsman</b>: within one year, free of charge and without a lawyer; an award is capped at fifty lakh rupees.</li></ol>
 <h2>Customer Information Sheet (summary)</h2>
 <table><tr><th>Item</th><th>What this document says</th></tr>
+<tr><td>Product UIN</td><td>000N001V01 (demo product, not registered with IRDAI)</td></tr>
 <tr><td>What it is</td><td>Pure term life cover, no maturity benefit</td></tr>
 <tr><td>Sum assured / term</td><td>1 crore rupees / 30 years</td></tr>
 <tr><td>Premium</td><td>₹1,180 a month, fixed, no GST</td></tr>
