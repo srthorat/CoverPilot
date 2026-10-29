@@ -6,7 +6,9 @@
     "dev": "node server.mjs",
     "build": "next build",
     "start": "NODE_ENV=production node server.mjs",
-    "lint": "eslint"
+    "lint": "eslint",
+    "e2e": "playwright test",
+    "test:unit": "node --test --experimental-strip-types src/lib/*.test.ts"
   },
   "dependencies": {
     "@meta-sam/parser": "^0.1.0",
@@ -19,6 +21,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.49.1",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
