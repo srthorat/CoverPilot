@@ -36,7 +36,19 @@ async function ask(text: string, ok: (reply: string) => boolean = () => true, ti
     const lines = await agentLines();
     throw new Error(`no matching reply to "${text}". New replies: ${JSON.stringify(lines.slice(before))}`);
   }
-  await page.waitForTimeout(2500); // let any form action and its cursor glide finish
+  // The reply streams: wait until its text has stopped changing before anyone reads it.
+  let stable = 0;
+  for (let i = 0; i < 40 && stable < 3; i++) {
+    await page.waitForTimeout(1000);
+    const lines = await agentLines();
+    const now = lines.length > before ? lines[lines.length - 1] : reply;
+    if (now === reply) stable++;
+    else {
+      reply = now;
+      stable = 0;
+    }
+  }
+  await page.waitForTimeout(1500); // let any form action and its cursor glide finish
   if (!keepDrawer) await closeTermsDrawer();
   return reply;
 }
