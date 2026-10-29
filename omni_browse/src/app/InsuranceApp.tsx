@@ -1,6 +1,7 @@
 'use client';
 
 import { blurCopy } from '@/lib/kyc-blur';
+import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent, type CaseRecord } from '@/lib/voice-client';
@@ -224,6 +225,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [termsSearchQuery, setTermsSearchQuery] = useState<string>('');
 
   // Real per-turn latency telemetry from the live Meta voice loop
+  const voiceTelemetryRef = useRef<{ sparkModel?: string | null }>({});
   const [voiceTelemetry, setVoiceTelemetry] = useState<{
     asrModel: string | null;
     asrSessionId: string | null;
@@ -377,6 +379,30 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [noRiders, setNoRiders] = useState(false);
   // A document never overwrites what the customer typed: a difference is shown and the customer picks.
   type DocDiscrepancy = { field: 'fullName' | 'dob' | 'pincode' | 'gender' | 'annualIncome'; label: string; typed: string; fromDocument: string; source: string };
+  // Material answers the agent entered (income, smoking status, nominees) wait for the customer's click:
+  // Confirm keeps them, Undo restores the previous value. A spoken "yes" never counts, because speech
+  // recognition can be wrong. Typing or choosing the value yourself needs no approval.
+  type PendingApproval = { key: 'annualIncome' | 'isSmoker' | 'nominee'; label: string; undo: () => void; applied?: string };
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  // What each Meta model has been asked this session: calls, latency and tokens where the API reports them.
+  const [modelUsage, setModelUsage] = useState<Record<string, ModelUsage>>({});
+  const recordModel = (model: string | undefined, role: string, ms?: number | null, tokens?: { promptTokens?: number | null; completionTokens?: number | null }) => {
+    if (!model) return;
+    setModelUsage((prev) => {
+      const cur = prev[model] ?? { role, calls: 0, totalMs: 0, maxMs: 0, promptTokens: 0, completionTokens: 0 };
+      return {
+        ...prev,
+        [model]: {
+          ...cur,
+          calls: cur.calls + (ms !== undefined ? 1 : 0),
+          totalMs: cur.totalMs + (ms ?? 0),
+          maxMs: Math.max(cur.maxMs, ms ?? 0),
+          promptTokens: cur.promptTokens + (tokens?.promptTokens ?? 0),
+          completionTokens: cur.completionTokens + (tokens?.completionTokens ?? 0),
+        },
+      };
+    });
+  };
   const [docDiscrepancies, setDocDiscrepancies] = useState<DocDiscrepancy[]>([]);
   // Pause and resume: every proposal in progress has its own code, saved in this browser only.
   const [draftId, setDraftId] = useState('');
@@ -392,8 +418,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     issues: {},
     maxReachable: 1,
   });
+  voiceTelemetryRef.current = voiceTelemetry;
   const profileRef = useRef(profile);
   profileRef.current = profile;
+  const nominationRef = useRef<any>(null);
   const stampNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // Observation Timer & Focused Field Tracking
@@ -582,6 +610,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       activeStep,
       proposalCode: draftId,
       documentDiscrepancies: docDiscrepancies,
+      pendingApprovals: pendingApprovals.map((a) => ({ item: a.label, value: approvalSummary(a.key) })),
       stepGate: {
         furthestStepAllowed: stepGateRef.current.maxReachable,
         missingOnThisStep: (stepGateRef.current.issues[activeStep] || []).map((i) => i.msg),
@@ -794,6 +823,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       if (action.type === 'nominate') {
         glideAgentCursorToElement('nomination-section', title || 'Configuring Nominee & Trust Protection', () => {
           if (latestRef.current.activeStep < 3) goToStep(3);
+          const before = nominationRef.current;
+          if (before) requestApproval('nominee', 'Nominees', () => setNomination(before));
           setNomination((prev) => {
             const next = {
               ...prev,
@@ -854,7 +885,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           annualIncome: {
             el: 'field-annual-income',
             aim: 'select-annual-income',
-            apply: () => setProfile((p) => ({ ...p, annualIncome: incomeRangeFor(value) || p.annualIncome })),
+            apply: () => {
+              const before = profileRef.current.annualIncome;
+              const next = incomeRangeFor(value);
+              if (next && next !== before) requestApproval('annualIncome', 'Annual income', () => setProfile((p) => ({ ...p, annualIncome: before })));
+              setProfile((p) => ({ ...p, annualIncome: next || p.annualIncome }));
+            },
           },
           gender: {
             el: 'field-gender',
@@ -915,6 +951,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           });
         } else if (action.field === 'isSmoker') {
           glideAgentCursorToElement('field-smoking', title || `Setting Smoker Status: ${on ? 'Yes' : 'No'}`, () => {
+            const before = profileRef.current.isSmoker;
+            if (before !== on) requestApproval('isSmoker', 'Smoking status', () => setProfile((p) => ({ ...p, isSmoker: before })));
             setProfile((p) => ({ ...p, isSmoker: on }));
           }, on ? 'option-smoker-yes' : 'option-smoker-no');
         }
@@ -1058,6 +1096,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           const i = prev.findIndex((v) => v.id === ev.id);
           return (i < 0 ? [...prev, entry] : prev.map((v, k) => (k === i ? entry : v))).slice(-6);
         });
+        if (ev.status !== 'pending') recordModel(ev.model, 'verifier', ev.ms ?? 0, ev.usage);
+        if (ev.status === 'error') {
+          // The change stands (nothing is rolled back without a reason) but it was not double-checked.
+          setChatMessages((prev) => [...prev, { sender: 'agent', text: `Could not double-check "${ev.actionTitle}" with Muse Wonder (${ev.reason || 'request failed'}). The change was not verified, so please check it yourself.`, time: stampNow() }]);
+        }
         if (ev.status !== 'pending') {
           patchLastTurn((last) => ({
             wonder: { status: ev.status, actionTitle: ev.actionTitle, reason: ev.reason, ms: ev.ms },
@@ -1084,7 +1127,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         }
         break;
       }
+      case 'usage':
+        recordModel(voiceTelemetryRef.current.sparkModel || 'Muse Spark', 'agent', undefined, ev);
+        break;
       case 'agent_done':
+        recordModel(ev.telemetry?.llmModel || voiceTelemetryRef.current.sparkModel || 'Muse Spark', 'agent', ev.telemetry?.totalMs ?? 0);
         if (ev.text)
           upsertAgentMessage(
             devRef.current
@@ -1423,8 +1470,39 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       masks: [],
       members: 1,
     }));
+    recordModel(data.telemetry?.model, 'ID locator', data.telemetry?.totalMs ?? 0);
     return { regions, ms: data.telemetry?.totalMs ?? 0 };
   };
+
+  const requestApproval = (key: PendingApproval['key'], label: string, undo: () => void) => {
+    setPendingApprovals((prev) => (prev.some((a) => a.key === key) ? prev : [...prev, { key, label, undo }]));
+  };
+  const currentValueOf = (key: PendingApproval['key']): string =>
+    key === 'annualIncome' ? profile.annualIncome : key === 'isSmoker' ? String(profile.isSmoker) : JSON.stringify(nomination);
+  const approvalSummary = (key: PendingApproval['key']): string =>
+    key === 'annualIncome'
+      ? profile.annualIncome || 'not set'
+      : key === 'isSmoker'
+      ? profile.isSmoker === null ? 'not set' : profile.isSmoker ? 'Smoker / tobacco user' : 'Non-smoker'
+      : nomineeSummary;
+  // First render after the agent's change records the value it set; any later difference means the
+  // customer edited it themselves (or an undo ran), so the approval is no longer needed.
+  useEffect(() => {
+    setPendingApprovals((prev) => {
+      let changed = false;
+      const next: PendingApproval[] = [];
+      for (const a of prev) {
+        const now = currentValueOf(a.key);
+        if (a.applied === undefined) {
+          changed = true;
+          next.push({ ...a, applied: now });
+        } else if (a.applied !== now) changed = true;
+        else next.push(a);
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.annualIncome, profile.isSmoker, nomination]);
 
   // Put what a document says into the form without overwriting anything the customer typed.
   // Empty fields are filled; a field that already holds a different value becomes a discrepancy
@@ -1471,6 +1549,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const res = await fetch('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentType: 'salary-slip', imageDataUrl: slipRedacted }) });
       const data = await res.json();
       if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
+      recordModel(data.telemetry?.model, 'document reader', data.telemetry?.totalMs ?? 0);
       const slipLeaks: string[] = Array.isArray(data.redactionLeaks) ? data.redactionLeaks : [];
       setKycRedaction((prev) => prev && { ...prev, ocrMs: Math.round(performance.now() - t0), status: slipLeaks.length ? `Warning: ${slipLeaks.join(', ')} still readable after redaction` : 'Done' });
       if (slipLeaks.length) setChatMessages((prev) => [...prev, { sender: 'agent', text: `Warning: the shield missed the ${slipLeaks.join(', ')}; it was still readable in the redacted image.`, time: stampNow() }]);
@@ -1533,6 +1612,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       });
       const sam = await samRes.json();
       if (!samRes.ok || !Array.isArray(sam.regions)) throw new Error(sam.error || `SAM HTTP ${samRes.status}`);
+      recordModel(sam.telemetry?.model, 'photo, signature, QR', sam.telemetry?.totalMs ?? 0);
       const regions: KycRegion[] = [...sam.regions];
       let locateMs: number | null = null;
       {
@@ -1578,6 +1658,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       });
       const data = await res.json();
       if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
+      recordModel(data.telemetry?.model, 'document reader', data.telemetry?.totalMs ?? 0);
       const ocrMs = Math.round(performance.now() - t0);
       const leaks: string[] = Array.isArray(data.redactionLeaks) ? data.redactionLeaks : [];
       setKycRedaction((prev) => prev && { ...prev, ocrMs, status: leaks.length ? `Warning: ${leaks.join(', ')} still readable after redaction` : 'Done' });
@@ -2191,6 +2272,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   ];
   const nomineeTotalShare = allNominees.reduce((sum, n) => sum + (Number(n.share) || 0), 0);
   const anyMinorNominee = allNominees.slice(1).some((n) => n.age < 18);
+  nominationRef.current = nomination;
   const nomineeSummary = allNominees.map((n) => `${n.name} (${n.relation}, ${n.share}%)`).join(', ');
 
   // Per-step validation. A step is complete only when every item below is clean.
@@ -2210,6 +2292,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ...(profile.isSmoker === null ? [{ id: 'field-smoking', msg: 'Say whether you use tobacco.' }] : []),
       ...(!profile.city.trim() ? [{ id: 'input-city', msg: 'Enter your city.' }] : []),
       ...(!/^\d{6}$/.test(profile.pincode.trim()) ? [{ id: 'input-pincode', msg: 'Enter your 6-digit PIN code.' }] : []),
+      ...pendingApprovals
+        .filter((a) => a.key !== 'nominee')
+        .map((a) => ({ id: 'field-approvals', msg: `Confirm or undo what the agent entered: ${a.label} = ${approvalSummary(a.key)}.` })),
       ...docDiscrepancies.map((d) => ({
         id: 'field-discrepancies',
         msg: `${d.label} differs: you typed "${d.typed}", the ${d.source} shows "${d.fromDocument}". Choose which is correct.`,
@@ -2222,6 +2307,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ? [{ id: 'card-no-riders', msg: 'Choose at least one rider, or tick "I do not want any riders".' }]
       : [],
     3: [
+      ...pendingApprovals
+        .filter((a) => a.key === 'nominee')
+        .map((a) => ({ id: 'nomination-section', msg: `Confirm or undo what the agent entered: ${a.label} = ${approvalSummary(a.key)}.` })),
       ...(!nomination.primaryName.trim() ? [{ id: 'nomination-section', msg: 'Name your primary nominee.' }] : []),
       ...(nomination.hasSecondaryNominee && !nomination.secondaryName.trim() ? [{ id: 'nomination-section', msg: 'Name the second nominee.' }] : []),
       ...(nomination.hasSecondaryNominee && nomination.additionalNominees.some((n) => !n.name.trim()) ? [{ id: 'nomination-section', msg: 'Name every additional nominee.' }] : []),
@@ -2864,6 +2952,34 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <li key={i.msg}>{i.msg}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {pendingApprovals.length > 0 && (
+            <div id="field-approvals" role="alert" className="shrink-0 rounded-xl border border-purple-300 bg-purple-50 px-3 py-2 text-xs text-purple-900 flex flex-col gap-1.5">
+              <strong>The agent entered this for you. Please confirm it is right:</strong>
+              {pendingApprovals.map((a) => (
+                <div key={a.key} className="flex flex-wrap items-center gap-2">
+                  <span>
+                    {a.label}: <strong>{approvalSummary(a.key)}</strong>
+                  </span>
+                  <button
+                    onClick={() => setPendingApprovals((prev) => prev.filter((x) => x.key !== a.key))}
+                    className="px-2.5 py-0.5 rounded-lg bg-[#582be8] text-white font-semibold"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => {
+                      a.undo();
+                      setPendingApprovals((prev) => prev.filter((x) => x.key !== a.key));
+                    }}
+                    className="px-2.5 py-0.5 rounded-lg bg-white border border-purple-300 font-semibold"
+                  >
+                    Undo
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -5642,7 +5758,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return (
       <div className="flex h-screen overflow-hidden bg-[#0d0921]">
         <div className="flex-1 min-w-0 overflow-hidden">{pageContent}</div>
-        <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} stats={sessionStats} cases={cases} onDownloadCase={downloadCase} />
+        <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} stats={sessionStats} usage={modelUsage} cases={cases} onDownloadCase={downloadCase} />
       </div>
     );
   }

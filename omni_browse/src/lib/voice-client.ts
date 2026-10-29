@@ -39,7 +39,9 @@ export type AgentEvent =
       clause?: string | null;
       amendedAction?: Record<string, any> | null;
       ms?: number;
+      usage?: { promptTokens?: number | null; completionTokens?: number | null };
     }
+  | { type: 'usage'; promptTokens?: number | null; completionTokens?: number | null }
   | { type: 'memory'; facts: string[]; summary: string; updated_at?: number | null }
   | { type: 'memory_updated'; added: number; facts: string[]; summary?: string | null }
   | { type: 'interrupt' }
@@ -225,6 +227,7 @@ export class VoiceAgentClient {
               break;
             case 'action':
             case 'action_verification':
+            case 'usage':
             case 'memory':
             case 'memory_updated':
             case 'interrupt':

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
+import { cleanAddress, cleanDob, cleanGender, cleanName, cleanPayPeriod, cleanPincode } from '@/lib/ocr-clean';
 
 /**
  * KYC document OCR via Meta Muse Spark (multimodal image input).
@@ -97,16 +98,17 @@ export async function POST(req: NextRequest) {
     const { data, model } = await sparkJson<OcrFields>(messages, { reasoningEffort: 'low', temperature: 0 });
     const fields = {
       documentType,
-      fullName: data.fullName ?? null,
-      dob: data.dob ?? null,
-      gender: data.gender ?? null,
-      fatherName: data.fatherName ?? null,
-      address: data.address ?? null,
-      pincode: data.pincode ?? null,
+      // The document is untrusted: each value must look like what it claims to be (see ocr-clean.ts).
+      fullName: cleanName(data.fullName),
+      dob: cleanDob(data.dob),
+      gender: cleanGender(data.gender),
+      fatherName: cleanName(data.fatherName),
+      address: cleanAddress(data.address),
+      pincode: cleanPincode(data.pincode),
       idNumberMasked: maskId(data.idNumber ?? null, documentType === 'aadhaar' ? 'aadhaar' : 'pan'),
       // income proof (salary slip); account identifiers are masked before leaving the server
-      employerName: data.employerName ?? null,
-      payPeriod: data.payPeriod ?? null,
+      employerName: cleanName(data.employerName),
+      payPeriod: cleanPayPeriod(data.payPeriod),
       monthlyGross: digitsOnly(data.monthlyGross),
       annualIncome: digitsOnly(data.annualIncome) ?? (digitsOnly(data.monthlyGross) ? String(Number(digitsOnly(data.monthlyGross)) * 12) : null),
       bankAccountMasked: maskTail(data.bankAccountNumber),

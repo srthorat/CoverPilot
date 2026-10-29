@@ -165,7 +165,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
         params=PipelineParams(
             allow_interruptions=True,
             enable_metrics=True,
-            enable_usage_metrics=False,
+            enable_usage_metrics=True,
             audio_in_sample_rate=AUDIO_IN_RATE,
             audio_out_sample_rate=AUDIO_OUT_RATE,
         ),

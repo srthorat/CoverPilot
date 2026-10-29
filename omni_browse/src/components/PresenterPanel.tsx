@@ -11,6 +11,15 @@ export interface SessionStats {
   error: number;
 }
 
+export interface ModelUsage {
+  role: string;
+  calls: number;
+  totalMs: number;
+  maxMs: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export interface TurnMarks {
   speechEnd?: number;
   ack?: number;
@@ -68,6 +77,7 @@ interface Props {
   memoryFacts: string[];
   agentState: 'listening' | 'thinking' | 'speaking';
   stats: SessionStats;
+  usage: Record<string, ModelUsage>;
   cases: CaseRecord[];
   onDownloadCase: (c: CaseRecord) => void;
 }
@@ -120,7 +130,7 @@ const WONDER_LABEL: Record<string, string> = {
   error: '! Error',
 };
 
-export function PresenterPanel({ turns, memoryFacts, agentState, stats, cases, onDownloadCase }: Props) {
+export function PresenterPanel({ turns, memoryFacts, agentState, stats, usage, cases, onDownloadCase }: Props) {
   const latest = turns[turns.length - 1] ?? null;
   const older = turns.slice(-6, -1).reverse();
   const verdicts = stats.approve + stats.amend + stats.reject + stats.error;
@@ -163,6 +173,38 @@ export function PresenterPanel({ turns, memoryFacts, agentState, stats, cases, o
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <section>
+          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Model usage this session</div>
+          {Object.keys(usage).length === 0 ? (
+            <div className="text-[10px] text-slate-500">No model calls yet.</div>
+          ) : (
+            <table className="w-full text-[10px] text-slate-300">
+              <thead className="text-slate-500">
+                <tr>
+                  <th className="text-left font-normal">Model</th>
+                  <th className="text-right font-normal">Calls</th>
+                  <th className="text-right font-normal">Avg ms</th>
+                  <th className="text-right font-normal">Max ms</th>
+                  <th className="text-right font-normal">Tokens in/out</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(usage).map(([model, u]) => (
+                  <tr key={model} className="border-t border-slate-800">
+                    <td className="py-0.5">
+                      {model} <span className="text-slate-500">{u.role}</span>
+                    </td>
+                    <td className="text-right tabular-nums">{u.calls}</td>
+                    <td className="text-right tabular-nums">{u.calls ? Math.round(u.totalMs / u.calls) : '-'}</td>
+                    <td className="text-right tabular-nums">{u.maxMs || '-'}</td>
+                    <td className="text-right tabular-nums">{u.promptTokens || u.completionTokens ? `${u.promptTokens}/${u.completionTokens}` : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="mt-1 text-[10px] text-slate-500">Tokens are shown where the API reports them. Prices are not configured, so no dollar cost is claimed.</div>
+        </section>
         {cases.length > 0 && (
           <section>
             <div className="text-[10px] text-amber-300 font-bold uppercase tracking-wider mb-1.5">Routed to underwriter ({cases.length})</div>
