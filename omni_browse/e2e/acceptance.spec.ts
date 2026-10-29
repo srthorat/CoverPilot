@@ -42,9 +42,10 @@ async function ask(text: string, ok: (reply: string) => boolean = () => true, ti
 
 // Explaining a clause opens the terms drawer, which covers the page; close it before the next step.
 async function closeTermsDrawer() {
+  // The drawer is a full-screen overlay; its title is translated, so find it by shape, not by text.
   await page.evaluate(() => {
-    const drawer = [...document.querySelectorAll('div')].find((d) => d.textContent?.startsWith('Statutory Terms & Conditions (T&C)') && d.querySelector('button'));
-    [...(drawer?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === '✕')?.click();
+    const overlay = document.querySelector('div.fixed.inset-0.z-50');
+    [...(overlay?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === '✕')?.click();
   });
   await page.waitForTimeout(400);
 }

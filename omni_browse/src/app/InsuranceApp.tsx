@@ -2465,6 +2465,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           pixelRatio: 0.6,
           backgroundColor: '#ffffff',
           cacheBust: false,
+          // Embedding web fonts fails in Firefox (the picture then never reaches the agent); the system font is fine for the agent.
+          skipFonts: true,
           filter: (node) => !(node instanceof HTMLElement && node.dataset.sensitive === 'true'),
         });
         if (!cancelled && dataUrl.length < 1_800_000) {
