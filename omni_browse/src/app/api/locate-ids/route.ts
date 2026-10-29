@@ -15,6 +15,7 @@ import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
  */
 
 const FIELDS: Record<string, Array<{ key: string; label: string }>> = {
+  aadhaar: [{ key: 'aadhaarNumber', label: 'Aadhaar number' }],
   pan: [{ key: 'panNumber', label: 'PAN number' }],
   'salary-slip': [
     { key: 'pan', label: 'PAN number' },
@@ -24,6 +25,8 @@ const FIELDS: Record<string, Array<{ key: string; label: string }>> = {
 };
 
 const DOCUMENT: Record<string, string> = {
+  aadhaar:
+    'an Indian Aadhaar card. A photo is on the left, a QR code on the top right, and the 12-digit Aadhaar number is printed in large digits in one row near the bottom of the card, below the name and date of birth. Locate that row of digits (not its label)',
   pan: 'an Indian PAN card with a photo on the left. The permanent account number is the 10-character value on the line directly below the label "Permanent Account Number", to the right of the photo. Locate that value (not its label)',
   'salary-slip':
     'a salary slip. Its header is two columns of label and value rows. The LEFT column holds, top to bottom: Employee Name, Employee ID, Designation and Bank A/c (the bank account number is the value in the left column, in the fourth and last row). The RIGHT column holds, top to bottom: PAN, UAN and Pay Period. Locate the PAN value, the UAN value and the bank account number value (not their labels)',
@@ -33,6 +36,11 @@ const DOCUMENT: Record<string, string> = {
 // 2.8% on the left, 0.8% on top, 5.8% on the right (it under-estimates how wide a digit string is)
 // and 2% on the bottom. The padding is that error plus margin.
 const PAD = { left: 0.05, top: 0.02, right: 0.09, bottom: 0.035 };
+// The Aadhaar number must be located on a much blurrier copy (its digits are large, so they stay
+// readable down to about 72 px wide). Measured over 5 runs at each of 54, 57, 60 and 63 px wide:
+// the box missed the real digits by up to 5.9% on the left, up to 3.9% on top (one outlier, and
+// consensus drops outliers) and nothing on the right and bottom.
+const PAD_AADHAAR = { left: 0.07, top: 0.05, right: 0.04, bottom: 0.04 };
 const MAX_WIDTH = 0.6;
 const MAX_HEIGHT = 0.12;
 
@@ -52,12 +60,12 @@ function validBox(b: unknown): b is Box {
   return r > l && bt > t && r - l <= MAX_WIDTH && bt - t <= MAX_HEIGHT;
 }
 
-function pad(b: Box): Box {
+function pad(b: Box, p = PAD): Box {
   return {
-    left: Math.max(0, b.left - PAD.left),
-    top: Math.max(0, b.top - PAD.top),
-    right: Math.min(1, b.right + PAD.right),
-    bottom: Math.min(1, b.bottom + PAD.bottom),
+    left: Math.max(0, b.left - p.left),
+    top: Math.max(0, b.top - p.top),
+    right: Math.min(1, b.right + p.right),
+    bottom: Math.min(1, b.bottom + p.bottom),
   };
 }
 
@@ -91,7 +99,7 @@ export async function POST(req: NextRequest) {
   const documentType = String(body.documentType || '');
   const fields = FIELDS[documentType];
   if (!fields) {
-    return Response.json({ error: 'documentType must be "pan" or "salary-slip"' }, { status: 400 });
+    return Response.json({ error: 'documentType must be "pan", "aadhaar" or "salary-slip"' }, { status: 400 });
   }
   const variants: string[] = Array.isArray(body.blurredDataUrls) ? body.blurredDataUrls : [];
   if (
@@ -123,7 +131,7 @@ export async function POST(req: NextRequest) {
       const confirmed = agreed(boxes);
       // No two answers agree: the position is unconfirmed, so nothing may be read.
       if (!confirmed) throw new Error(`Could not confirm where the ${f.label} is (the answers disagreed); nothing was sent`);
-      regions.push({ concept: f.label, box: pad(confirmed) });
+      regions.push({ concept: f.label, box: pad(confirmed, documentType === 'aadhaar' ? PAD_AADHAAR : PAD) });
     }
     return Response.json({ regions, telemetry: { model, totalMs: Date.now() - startedAt, answers: answers.length } });
   } catch (err: any) {

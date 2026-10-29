@@ -24,23 +24,4 @@ server.on('upgrade', (req, socket, head) => nextUpgrade(req, socket, head)); // 
 
 server.listen(port, () => {
   console.log(`> OmniBrowse ready on http://${hostname}:${port}  (voice agent: ${process.env.VOICE_AGENT_URL || 'http://127.0.0.1:7860'} via /voice-agent)`);
-  warmSamCache();
 });
-
-// Session-worker style pre-computation: segment the bundled sample ID cards with
-// SAM 3.1 once at boot so the KYC demo shows masks instantly instead of after ~2.5 s.
-function warmSamCache() {
-  if (!process.env.META_MODEL_API_KEY && !process.env.META_API_KEY) return;
-  setTimeout(async () => {
-    for (const documentType of ['aadhaar', 'pan']) {
-      try {
-        const t0 = Date.now();
-        const res = await fetch(`http://${hostname}:${port}/api/sam?documentType=${documentType}`);
-        const json = await res.json().catch(() => ({}));
-        console.log(`> SAM 3.1 cache warm: ${documentType} -> ${res.status}, ${json.regions?.length ?? 0} regions in ${Date.now() - t0} ms`);
-      } catch (err) {
-        console.warn(`> SAM 3.1 cache warm failed for ${documentType}:`, err?.message || err);
-      }
-    }
-  }, dev ? 4000 : 500);
-}

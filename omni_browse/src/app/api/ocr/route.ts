@@ -1,15 +1,12 @@
 import { NextRequest } from 'next/server';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
 
 /**
  * KYC document OCR via Meta Muse Spark (multimodal image input).
  *
- * Reads one of the bundled sample ID cards from /public/samples, sends it to
- * Muse Spark as an image, and returns the extracted fields as JSON. The ID
- * number is masked server-side before it is returned, so the full number never
- * reaches the browser.
+ * Receives an image the browser has already redacted (a bundled sample or a file the customer
+ * picked), sends it to Muse Spark, and returns the extracted fields as JSON. Nothing is read from
+ * disk and the image is not stored. The ID number is masked server-side before it is returned.
  *
  * Note: muse-image-1.0 is an image *generation* model on the Meta Model API;
  * document understanding is a Muse Spark capability, so that is what we call.
@@ -69,26 +66,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'documentType must be "pan", "aadhaar" or "salary-slip"' }, { status: 400 });
   }
 
-  // Preferred path: the browser sends the image *after* pixelating the regions SAM 3.1
-  // found (/api/sam), so the model that reads the document never sees the ID number,
-  // photo or QR code. Falls back to the raw sample only when no image is supplied.
-  let imageDataUrl: string;
-  let redacted = false;
-  const supplied = typeof body.imageDataUrl === 'string' ? body.imageDataUrl : null;
-  if (supplied) {
-    if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(supplied) || supplied.length > 8_000_000) {
-      return Response.json({ error: 'imageDataUrl must be a PNG/JPEG data URL under 8 MB' }, { status: 400 });
-    }
-    imageDataUrl = supplied;
-    redacted = true;
-  } else {
-    try {
-      const png = await readFile(path.join(process.cwd(), 'public', 'samples', sample.file));
-      imageDataUrl = `data:image/png;base64,${png.toString('base64')}`;
-    } catch (e: any) {
-      return Response.json({ error: `Sample image missing: ${e.message}` }, { status: 500 });
-    }
+  // The browser sends the image after pixelating the regions that were located on blurred
+  // copies, so the model that reads the document never sees the ID number, photo or QR code.
+  // There is no fallback to an unredacted image.
+  const imageDataUrl = typeof body.imageDataUrl === 'string' ? body.imageDataUrl : '';
+  if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl) || imageDataUrl.length > 8_000_000) {
+    return Response.json({ error: 'imageDataUrl (the redacted PNG/JPEG, under 8 MB) is required' }, { status: 400 });
   }
+  const redacted = true;
 
   const messages: ChatMessage[] = [
     {

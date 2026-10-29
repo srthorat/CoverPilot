@@ -1,30 +1,24 @@
 import { NextRequest } from 'next/server';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { parseImageStream, recordsOfKind, decodeMaskToSVGPath } from '@meta-sam/parser';
 import { metaEnv, MetaApiError } from '@/lib/meta';
 
 /**
- * PII region detection with Meta SAM 3.1 (Model API, POST /v1/responses).
+ * Locates the photo, signature and QR code on an ID card with Meta SAM 3.1 (Model API,
+ * POST /v1/responses).
  *
- * One request per concept (SAM takes a single noun phrase), run in parallel.
- * Returns boxes + pixel masks (as SVG paths, local to each mask's bounds) so the
- * browser can pixelate the regions *before* the image goes to Muse Spark for OCR.
- *
- * Results for the bundled sample cards are cached in memory and warmed at
- * server start (see server.mjs), so the demo shows masks instantly.
+ * SAM never receives the document itself. The browser blurs it until printed text is unreadable
+ * (a few tens of pixels wide, measured: the Aadhaar number is still readable at 72 px, not at 66)
+ * and sends only those copies. Photos, signatures and QR codes survive that blur, so SAM can
+ * still find them; its boxes are in pixels of the image it was sent, which the browser draws on
+ * the sharp image. Each concept is asked on every copy and the boxes are merged; a concept that
+ * is not found on any copy fails the request, so nothing is read from an unprotected card.
+ * The ID numbers are located separately (/api/locate-ids).
  */
 
-const SAMPLES: Record<string, string> = {
-  pan: 'sample-pan.png',
-  aadhaar: 'sample-aadhaar.png',
-};
-
-// What counts as PII on each document. SAM 3.1 does not treat the PAN's
-// alphanumeric ID as a "number", so that one is masked after OCR instead.
-// The date of birth is left readable on both cards because the form needs it.
+// What SAM must find on each document. The PAN and Aadhaar numbers are not SAM's job: it does not
+// see small printed IDs, and on a blurred copy it cannot see the digits at all.
 const CONCEPTS: Record<string, string[]> = {
-  aadhaar: ['number', 'QR code', 'photo'],
+  aadhaar: ['QR code', 'photo'],
   pan: ['photo', 'signature'],
 };
 
@@ -38,17 +32,6 @@ export interface SamRegion {
   masks: Array<{ path: string; left: number; top: number }>;
   members: number;
 }
-
-interface SamResult {
-  model: string;
-  imageUrl: string;
-  width: number;
-  height: number;
-  regions: SamRegion[];
-  telemetry: { model: string; totalMs: number; cached: boolean };
-}
-
-const cache = new Map<string, SamResult>();
 
 async function* sseEvents(res: Response): AsyncGenerator<{ type: string } & Record<string, unknown>> {
   const reader = res.body!.getReader();
@@ -128,99 +111,63 @@ async function segmentConcept(dataUrl: string, concept: string) {
   return { concept, items, ms: Date.now() - t0 };
 }
 
-/** Group boxes that sit on one text line (e.g. the 12 Aadhaar digits) into one region. */
-function toRegions(concept: string, items: Awaited<ReturnType<typeof segmentConcept>>['items']): SamRegion[] {
-  if (items.length === 0) return [];
-  const single = (it: (typeof items)[number]): SamRegion => ({
-    concept,
-    box: it.box,
-    confidence: it.confidence,
-    masks: it.mask ? [it.mask] : [],
-    members: 1,
-  });
-  if (concept !== 'number') return items.map(single);
+function iou(a: SamRegion['box'], b: SamRegion['box']): number {
+  const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  if (w <= 0 || h <= 0) return 0;
+  const inter = w * h;
+  return inter / ((a.right - a.left) * (a.bottom - a.top) + (b.right - b.left) * (b.bottom - b.top) - inter);
+}
 
-  // Cluster by vertical centre; keep the largest cluster (the ID line), merge it.
-  const clusters: Array<typeof items> = [];
+/** Merge the boxes several blurred copies found for one concept: overlapping boxes become their union. */
+function mergeBoxes(concept: string, items: Awaited<ReturnType<typeof segmentConcept>>['items']): SamRegion[] {
+  const groups: Array<typeof items> = [];
   for (const it of items) {
-    const cy = (it.box.top + it.box.bottom) / 2;
-    const h = it.box.bottom - it.box.top;
-    const c = clusters.find((cl) => {
-      const ref = cl[0];
-      const rcy = (ref.box.top + ref.box.bottom) / 2;
-      return Math.abs(rcy - cy) < Math.max(h, ref.box.bottom - ref.box.top) * 0.6;
-    });
-    if (c) c.push(it);
-    else clusters.push([it]);
+    const g = groups.find((grp) => grp.some((o) => iou(o.box, it.box) >= 0.3));
+    if (g) g.push(it);
+    else groups.push([it]);
   }
-  clusters.sort((a, b) => b.length - a.length);
-  const best = clusters[0];
-  if (best.length < 3) return items.map(single);
-  const pad = 8;
-  const box = {
-    left: Math.min(...best.map((i) => i.box.left)) - pad,
-    top: Math.min(...best.map((i) => i.box.top)) - pad,
-    right: Math.max(...best.map((i) => i.box.right)) + pad,
-    bottom: Math.max(...best.map((i) => i.box.bottom)) + pad,
-  };
-  const conf = best.reduce((s, i) => s + (i.confidence ?? 0), 0) / best.length;
-  return [
-    {
-      concept,
-      box,
-      confidence: Number.isFinite(conf) ? conf : null,
-      masks: best.flatMap((i) => (i.mask ? [i.mask] : [])),
-      members: best.length,
+  return groups.map((g) => ({
+    concept,
+    box: {
+      left: Math.min(...g.map((i) => i.box.left)),
+      top: Math.min(...g.map((i) => i.box.top)),
+      right: Math.max(...g.map((i) => i.box.right)),
+      bottom: Math.max(...g.map((i) => i.box.bottom)),
     },
-  ];
+    confidence: g.reduce((m, i) => Math.max(m, i.confidence ?? 0), 0) || null,
+    masks: g.flatMap((i) => (i.mask ? [i.mask] : [])).slice(0, 1),
+    members: g.length,
+  }));
 }
 
-async function segmentDocument(documentType: string): Promise<SamResult> {
-  const hit = cache.get(documentType);
-  if (hit) return { ...hit, telemetry: { ...hit.telemetry, cached: true } };
-
-  const file = SAMPLES[documentType];
-  const png = await readFile(path.join(process.cwd(), 'public', 'samples', file));
-  const dataUrl = `data:image/png;base64,${png.toString('base64')}`;
-  // PNG IHDR: width/height are the 4-byte big-endian ints at offsets 16 and 20.
-  const width = png.readUInt32BE(16);
-  const height = png.readUInt32BE(20);
-
-  const t0 = Date.now();
-  const results = await Promise.all(CONCEPTS[documentType].map((c) => segmentConcept(dataUrl, c)));
-  const regions = results.flatMap((r) => toRegions(r.concept, r.items));
-
-  const out: SamResult = {
-    model: SAM_MODEL,
-    imageUrl: `/samples/${file}`,
-    width,
-    height,
-    regions,
-    telemetry: { model: SAM_MODEL, totalMs: Date.now() - t0, cached: false },
-  };
-  cache.set(documentType, out);
-  return out;
-}
-
-async function handle(documentType: string) {
-  if (!SAMPLES[documentType]) {
-    return Response.json({ error: 'documentType must be "pan" or "aadhaar"' }, { status: 400 });
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const documentType = String(body.documentType || '');
+  const concepts = CONCEPTS[documentType];
+  if (!concepts) return Response.json({ error: 'documentType must be "pan" or "aadhaar"' }, { status: 400 });
+  const variants: string[] = Array.isArray(body.blurredDataUrls) ? body.blurredDataUrls : [];
+  if (
+    variants.length < 1 ||
+    variants.length > 3 ||
+    !variants.every((v) => typeof v === 'string' && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(v) && v.length <= 3_000_000)
+  ) {
+    return Response.json({ error: 'blurredDataUrls must be 1 to 3 PNG/JPEG data URLs, each under 3 MB' }, { status: 400 });
   }
+  const t0 = Date.now();
   try {
-    return Response.json(await segmentDocument(documentType));
+    const jobs = concepts.flatMap((c) => variants.map((v) => segmentConcept(v, c)));
+    const results = await Promise.all(jobs);
+    const regions = concepts.flatMap((c) => mergeBoxes(c, results.filter((r) => r.concept === c).flatMap((r) => r.items)));
+    for (const c of concepts) {
+      if (!regions.some((r) => r.concept === c)) {
+        throw new Error(`Could not find the ${c} on the card; nothing was sent for reading`);
+      }
+    }
+    return Response.json({ model: SAM_MODEL, regions, telemetry: { model: SAM_MODEL, totalMs: Date.now() - t0, copies: variants.length } });
   } catch (err: any) {
     const message = err instanceof MetaApiError ? err.message : `SAM request failed: ${err?.message || err}`;
     console.error('[sam]', message);
     return Response.json({ error: message }, { status: err instanceof MetaApiError ? 502 : 500 });
   }
-}
-
-export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
-  return handle(String(body.documentType || 'aadhaar'));
-}
-
-/** GET /api/sam?documentType=aadhaar — used by server.mjs to warm the cache at boot. */
-export async function GET(req: NextRequest) {
-  return handle(req.nextUrl.searchParams.get('documentType') || 'aadhaar');
 }

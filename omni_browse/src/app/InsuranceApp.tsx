@@ -368,6 +368,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     activeStep: number;
   }>({ applyAction: () => {}, lang: 'en', screenState: () => ({}), activeStep: 1 });
   // A step may only be left once it is valid; this holds what the customer was told when blocked.
+  // Customer-picked document: the original stays in this browser (see handleRunSampleKycOcr).
+  const [uploadDocType, setUploadDocType] = useState<'pan' | 'aadhaar' | 'salary-slip'>('pan');
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [stepNotice, setStepNotice] = useState<{ step: number; issues: string[] } | null>(null);
   const stepGateRef = useRef<{ issues: Record<number, Array<{ id: string; msg: string }>>; maxReachable: number }>({
     issues: {},
@@ -1333,13 +1336,32 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return canvas.toDataURL('image/png');
   };
 
-  const loadSampleImage = (url: string) =>
-    new Promise<HTMLImageElement>((resolve, reject) => {
+  // Loads a bundled sample or a file the customer picked and redraws it at a working size (at most
+  // 1000 px wide and 1400 px tall) so a phone photo does not become a multi-megabyte upload. All
+  // later steps (blur, locate, pixelate, read) use this working copy; the original stays in the page.
+  const loadSampleImage = async (url: string): Promise<HTMLImageElement> => {
+    const raw = await new Promise<HTMLImageElement>((resolve, reject) => {
       const i = new Image();
       i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error('could not load the sample image'));
+      i.onerror = () => reject(new Error('could not load the image (use a PNG or JPEG)'));
       i.src = url;
     });
+    const scale = Math.min(1, 1000 / raw.naturalWidth, 1400 / raw.naturalHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(raw.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(raw.naturalHeight * scale));
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(raw, 0, 0, canvas.width, canvas.height);
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('could not prepare the image'));
+      i.src = canvas.toDataURL('image/png');
+    });
+  };
 
   // Printed IDs are too small for SAM 3.1. Blur a copy until the text is unreadable (the layout
   // survives) and ask Muse Spark where the identifiers are; the sharp image never leaves the page.
@@ -1362,12 +1384,17 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return big.toDataURL('image/png');
   };
 
-  const locateTextIds = async (type: 'pan' | 'salary-slip', img: HTMLImageElement): Promise<{ regions: KycRegion[]; ms: number }> => {
+  const locateTextIds = async (type: 'pan' | 'aadhaar' | 'salary-slip', img: HTMLImageElement): Promise<{ regions: KycRegion[]; ms: number }> => {
     const res = await fetch('/api/locate-ids', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // Three blur levels, so the server can keep only the positions that agree.
-      body: JSON.stringify({ documentType: type, blurredDataUrls: [105, 115, 125].map((width) => blurForLocating(img, width)) }),
+      body: JSON.stringify({
+        documentType: type,
+        // The Aadhaar number is large enough to stay readable at 72 px wide (measured), so it is
+        // located on much blurrier copies than the PAN, UAN and bank account number.
+        blurredDataUrls: (type === 'aadhaar' ? [54, 60, 63] : [105, 115, 125]).map((width) => blurForLocating(img, width)),
+      }),
     });
     const data = await res.json();
     if (!res.ok || !Array.isArray(data.regions)) throw new Error(data.error || `Locate HTTP ${res.status}`);
@@ -1386,11 +1413,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // 1-click KYC: SAM 3.1 locates PII -> browser pixelates it -> only the redacted image
   // goes to Muse Spark for OCR. Two Meta models, and the reader never sees the ID.
   // Income proof: Muse Spark reads the sample salary slip; account identifiers are masked server-side.
-  const handleSalarySlipOcr = async () => {
+  const handleSalarySlipOcr = async (uploadUrl?: string) => {
     playChime();
     setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? 'Reading the sample salary slip with Meta Muse Spark for income proof…' : 'Reading your salary slip for income proof…', time: stampNow() }]);
     try {
-      const slipUrl = '/samples/sample-salary-slip.png';
+      const slipUrl = uploadUrl || '/samples/sample-salary-slip.png';
       setKycPanelOpen(true);
       setKycRedaction({ type: 'salary-slip', imageUrl: slipUrl, width: 1000, height: 630, regions: [], redactedDataUrl: null, samMs: null, samCached: false, locateMs: null, ocrMs: null, status: 'Locating ID numbers on a blurred copy…' });
       const slipImg = await loadSampleImage(slipUrl);
@@ -1427,13 +1454,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     }
   };
 
-  const handleRunSampleKycOcr = async (type: 'pan' | 'aadhaar' | 'salary-slip') => {
-    if (type === 'salary-slip') return handleSalarySlipOcr();
+  // uploadUrl: an object URL for a file the customer picked; without it a bundled fictional sample is used.
+  const handleRunSampleKycOcr = async (type: 'pan' | 'aadhaar' | 'salary-slip', uploadUrl?: string) => {
+    if (type === 'salary-slip') return handleSalarySlipOcr(uploadUrl);
     setKycSampleCard(type);
     setKycPanelOpen(true);
     playChime();
     const label = type === 'pan' ? 'PAN' : 'Aadhaar';
-    const imageUrl = `/samples/sample-${type}.png`;
+    const imageUrl = uploadUrl || `/samples/sample-${type}.png`;
     setKycRedaction({
       type,
       imageUrl,
@@ -1445,44 +1473,40 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       samCached: false,
       locateMs: null,
       ocrMs: null,
-      status: 'SAM 3.1 locating PII regions…',
+      status: 'Blurring a copy in your browser…',
     });
     setChatMessages((prev) => [
       ...prev,
-      { sender: 'agent', text: devRef.current ? `Asking Meta SAM 3.1 to locate PII regions on the sample ${label} card…` : `Locating the private parts of your ${label} card so they can be hidden before anything reads it…`, time: stampNow() },
+      { sender: 'agent', text: devRef.current ? `Sending only blurred copies of the ${uploadUrl ? 'uploaded' : 'sample'} ${label} card to Meta SAM 3.1 to locate the photo, signature and QR code…` : `Locating the private parts of your ${label} card so they can be hidden before anything reads it…`, time: stampNow() },
     ]);
     try {
+      // Only blurred copies leave the browser: SAM sees layout (photo, signature, QR code), never text.
+      const img = await loadSampleImage(imageUrl);
+      setKycRedaction((prev) => prev && { ...prev, width: img.naturalWidth, height: img.naturalHeight, status: 'SAM 3.1 locating the photo, signature and QR code on a blurred copy…' });
       const samRes = await fetch('/api/sam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentType: type }),
+        body: JSON.stringify({ documentType: type, blurredDataUrls: [60, 66].map((width) => blurForLocating(img, width)) }),
       });
       const sam = await samRes.json();
       if (!samRes.ok || !Array.isArray(sam.regions)) throw new Error(sam.error || `SAM HTTP ${samRes.status}`);
       const regions: KycRegion[] = [...sam.regions];
-
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const i = new Image();
-        i.onload = () => resolve(i);
-        i.onerror = () => reject(new Error('could not load the sample image'));
-        i.src = sam.imageUrl || imageUrl;
-      });
       let locateMs: number | null = null;
-      if (type === 'pan') {
-        setKycRedaction((prev) => prev && { ...prev, status: 'Locating the PAN number on a blurred copy…' });
-        const located = await locateTextIds('pan', img);
+      {
+        setKycRedaction((prev) => prev && { ...prev, status: `Locating the ${type === 'pan' ? 'PAN' : 'Aadhaar'} number on a blurred copy…` });
+        const located = await locateTextIds(type, img);
         regions.push(...located.regions);
         locateMs = located.ms;
       }
       const redactedDataUrl = pixelateRegions(img, regions);
       const samMs = sam.telemetry?.totalMs ?? null;
-      const samCached = Boolean(sam.telemetry?.cached);
+      const samCached = false;
       setKycRedaction((prev) =>
         prev && {
           ...prev,
-          imageUrl: sam.imageUrl || imageUrl,
-          width: sam.width || prev.width,
-          height: sam.height || prev.height,
+          imageUrl,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
           regions,
           redactedDataUrl,
           samMs,
@@ -1497,7 +1521,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         {
           sender: 'agent',
           text: devRef.current
-            ? `SAM 3.1 found ${regions.length} region${regions.length === 1 ? '' : 's'}: ${found || 'none'}${samMs !== null ? `in ${samMs} ms${samCached ? '(pre-computed at startup)' : ''}` : ''}. Pixelated in the browser before OCR.`
+            ? `SAM 3.1 found ${regions.length} region${regions.length === 1 ? '' : 's'}: ${found || 'none'}${samMs !== null ? ` in ${samMs} ms` : ''}. Pixelated in the browser before OCR.`
             : `Hidden in your browser before the reader model: ${regions.map((r) => r.concept).join(', ') || 'nothing found'}.`,
           time: stampNow(),
         },
@@ -1543,18 +1567,20 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const voice =
         selectedLanguage === 'hi'
           ? `आपके ${type === 'pan' ? 'पैन' : 'आधार'} कार्ड की निजी जानकारी आपके डिवाइस पर छिपा दी गई और म्यूज़ स्पार्क ने बाकी विवरण पढ़ लिया है। मैं फॉर्म भर रहा हूँ।`
-          : `The private regions of your ${label} card were hidden in your browser before Muse Spark read the rest${f.fullName ? ` for ${f.fullName}` : ''}. Populating the form now.`;
+          : `The private regions of your ${label} card were hidden in your browser before Muse Spark read the rest${f.fullName ? ` for ${f.fullName}` : ''}. Populating the form now.${uploadUrl ? ` Please type your ${label} number in Identity records, it was hidden before reading.` : ''}`;
       speakText(voice, selectedLanguage);
       const gender = f.gender ? (/^m/i.test(f.gender) ? 'Male' : /^f/i.test(f.gender) ? 'Female' : '') : '';
       glideAgentCursorToElement(type === 'pan' ? 'field-full-name' : 'field-city', `Populate ${label} OCR fields`, () => {
-        setIdFromSample((prev) => ({ ...prev, [type]: true }));
+        // A sample's ID number is known to the app; a real upload's number was hidden before reading,
+        // so the customer types it into Identity records.
+        if (!uploadUrl) setIdFromSample((prev) => ({ ...prev, [type]: true }));
         setProfile((prev) => ({
           ...prev,
           fullName: f.fullName || prev.fullName,
           dob: f.dob || prev.dob,
           pincode: f.pincode || prev.pincode,
           gender: gender || prev.gender,
-          ...(type === 'pan' ? { panNumber: SAMPLE_IDS.pan } : { aadhaarNumber: SAMPLE_IDS.aadhaar }),
+          ...(uploadUrl ? {} : type === 'pan' ? { panNumber: SAMPLE_IDS.pan } : { aadhaarNumber: SAMPLE_IDS.aadhaar }),
         }));
       });
     } catch (e: any) {
@@ -2616,12 +2642,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <span className="text-2xl"></span>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-900">Read a sample document</span>
+                      <span className="text-xs font-semibold text-slate-900">Read a document</span>
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-white text-slate-600 border border-slate-200">
-                        Hidden before the reader sees it</span>
+                        Original stays in your browser</span>
                     </div>
                     <p className="text-[11px] text-slate-600 line-clamp-2">
-                      Photos, signatures, QR codes and ID numbers (Aadhaar, PAN, UAN, bank account) are pixelated in your browser before the reading model sees the card. Meta's SAM locator is shown the original image to find them. Name and date of birth stay readable.
+                      Only blurred copies, where text is unreadable, go to Meta's locator models. Photo, signature, QR code and ID numbers are then pixelated in your browser, so the reading model never sees them. Name and date of birth stay readable.
                     </p>
                   </div>
                 </div>
@@ -2651,6 +2677,44 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     <span>Salary Slip</span>
                   </button>
                 </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 -mt-1">
+                <span className="font-semibold text-slate-700">Or use your own file:</span>
+                <select
+                  aria-label="Document type"
+                  value={uploadDocType}
+                  onChange={(e) => setUploadDocType(e.target.value as 'pan' | 'aadhaar' | 'salary-slip')}
+                  className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-slate-800 text-[11px]"
+                >
+                  <option value="pan">PAN card</option>
+                  <option value="aadhaar">Aadhaar card</option>
+                  <option value="salary-slip">Salary slip</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => uploadInputRef.current?.click()}
+                  className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-[11px]"
+                >
+                  Choose a PNG or JPEG
+                </button>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!file) return;
+                    if (!/^image\/(png|jpeg)$/.test(file.type) || file.size > 15 * 1024 * 1024) {
+                      setChatMessages((prev) => [...prev, { sender: 'agent', text: 'Please choose a PNG or JPEG image under 15 MB.', time: stampNow() }]);
+                      return;
+                    }
+                    handleRunSampleKycOcr(uploadDocType, URL.createObjectURL(file));
+                  }}
+                />
+                <span className="text-slate-500">Your original is never uploaded.</span>
               </div>
 
               {kycRedaction && (
