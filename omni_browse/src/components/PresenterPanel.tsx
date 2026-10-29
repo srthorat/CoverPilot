@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { KbChunk } from '@/lib/voice-client';
+import type { KbChunk, CaseRecord } from '@/lib/voice-client';
 
 export interface SessionStats {
   interrupts: number;
@@ -68,6 +68,8 @@ interface Props {
   memoryFacts: string[];
   agentState: 'listening' | 'thinking' | 'speaking';
   stats: SessionStats;
+  cases: CaseRecord[];
+  onDownloadCase: (c: CaseRecord) => void;
 }
 
 const TIMELINE: Array<{ key: keyof TurnMarks; label: string; color: string }> = [
@@ -116,7 +118,7 @@ const WONDER_LABEL: Record<string, string> = {
   error: '! Error',
 };
 
-export function PresenterPanel({ turns, memoryFacts, agentState, stats }: Props) {
+export function PresenterPanel({ turns, memoryFacts, agentState, stats, cases, onDownloadCase }: Props) {
   const latest = turns[turns.length - 1] ?? null;
   const older = turns.slice(-6, -1).reverse();
   const verdicts = stats.approve + stats.amend + stats.reject + stats.error;
@@ -159,6 +161,34 @@ export function PresenterPanel({ turns, memoryFacts, agentState, stats }: Props)
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {cases.length > 0 && (
+          <section>
+            <div className="text-[10px] text-amber-300 font-bold uppercase tracking-wider mb-1.5">Routed to underwriter ({cases.length})</div>
+            <div className="space-y-1.5">
+              {[...cases].reverse().map((c) => (
+                <div key={c.caseId} className="rounded-lg p-2.5 border border-amber-400/40 bg-amber-400/10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-amber-200">{c.caseId}</span>
+                    <span className="text-[10px] text-amber-300">{c.reasonLabel}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-200 mt-1">"{c.question}"</div>
+                  {c.underwriterNote ? (
+                    <div className="text-[10px] text-slate-300 mt-1.5 whitespace-pre-line leading-relaxed">{c.underwriterNote}</div>
+                  ) : (
+                    <div className="text-[10px] text-red-300 mt-1.5">Note unavailable: {c.summaryError}</div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onDownloadCase(c)}
+                    className="mt-2 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-300 text-slate-900 hover:bg-amber-200 font-sans"
+                  >
+                    Download case JSON
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {/* Current turn */}
         {latest && (
           <section>

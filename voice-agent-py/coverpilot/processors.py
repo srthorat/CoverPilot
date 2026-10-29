@@ -11,6 +11,7 @@ WonderVerifier       – asks Muse Wonder to check every applied action, off the
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import re
 import time
@@ -37,6 +38,7 @@ from .asr_corrections import correct as asr_correct
 from .config import Settings
 from .knowledge import KnowledgeBase
 from .prompt import ACTION_MARKER, VERIFIER_SYSTEM_PROMPT, build_system_prompt, parse_action
+from .revert import inverse_actions
 from .session import SessionState
 
 ACK_SYSTEM_PROMPT = (
@@ -97,6 +99,7 @@ class ScreenStateInjector(FrameProcessor):
         text = asr_correct(last["content"])
         last["content"] = text
         s.last_user_text = text
+        s.user_turns = (s.user_turns + [text])[-3:]
         s.main_started = False
         s.turn_started_at = time.time()
         logger.info(f"[turn] user ({s.turn_source}): {text!r}")
@@ -119,18 +122,28 @@ class ScreenStateInjector(FrameProcessor):
             last["content"] = decorated
 
 
-ActionCallback = Callable[[dict[str, Any]], Awaitable[None]]
+ActionCallback = Callable[[dict[str, Any], dict[str, Any]], Awaitable[None]]
+
+EscalateCallback = Callable[[str, str], Awaitable[None]]
 
 
 TurnCallback = Callable[[str], Awaitable[None]]
 
 
 class ActionMarkerFilter(FrameProcessor):
-    def __init__(self, session: SessionState, on_action: ActionCallback | None = None, on_turn_complete: TurnCallback | None = None, **kwargs):
+    def __init__(
+        self,
+        session: SessionState,
+        on_action: ActionCallback | None = None,
+        on_turn_complete: TurnCallback | None = None,
+        on_escalate: EscalateCallback | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._session = session
         self._on_action = on_action
         self._on_turn_complete = on_turn_complete
+        self._on_escalate = on_escalate
         self._pending = ""
         self._action_raw = ""
         self._marker_seen = False
@@ -175,6 +188,8 @@ class ActionMarkerFilter(FrameProcessor):
             await self._drain(final=False)
         elif isinstance(frame, LLMFullResponseEndFrame):
             await self._drain(final=True)
+            # The form as it was before this reply's action reaches the browser, so a reject can undo it.
+            before = copy.deepcopy(self._session.screen_state or {})
             action = parse_action(self._action_raw) if self._marker_seen else None
             self._in_response = False
             spoken = self._spoken.strip()
@@ -193,11 +208,14 @@ class ActionMarkerFilter(FrameProcessor):
                     }
                 )
             )
-            if action:
+            has_screen_action = bool(action and (action.get("fieldActions") or action.get("fieldAction")))
+            if action and (has_screen_action or not action.get("escalate")):
                 logger.info(f"[action] {json.dumps(action, ensure_ascii=False)[:400]}")
                 await self.push_frame(RTVIServerMessageFrame(data={"type": "action", **action}))
-                if self._on_action and (action.get("fieldActions") or action.get("fieldAction")):
-                    await self._on_action(action)
+                if self._on_action and has_screen_action:
+                    await self._on_action(action, before)
+            if action and action.get("escalate") and self._on_escalate:
+                await self._on_escalate(action["escalate"]["reason"], spoken)
             if self._on_turn_complete and spoken:
                 await self._on_turn_complete(spoken)
         else:
@@ -240,12 +258,12 @@ class WonderVerifier(FrameProcessor):
         await super().process_frame(frame, direction)
         await self.push_frame(frame, direction)
 
-    async def verify(self, action: dict[str, Any]) -> None:
-        task = asyncio.create_task(self._verify(action, self._session.last_user_text))
+    async def verify(self, action: dict[str, Any], before: dict[str, Any]) -> None:
+        task = asyncio.create_task(self._verify(action, list(self._session.user_turns), before))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    async def _verify(self, action: dict[str, Any], user_text: str) -> None:
+    async def _verify(self, action: dict[str, Any], user_turns: list[str], before: dict[str, Any]) -> None:
         self._counter += 1
         vid = f"v{self._counter}"
         model = self._settings.wonder_model
@@ -266,7 +284,7 @@ class WonderVerifier(FrameProcessor):
                             {"role": "system", "content": VERIFIER_SYSTEM_PROMPT},
                             {
                                 "role": "user",
-                                "content": f"CUSTOMER REQUEST: {user_text}\nLIVE SCREEN STATE: {json.dumps(self._session.screen_state or {}, ensure_ascii=False)}\nAPPLIED ACTIONS: {json.dumps(actions, ensure_ascii=False)}",
+                                "content": f"RECENT CUSTOMER TURNS (oldest first): {json.dumps(user_turns, ensure_ascii=False)}\nLIVE SCREEN STATE: {json.dumps(self._session.screen_state or {}, ensure_ascii=False)}\nAPPLIED ACTIONS: {json.dumps(actions, ensure_ascii=False)}",
                             },
                         ],
                     },
@@ -315,6 +333,15 @@ class WonderVerifier(FrameProcessor):
                     await self.push_frame(
                         RTVIServerMessageFrame(
                             data={"type": "action", "targetElementId": action.get("targetElementId"), "actionTitle": f"Amended: {title}", "fieldAction": amended, "fieldActions": [amended], "verified": True}
+                        )
+                    )
+            if status == "reject":
+                undo = inverse_actions([a for a in actions if isinstance(a, dict)], before)
+                if undo:
+                    logger.info(f"[wonder] reverting rejected action: {json.dumps(undo, ensure_ascii=False)[:300]}")
+                    await self.push_frame(
+                        RTVIServerMessageFrame(
+                            data={"type": "action", "targetElementId": action.get("targetElementId"), "actionTitle": f"Reverted: {title}", "fieldAction": undo[0], "fieldActions": undo, "verified": True}
                         )
                     )
         except Exception as e:  # verification is advisory; never breaks the conversation

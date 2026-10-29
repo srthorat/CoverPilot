@@ -43,10 +43,26 @@ export type AgentEvent =
   | { type: 'memory'; facts: string[]; summary: string; updated_at?: number | null }
   | { type: 'memory_updated'; added: number; facts: string[]; summary?: string | null }
   | { type: 'interrupt' }
+  | { type: 'case_created'; case: CaseRecord }
   | { type: 'error'; message: string }
   | { type: 'closed'; code: number; reason: string };
 
 export type AgentAction = Extract<AgentEvent, { type: 'action' }>;
+
+export interface CaseRecord {
+  caseId: string;
+  createdAt: string;
+  reason: 'medical' | 'override' | 'other';
+  reasonLabel: string;
+  language: string;
+  question: string;
+  advisorReply: string;
+  screen: Record<string, any>;
+  knowledge: Array<{ label: string | null; score: number | null }>;
+  underwriterNote: string | null;
+  summaryError: string | null;
+  status: 'open';
+}
 
 export interface KbChunk {
   label: string;
@@ -214,6 +230,7 @@ export class VoiceAgentClient {
             case 'memory':
             case 'memory_updated':
             case 'interrupt':
+            case 'case_created':
               emit(data as AgentEvent);
               break;
             default:

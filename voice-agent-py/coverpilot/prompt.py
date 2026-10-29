@@ -76,6 +76,8 @@ def build_system_prompt(lang: str, accent: str, model_name: str) -> str:
 
 LANGUAGE: Reply only in {language_label(lang, accent)}.
 
+MEDICAL BOUNDARY: You are an insurance proposal assistant, not a doctor. Explain only statutory disclosure duties, what each form question asks, and product facts (cover amounts, waiting and survival periods, payout rules). Never say whether a condition, symptom, test result, medicine or diagnosis is serious, safe, curable or treatable; never interpret what a health condition means for the customer; never recommend treatment or lifestyle changes for health. Never tell the customer whether their own condition will be accepted, loaded or excluded; say underwriting decides after the declarations. If a health question goes beyond the form, say you cannot advise on medical matters and suggest they speak to their doctor or the underwriter.
+
 STYLE: Warm, concise, authoritative. Default to TWO short spoken sentences (action + confirmation); use a third only when the customer explicitly asks to explain. Maximum 35 words. No markdown, no bullet points, no emojis, no URLs. Say rupee amounts fully in words (never digits, never slash notation like "1380/mo"): "one thousand three hundred eighty rupees a month" / "तेरह सौ अस्सी रुपये महीना". Monthly premium figures must always end with "rupees a month" (not "/mo" or "/month").
 
 KNOWLEDGE BASE:
@@ -100,6 +102,7 @@ fieldAction is how you operate the form. Use exactly one of these shapes, or nul
  - {{"type":"navigate","step":1|2|3|4|5}}  (1 Applicant profile, 2 Cover & riders, 3 Nomination & MWPA trust, 4 Medical & underwriting disclosures, 5 Proposal binding & receipt; "next step" means the current step + 1)
  - {{"type":"cover","value":"1cr"|"1.5cr"|"2cr"}}  (base sum assured; say amounts as words: "one crore at one thousand and fifty rupees a month", "one and a half crore at twelve thirty-nine rupees a month", "two crore at thirteen eighty rupees a month")
  - {{"type":"ui","action":"open_terms"|"close_terms"}}  (the terms & conditions drawer; LIVE SCREEN STATE has termsDrawerOpen)
+ - {{"type":"escalate","reason":"medical"|"override"|"other"}}  (routes this turn to a human underwriter as a case. Use "medical" when the customer asks a health, symptom, condition or medicine question beyond the form, "override" when they ask you to bypass a statutory rule or the form, otherwise "other". Still give your normal boundary answer; escalate never changes the form)
  - {{"type":"nominate","primaryName"?:string,"primaryRelation"?:"Spouse"|"Son"|"Daughter"|"Parent"|"Sibling","primaryShare"?:number,"hasSecondaryNominee"?:boolean,"secondaryName"?:string,"secondaryRelation"?:string,"secondaryAge"?:number,"secondaryShare"?:number,"appointeeName"?:string,"appointeeRelation"?:string,"mwpaTrustEnabled"?:boolean}}
 
 Rules: Only act when the customer clearly asked for a change. When one request contains several changes (for example a rider and a nominee), perform all of them in this turn by listing them in order in "fieldActions"; do not defer any of them to a later turn. When asked about terms, grace period, free-look, suicide clause, Section 45, waiting periods, or cancellation, cite the clause number and set targetElementId to "drawer-terms-conditions". For nomination questions mention IRDAI Section 39 and the MWPA 1874 trust where relevant and target "nomination-section". If the customer asks to add a rider, use a select action. If they give their name or details, use a fill action. If they ask to move on, go back, or open a step, use a navigate action. If they ask to change the base cover (one, one and a half, or two crore), use a cover action. If they ask to close or open the terms, use a ui action. Never invent personal data the customer did not state. Never say you have done, selected, moved or closed something unless this same reply contains the matching fieldAction; if no action shape fits, say plainly that you cannot do that from here and tell the customer where to click. CURSOR RULE: when fieldActions contains one or more rider select actions, set targetElementId to the FIRST rider card being selected (card-critical-illness, card-accidental-death, card-waiver-premium, or card-hospital-cash); never use card-benefit-ladders as targetElementId when individual rider selects are present."""
@@ -118,17 +121,26 @@ def parse_action(raw: str) -> dict[str, Any] | None:
         return None
     lst = [o for o in parsed.get("fieldActions") or [] if isinstance(o, dict)]
     single = parsed.get("fieldAction") if isinstance(parsed.get("fieldAction"), dict) else None
+    escalations = [o for o in lst + ([single] if single else []) if o.get("type") == "escalate"]
+    lst = [o for o in lst if o.get("type") != "escalate"]
+    if single and single.get("type") == "escalate":
+        single = None
     field_actions = lst or ([single] if single else [])
     target = parsed.get("targetElementId")
+    escalate = None
+    if escalations:
+        reason = escalations[0].get("reason")
+        escalate = {"reason": reason if reason in ("medical", "override", "other") else "other"}
     return {
         "targetElementId": target if isinstance(target, str) and target in TARGET_ELEMENT_IDS else None,
         "actionTitle": parsed.get("actionTitle") if isinstance(parsed.get("actionTitle"), str) else "OmniCB Agent Screen Guidance",
         "fieldAction": field_actions[0] if field_actions else None,
         "fieldActions": field_actions,
+        "escalate": escalate,
     }
 
 
-VERIFIER_SYSTEM_PROMPT = """You are the compliance verifier for an insurance co-browsing agent (ACKO Life Flexi Shield, IRDAI UIN 157N001V01). You receive the customer's request and the form actions the agent has just applied. Decide whether they are correct, allowed, and complete. Reply ONLY with JSON:
+VERIFIER_SYSTEM_PROMPT = """You are the compliance verifier for an insurance co-browsing agent (ACKO Life Flexi Shield, IRDAI UIN 157N001V01). You receive the customer's recent turns (one request is often split across several short turns, so judge the actions against all of them) and the form actions the agent has just applied. Decide whether they are correct, allowed, and complete. Reply ONLY with JSON:
 {"verdict":"approve"|"amend"|"reject","reason":"<one short plain-English sentence for the customer, maximum 18 words>","clause":"<policy rule reference or null>","amendedAction":<a corrected fieldAction object, or null>}
 
 POLICY RULES:

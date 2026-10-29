@@ -45,7 +45,7 @@ _SYNONYMS: dict[str, list[str]] = {
     "reject": ["repudiate"], "rejected": ["repudiate"], "rejection": ["repudiate"], "discount": ["discount", "non-smoker", "smoker"],
     "alcohol": ["alcohol", "drink"], "drink": ["alcohol"], "drinking": ["alcohol"], "job": ["occupation"], "work": ["occupation"], "hobby": ["hazardous", "activity"],
     "स्मोकर": ["smoker", "tobacco"], "स्मोकिंग": ["smoker", "tobacco"], "होगा": ["consequence", "repudiate", "claim"], "होईल": ["consequence", "repudiate", "claim"],
-    "डिस्काउंट": ["discount", "non-smoker"], "सूट": ["discount"], "इनकम": ["income"], "सैलरी": ["income", "salary"], "नॉमिनी": ["nominee"], "शुगर": ["diabetes", "illness"], "बीपी": ["hypertension", "illness"],
+    "डिस्काउंट": ["discount", "non-smoker"], "सूट": ["discount"], "इनकम": ["income"], "सैलरी": ["income", "salary"], "नॉमिनी": ["nominee"],
     "झूठ": ["misrepresentation", "disclosure"], "गलत": ["wrongly", "misrepresentation"], "छुपा": ["disclosure", "misrepresentation"], "खोटे": ["misrepresentation", "wrongly"], "लपव": ["disclosure", "misrepresentation"],
     # Hindi / Marathi -> English
     "नॉमिनी": ["nominee"], "नामांकन": ["nominee", "nomination"], "वारस": ["nominee"], "वारसदार": ["nominee"],

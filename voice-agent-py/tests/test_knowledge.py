@@ -121,3 +121,10 @@ def test_empty_sections_are_dropped(tmp_path: Path):
 
 def test_chunk_label_without_heading():
     assert Chunk(source="Faq", heading="", text="x").label == "Faq"
+
+
+def test_sugar_and_bp_are_not_mapped_to_health_conditions():
+    from coverpilot.knowledge import _SYNONYMS
+
+    assert "शुगर" not in _SYNONYMS
+    assert "बीपी" not in _SYNONYMS

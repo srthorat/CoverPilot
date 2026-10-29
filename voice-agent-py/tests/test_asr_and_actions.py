@@ -70,3 +70,11 @@ def test_parse_action_returns_none_for_garbage():
 
 def test_action_marker_constant():
     assert ACTION_MARKER == "<<ACTION>>"
+
+
+def test_system_prompt_carries_medical_boundary():
+    from coverpilot.prompt import build_system_prompt
+
+    prompt = build_system_prompt("en", "in", "muse-spark-1.3")
+    assert "MEDICAL BOUNDARY" in prompt
+    assert "not a doctor" in prompt

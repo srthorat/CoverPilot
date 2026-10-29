@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent } from '@/lib/voice-client';
+import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent, type CaseRecord } from '@/lib/voice-client';
 import { PresenterPanel, describeFieldAction, type SessionStats, type TurnRecord, type TurnMarks } from '@/components/PresenterPanel';
 import { toJpeg } from 'html-to-image';
 
@@ -383,6 +383,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [sessionStats, setSessionStats] = useState<SessionStats>({ interrupts: 0, approve: 0, amend: 0, reject: 0, error: 0 });
   const speechEndRef = useRef<number | null>(null);
+  const [cases, setCases] = useState<CaseRecord[]>([]);
   const [presenterMode] = useState<boolean>(initialPresenter);
   const devRef = useRef<boolean>(false);
   // "What the agent sees": the last frame + state actually sent to Muse Spark.
@@ -888,7 +889,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         latestRef.current.applyAction(ev);
         const raw = ev.fieldActions?.length ? ev.fieldActions : ev.fieldAction ? [ev.fieldAction] : [];
         if (raw.length) {
-          const prefix = ev.actionTitle?.startsWith('Amended') ? 'amended → ' : '';
+          const prefix = ev.actionTitle?.startsWith('Amended') ? 'amended → ' : ev.actionTitle?.startsWith('Reverted') ? 'reverted → ' : '';
           const list = raw.map((a) => prefix + describeFieldAction(a));
           setTurns((prev) => {
             if (!prev.length) return prev;
@@ -963,6 +964,17 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         if (ev.facts?.length) patchLastTurn((last) => ({ memoryAdded: [...(last.memoryAdded ?? []), ...ev.facts] }));
         if (devRef.current && ev.added > 0)
           setChatMessages((prev) => [...prev, { sender: 'agent', text: `[Memory • Muse Spark] saved ${ev.added} new fact${ev.added === 1 ? '' : 's'}: ${ev.facts.join(' ')}`, time: stampNow() }]);
+        break;
+      case 'case_created':
+        setCases((prev) => [...prev, ev.case].slice(-5));
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: 'agent',
+            text: `I can't advise on that myself, so I've passed it to an underwriter as case ${ev.case.caseId}. They will review it with you.`,
+            time: stampNow(),
+          },
+        ]);
         break;
       case 'interrupt':
         setSessionStats((s) => ({ ...s, interrupts: s.interrupts + 1 }));
@@ -1879,6 +1891,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     : agentView.sentAt
     ? `updated ${new Date(agentView.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : 'nothing sent yet';
+
+  const downloadCase = (c: CaseRecord) => {
+    const blob = new Blob([JSON.stringify(c, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${c.caseId}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const pageContent = (
     <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
@@ -3359,6 +3383,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">Step 4: Medical & Underwriting Disclosures</h2>
                   <p className="text-xs text-slate-500">Statutory health declarations required under Section 45 of Insurance Act 1938</p>
+                  <p className="text-[11px] text-slate-500 mt-1">This assistant explains the form, not your health. For any medical question, please speak to your doctor. Underwriting decides medical acceptance.</p>
                 </div>
                 <button
                   onClick={() => triggerFieldGuidance('field-section-45')}
@@ -4708,7 +4733,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return (
       <div className="flex h-screen overflow-hidden bg-[#0d0921]">
         <div className="flex-1 min-w-0 overflow-y-auto">{pageContent}</div>
-        <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} stats={sessionStats} />
+        <PresenterPanel turns={turns} memoryFacts={memoryFacts} agentState={agentState} stats={sessionStats} cases={cases} onDownloadCase={downloadCase} />
       </div>
     );
   }

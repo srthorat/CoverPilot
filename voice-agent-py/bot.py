@@ -13,6 +13,7 @@ Run locally (serves the WebRTC offer endpoint and a prebuilt test UI on :7860):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
@@ -36,6 +37,7 @@ from pipecat.runner.utils import create_transport
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 
+from coverpilot import cases
 from coverpilot.config import Settings
 from coverpilot.google_tts import GoogleRestTTSService
 from coverpilot.knowledge import KnowledgeBase
@@ -105,7 +107,24 @@ def build_processors(settings: Settings, session: SessionState, *, sample_rate_i
 
         memory_writer.schedule(session.customer_id, session.last_user_text, spoken, on_saved)
 
-    actions = ActionMarkerFilter(session, on_action=verifier.verify, on_turn_complete=on_turn_complete)
+    case_tasks: set[asyncio.Task] = set()
+
+    async def open_case(reason: str, spoken: str):
+        question, screen, kb_chunks, lang = session.last_user_text, dict(session.screen_state or {}), list(session.last_kb_chunks), session.lang
+        summary, summary_error = await cases.summarize(question, spoken, api_key=settings.meta_api_key, base_url=settings.meta_base_url, model=settings.spark_model)
+        case = cases.build_case(
+            reason=reason, language=lang, question=question, reply=spoken, screen=screen,
+            kb_chunks=kb_chunks, summary=summary, summary_error=summary_error,
+        )
+        cases.store_case(case)
+        await actions.push_frame(RTVIServerMessageFrame(data={"type": "case_created", "case": case}))
+
+    async def on_escalate(reason: str, spoken: str):
+        task = asyncio.create_task(open_case(reason, spoken))
+        case_tasks.add(task)
+        task.add_done_callback(case_tasks.discard)
+
+    actions = ActionMarkerFilter(session, on_action=verifier.verify, on_turn_complete=on_turn_complete, on_escalate=on_escalate)
     injector = ScreenStateInjector(session, settings, kb=KNOWLEDGE)
     ack = AckProcessor(session, settings, downstream=actions)
     return stt, llm, tts, context, aggregators, injector, ack, actions, verifier
@@ -150,6 +169,9 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
             audio_in_sample_rate=AUDIO_IN_RATE,
             audio_out_sample_rate=AUDIO_OUT_RATE,
         ),
+        # A quiet minute during a demo must not end the session or stop the runner.
+        idle_timeout_secs=1800,
+        cancel_runner_on_idle_timeout=False,
         # Raw LLM text is not sent: ActionMarkerFilter sends the cleaned text (no <<ACTION>> tail)
         # as agent_start/agent_text/agent_done server messages instead.
         observers=[RTVIObserver(rtvi, params=RTVIObserverParams(bot_llm_enabled=False))],

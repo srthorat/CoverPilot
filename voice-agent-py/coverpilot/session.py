@@ -40,6 +40,7 @@ class SessionState:
     screenshot_data_url: str | None = None
     screenshot_at: float = 0.0
     last_user_text: str = ""
+    user_turns: list[str] = field(default_factory=list)  # last few user turns, oldest first
     customer_id: str | None = None
     memory_text: str = ""  # rendered CUSTOMER MEMORY block
     main_started: bool = False  # Spark started streaming the current answer
