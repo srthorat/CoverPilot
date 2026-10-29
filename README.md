@@ -118,5 +118,24 @@ Open [http://localhost:3004](http://localhost:3004) in a browser with a micropho
 
 ---
 
+## 🐳 Run with Docker (one image, both services)
+
+One image runs the Next.js app (`omni_browse`) and the Python Pipecat voice agent (`voice-agent-py`). Only port 3000 is published; the app proxies `/voice-agent/*` to the agent inside the container. The base images are multi-architecture, so the same `Dockerfile` builds for Apple Silicon (arm64) and Linux servers (amd64).
+
+```bash
+docker build -t coverpilot .
+docker run --rm -p 3000:3000 \
+  -v "$PWD/omni_browse/.env.local:/app/omni_browse/.env.local:ro" \
+  -v coverpilot-data:/app/voice-agent-py/data \
+  coverpilot
+# open http://localhost:3000  (presenter view: http://localhost:3000/presenter)
+```
+
+- **Keys are never baked into the image.** Mount the env file as above, or pass plain variables (`-e META_MODEL_API_KEY=...`, `GOOGLE_TTS_API_KEY`, `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL`). Do not use `--env-file` with a file that has quoted values, because Docker keeps the quotes.
+- **Data:** customer memory and underwriter cases live in the `/app/voice-agent-py/data` volume.
+- **WebRTC audio is UDP.** Behind NAT, a cloud firewall or Docker Desktop on macOS, set the `TURN_*` variables so audio relays through TURN. On Linux you can instead use `--network host`.
+- **Building for another architecture** (for example an amd64 server from an Apple Silicon Mac): `docker build --platform linux/amd64 -t coverpilot:amd64 .`, or publish both at once with `docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/coverpilot --push .`.
+- The container exits if either process stops, so a restart policy (`--restart unless-stopped`) restarts both together. Health is reported by a built-in check on both services.
+
 ## 📄 License
 MIT License. Built for the **Meta Hackathon 2026**.

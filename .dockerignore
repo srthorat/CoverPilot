@@ -1,0 +1,16 @@
+.git
+.gstack
+**/.gstack
+.DS_Store
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.tsbuildinfo
+# Secrets and local data never enter the image.
+**/.env
+**/.env.*
+!**/.env.example
+voice-agent-py/data
+voice-agent-py/tests
