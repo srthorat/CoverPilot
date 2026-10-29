@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 // typed into the same pipeline voice uses (speech is only the way in), so this runs unattended.
 // Run: pnpm e2e   (see playwright.config.ts). Results go to docs/acceptance-report-<browser>.md.
 
-test.describe.configure({ mode: 'serial' });
+// Tests share one live session and run in order; a failure does not hide the results after it.
 
 let page: Page;
 
@@ -17,8 +17,8 @@ const agentLines = async () => {
 /** Type a message to the agent and return its next reply (waits for a new one that satisfies `ok`). */
 async function ask(text: string, ok: (reply: string) => boolean = () => true, timeout = 90_000): Promise<string> {
   const before = (await agentLines()).length;
-  await page.getByPlaceholder(/Ask a question or speak via mic/).fill(text);
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await page.getByTestId('ask-input').fill(text);
+  await page.getByTestId('ask-button').click();
   let reply = '';
   await expect
     .poll(

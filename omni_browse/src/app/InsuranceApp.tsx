@@ -5222,6 +5222,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             <div className="pt-2 border-t border-slate-100 flex gap-2 items-center">
               <div className="relative flex-1">
                 <input
+                  data-testid="ask-input"
                   type="text"
                   value={userQuery}
                   onChange={(e) => setUserQuery(e.target.value)}
@@ -5250,6 +5251,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               </div>
 
               <button
+                data-testid="ask-button"
                 onClick={handleAskAgent}
                 disabled={!userQuery.trim()}
                 className="px-3.5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] disabled:opacity-50 text-white font-bold text-xs transition-all flex items-center gap-1"
