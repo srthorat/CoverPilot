@@ -2556,9 +2556,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       <header className="shrink-0 bg-white border-b border-slate-200 z-30">
         <div className="w-full px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="size-9 rounded-xl bg-[#582be8] text-white flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
-              N
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/nexasure-mark.png" alt="NexaSure logo" width={36} height={36} className="size-9 rounded-xl shadow-sm" />
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold tracking-tight text-[#111827]">NexaSure</span>

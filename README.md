@@ -1,3 +1,5 @@
+<p align="center"><img src="omni_browse/public/brand/nexasure-logo.png" alt="NexaSure logo" width="360"></p>
+
 # 🛡️ CoverPilot (OmniBrowse)
 
 > **Autonomous Multimodal Co-Browsing & Voice Agent for Regulated Digital Insurance**  
