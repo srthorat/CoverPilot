@@ -89,6 +89,7 @@ async function segmentConcept(dataUrl: string, concept: string) {
   const maskById = new Map<string, (typeof masks)[number]>();
   for (const m of masks) maskById.set(m.objectId, m);
 
+  const lowest = boxes.length ? Math.max(...boxes.map((b) => b.confidence ?? 1)) : null;
   const items = boxes
     .filter((b) => (b.confidence ?? 1) >= MIN_CONFIDENCE)
     .map((b) => {
@@ -108,7 +109,7 @@ async function segmentConcept(dataUrl: string, concept: string) {
         mask,
       };
     });
-  return { concept, items, ms: Date.now() - t0 };
+  return { concept, items, ms: Date.now() - t0, found: boxes.length, best: lowest };
 }
 
 function iou(a: SamRegion['box'], b: SamRegion['box']): number {
@@ -156,14 +157,20 @@ export async function POST(req: NextRequest) {
   }
   const t0 = Date.now();
   try {
-    const jobs = concepts.flatMap((c) => variants.map((v) => segmentConcept(v, c)));
-    const results = await Promise.all(jobs);
-    const regions = concepts.flatMap((c) => mergeBoxes(c, results.filter((r) => r.concept === c).flatMap((r) => r.items)));
-    for (const c of concepts) {
-      if (!regions.some((r) => r.concept === c)) {
-        throw new Error(`Could not find the ${c} on the card; nothing was sent for reading`);
-      }
+    let results = await Promise.all(concepts.flatMap((c) => variants.map((v) => segmentConcept(v, c))));
+    // A concept missing on every copy is retried once (the model can come back empty), then fails.
+    const missing = () => concepts.filter((c) => !results.some((r) => r.concept === c && r.items.length > 0));
+    const retry = missing();
+    if (retry.length) {
+      const again = await Promise.all(retry.flatMap((c) => variants.map((v) => segmentConcept(v, c))));
+      results = [...results, ...again];
     }
+    for (const c of missing()) {
+      const seen = results.filter((r) => r.concept === c).map((r) => `${r.found} boxes, best confidence ${r.best ?? 'none'}`);
+      console.error(`[sam] no ${c} on ${documentType} (${variants.length} copies, 2 tries): ${seen.join('; ')}`);
+      throw new Error(`Could not find the ${c} on the card; nothing was sent for reading`);
+    }
+    const regions = concepts.flatMap((c) => mergeBoxes(c, results.filter((r) => r.concept === c).flatMap((r) => r.items)));
     return Response.json({ model: SAM_MODEL, regions, telemetry: { model: SAM_MODEL, totalMs: Date.now() - t0, copies: variants.length } });
   } catch (err: any) {
     const message = err instanceof MetaApiError ? err.message : `SAM request failed: ${err?.message || err}`;

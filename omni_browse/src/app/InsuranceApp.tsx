@@ -1486,7 +1486,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const samRes = await fetch('/api/sam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentType: type, blurredDataUrls: [60, 66].map((width) => blurForLocating(img, width)) }),
+        // The Aadhaar number stays readable above 66 px wide, so its copies are 60, 63 and 66 px. The PAN
+        // card has no large number (its PAN is unreadable at 110 px and below), so its copies can be
+        // less blurry, which finds the signature far more reliably (confidence 0.85 vs 0.78 at 66 px).
+        body: JSON.stringify({ documentType: type, blurredDataUrls: (type === 'aadhaar' ? [60, 63, 66] : [90, 110]).map((width) => blurForLocating(img, width)) }),
       });
       const sam = await samRes.json();
       if (!samRes.ok || !Array.isArray(sam.regions)) throw new Error(sam.error || `SAM HTTP ${samRes.status}`);
