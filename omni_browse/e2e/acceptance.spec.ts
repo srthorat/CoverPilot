@@ -61,7 +61,7 @@ test('AC-01 Customer explicitly accepts the co-browsing invitation', async () =>
 
 test('AC-02 A Hindi question gets an understandable reply in Hindi', async () => {
   await page.getByRole('button', { name: 'हिंदी' }).click();
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(4000); // the language change has to reach the agent before the question
   const reply = await ask('मासिक प्रीमियम के लिए ग्रेस पीरियड कितना होता है?', (r) => /[ऀ-ॿ]{3}/.test(r));
   expect(reply).toMatch(/[ऀ-ॿ]{3}/);
   await page.getByRole('button', { name: 'English' }).click();
