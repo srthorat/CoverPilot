@@ -375,6 +375,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   // Step 2 needs a decision: at least one rider, or an explicit "no riders".
   const [noRiders, setNoRiders] = useState(false);
+  // A document never overwrites what the customer typed: a difference is shown and the customer picks.
+  type DocDiscrepancy = { field: 'fullName' | 'dob' | 'pincode' | 'gender' | 'annualIncome'; label: string; typed: string; fromDocument: string; source: string };
+  const [docDiscrepancies, setDocDiscrepancies] = useState<DocDiscrepancy[]>([]);
   // Pause and resume: every proposal in progress has its own code, saved in this browser only.
   const [draftId, setDraftId] = useState('');
   const [draftReady, setDraftReady] = useState(false); // autosave waits until the customer has chosen resume or new
@@ -389,6 +392,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     issues: {},
     maxReachable: 1,
   });
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
   const stampNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // Observation Timer & Focused Field Tracking
@@ -576,6 +581,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return {
       activeStep,
       proposalCode: draftId,
+      documentDiscrepancies: docDiscrepancies,
       stepGate: {
         furthestStepAllowed: stepGateRef.current.maxReachable,
         missingOnThisStep: (stepGateRef.current.issues[activeStep] || []).map((i) => i.msg),
@@ -1420,6 +1426,32 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return { regions, ms: data.telemetry?.totalMs ?? 0 };
   };
 
+  // Put what a document says into the form without overwriting anything the customer typed.
+  // Empty fields are filled; a field that already holds a different value becomes a discrepancy
+  // for the customer to resolve (features: never silently overwrite a declaration).
+  const reconcileDocument = (source: string, incoming: Partial<Record<DocDiscrepancy['field'], string>>) => {
+    const cur = profileRef.current as Record<string, any>;
+    const norm = (field: string, v: string) =>
+      field === 'fullName' ? v.toUpperCase().replace(/[^A-Z]/g, '') : field === 'gender' ? v.trim().charAt(0).toUpperCase() : v.replace(/\W/g, '').toUpperCase();
+    const labels: Record<string, string> = { fullName: 'Name', dob: 'Date of birth', pincode: 'PIN code', gender: 'Gender', annualIncome: 'Annual income' };
+    const patch: Record<string, string> = {};
+    const found: DocDiscrepancy[] = [];
+    for (const [field, value] of Object.entries(incoming)) {
+      if (!value) continue;
+      const typed = String(cur[field] ?? '');
+      if (!typed.trim()) patch[field] = value;
+      else if (norm(field, typed) !== norm(field, value)) found.push({ field: field as DocDiscrepancy['field'], label: labels[field], typed, fromDocument: value, source });
+    }
+    if (Object.keys(patch).length) setProfile((prev) => ({ ...prev, ...patch }));
+    setDocDiscrepancies((prev) => [...prev.filter((d) => !(d.source === source && found.some((f) => f.field === d.field))), ...found]);
+    return found;
+  };
+
+  const resolveDiscrepancy = (d: DocDiscrepancy, useDocument: boolean) => {
+    if (useDocument) setProfile((prev) => ({ ...prev, [d.field]: d.fromDocument }));
+    setDocDiscrepancies((prev) => prev.filter((x) => !(x.field === d.field && x.source === d.source)));
+  };
+
   // 1-click KYC: SAM 3.1 locates PII -> browser pixelates it -> only the redacted image
   // goes to Muse Spark for OCR. Two Meta models, and the reader never sees the ID.
   // Income proof: Muse Spark reads the sample salary slip; account identifiers are masked server-side.
@@ -1455,7 +1487,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       if (f.annualIncome) {
         speakText(`Your salary slip shows an annual income of ${Number(f.annualIncome).toLocaleString('en-IN')} rupees. I am filling it in now.`, selectedLanguage);
         glideAgentCursorToElement('field-annual-income', 'Populate annual income from salary slip', () => {
-          setProfile((prev) => ({ ...prev, annualIncome: incomeRangeFor(f.annualIncome || '') || prev.annualIncome, fullName: prev.fullName || f.fullName || '' }));
+          reconcileDocument('salary slip', { annualIncome: incomeRangeFor(f.annualIncome || ''), fullName: f.fullName || '' });
         });
       }
     } catch (e: any) {
@@ -1585,14 +1617,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         // A sample's ID number is known to the app; a real upload's number was hidden before reading,
         // so the customer types it into Identity records.
         if (!uploadUrl) setIdFromSample((prev) => ({ ...prev, [type]: true }));
-        setProfile((prev) => ({
-          ...prev,
-          fullName: f.fullName || prev.fullName,
-          dob: f.dob || prev.dob,
-          pincode: f.pincode || prev.pincode,
-          gender: gender || prev.gender,
-          ...(uploadUrl ? {} : type === 'pan' ? { panNumber: SAMPLE_IDS.pan } : { aadhaarNumber: SAMPLE_IDS.aadhaar }),
-        }));
+        reconcileDocument(`${label} card`, { fullName: f.fullName || '', dob: f.dob || '', pincode: f.pincode || '', gender });
+        if (!uploadUrl) setProfile((prev) => ({ ...prev, ...(type === 'pan' ? { panNumber: SAMPLE_IDS.pan } : { aadhaarNumber: SAMPLE_IDS.aadhaar }) }));
       });
     } catch (e: any) {
       setKycRedaction((prev) => prev && { ...prev, status: `Failed: ${e?.message || e}` });
@@ -2184,6 +2210,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ...(profile.isSmoker === null ? [{ id: 'field-smoking', msg: 'Say whether you use tobacco.' }] : []),
       ...(!profile.city.trim() ? [{ id: 'input-city', msg: 'Enter your city.' }] : []),
       ...(!/^\d{6}$/.test(profile.pincode.trim()) ? [{ id: 'input-pincode', msg: 'Enter your 6-digit PIN code.' }] : []),
+      ...docDiscrepancies.map((d) => ({
+        id: 'field-discrepancies',
+        msg: `${d.label} differs: you typed "${d.typed}", the ${d.source} shows "${d.fromDocument}". Choose which is correct.`,
+      })),
       ...(!/^\d{12}$/.test(profile.aadhaarNumber) ? [{ id: 'field-identity', msg: 'Enter your 12-digit Aadhaar number (type it, or scan a sample document).' }] : []),
       ...(!/^[A-Z]{5}\d{4}[A-Z]$/.test(profile.panNumber) ? [{ id: 'field-identity', msg: 'Enter your PAN (like ABCDE1234F).' }] : []),
       ...(!/^[6-9]\d{9}$/.test(profile.mobileNumber) ? [{ id: 'field-identity', msg: 'Enter your 10-digit mobile number.' }] : []),
@@ -3296,6 +3326,21 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
               </div>
 
+              {docDiscrepancies.length > 0 && (
+                <div id="field-discrepancies" className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 flex flex-col gap-1.5">
+                  <strong>A document does not match what you typed. Pick the correct value:</strong>
+                  {docDiscrepancies.map((d) => (
+                    <div key={`${d.source}-${d.field}`} className="flex flex-wrap items-center gap-2">
+                      <span>
+                        {d.label}: you typed <strong>{d.typed}</strong>, {d.source} shows <strong>{d.fromDocument}</strong>
+                      </span>
+                      <button onClick={() => resolveDiscrepancy(d, false)} className="px-2 py-0.5 rounded-lg bg-white border border-amber-300 font-semibold">Keep mine</button>
+                      <button onClick={() => resolveDiscrepancy(d, true)} className="px-2 py-0.5 rounded-lg bg-white border border-amber-300 font-semibold">Use the document's</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Identity records: filled by a sample scan or typed by the user; kept on this device, shown masked */}
               <div id="field-identity" className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
                 <span
@@ -4216,8 +4261,39 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <h2 className="text-base font-bold text-[#111827]">Step 5: Policy Schedule, Terms & Instant Issuance</h2>
                   <p className="text-xs text-slate-500">Review your final coverage schedule, beneficiary details & statutory terms</p>
                 </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Ready to Issue</span>
+                <span
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${
+                    maxReachableStep >= 5 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'
+                  }`}
+                >
+                  {maxReachableStep >= 5 ? 'Checks passed' : 'Checks need attention'}
+                </span>
+              </div>
+
+              {/* Application guardian: every check the proposal has to pass, and what is still open */}
+              <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs">
+                <div className="font-bold text-slate-900 mb-1.5">Application check</div>
+                <ul className="flex flex-col gap-1">
+                  {[
+                    { label: 'Applicant profile complete, matches your documents', issues: stepIssues[1].map((i) => i.msg) },
+                    { label: 'Cover and riders chosen', issues: stepIssues[2].map((i) => i.msg) },
+                    { label: 'Nominees valid (shares total 100%, any minor has an appointee)', issues: stepIssues[3].map((i) => i.msg) },
+                    { label: 'Health and Section 45 declarations made by you', issues: stepIssues[4].map((i) => i.msg) },
+                    { label: 'You signed the proposal (demo e-sign)', issues: esignValid ? [] : ['Not signed yet.'] },
+                    { label: 'First premium paid (demo payment)', issues: paymentValid ? [] : ['Not paid yet.'] },
+                  ].map((c) => (
+                    <li key={c.label} className="flex items-start gap-2">
+                      <span className={c.issues.length ? 'text-amber-600' : 'text-emerald-600'}>{c.issues.length ? '!' : '✓'}</span>
+                      <span className="text-slate-700">
+                        {c.label}
+                        {c.issues.map((m) => (
+                          <span key={m} className="block text-amber-700">{m}</span>
+                        ))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[11px] text-slate-500">Nothing here is decided for you: you make the declarations, sign and pay.</p>
               </div>
 
               <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs text-slate-700">
