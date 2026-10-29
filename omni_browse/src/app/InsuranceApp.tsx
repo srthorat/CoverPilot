@@ -1591,6 +1591,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     anyMinorNominee,
     appointeeNamed: Boolean(nomination.appointeeName.trim()),
     smoker: profile.isSmoker,
+    policyholder: {
+      name: profile.fullName.trim(),
+      dob: profile.dob.trim(),
+      gender: profile.gender,
+      city: profile.city.trim(),
+      pincode: profile.pincode.trim(),
+      pan: profile.panNumber || undefined,
+      aadhaar: profile.aadhaarNumber ? profile.aadhaarNumber.replace(/(\d{4})(?=\d)/g, '$1 ') : undefined,
+      mobile: profile.mobileNumber || undefined,
+    },
+    nominees: allNominees.map((n) => ({ name: n.name, relation: n.relation, share: Number(n.share) || 0 })),
+    appointeeName: nomination.appointeeName.trim() || undefined,
     declarations: { section45Declared: underwriting.section45Consent, familyHistoryDeclared: underwriting.familyCardiacHistory, hospitalizationDeclared: underwriting.priorHospitalization },
   });
 
@@ -1600,7 +1612,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       let name: string;
       if (which === 'draft') {
         blob = await buildDraftSummaryPdf(draftSummary());
-        name = `proposal-summary-draft-${draftId}.pdf`;
+        name = `proposed-policy-draft-${draftId}.pdf`;
       } else {
         const file = which === 'issues' ? 'sample-policy-with-issues.pdf' : 'sample-policy.pdf';
         blob = await (await fetch(`/samples/${file}`)).blob();
@@ -1617,7 +1629,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     const blob = await buildDraftSummaryPdf(draftSummary());
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `proposal-summary-draft-${draftId}.pdf`;
+    a.download = `proposed-policy-draft-${draftId}.pdf`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   };
@@ -4779,7 +4791,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <p className="mt-1.5 text-[11px] text-slate-500">Nothing here is decided for you: you make the declarations, sign and pay.</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <button onClick={downloadDraftSummary} className="px-3 py-1 rounded-lg bg-white border border-slate-300 font-semibold">
-                    Download draft proposal summary
+                    Download proposed policy (draft)
                   </button>
                   <button
                     onClick={async () => {
@@ -4790,7 +4802,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   >
                     Review it with Integrity Guardian
                   </button>
-                  <span className="text-[11px] text-slate-500">A draft summary of your application, not an issued policy and not proof of insurance.</span>
+                  <span className="text-[11px] text-slate-500">A proposed policy generated from your application, not an issued policy and not proof of insurance.</span>
                 </div>
               </div>
 
