@@ -31,7 +31,21 @@ from pipecat.processors.frame_processor import FrameProcessorSetup
 from pipecat.services.settings import STTSettings
 from pipecat.services.stt_service import WebsocketSTTService
 from pipecat.utils.time import time_now_iso8601
+from websockets.exceptions import ConnectionClosed
 from websockets.protocol import State
+
+# Meta ends a session after 60 minutes (close 1008 "Max session duration reached"). Rather than
+# let it die mid-sentence, the stream is reopened between utterances shortly before that.
+SESSION_LIMIT_S = 60 * 60
+ROTATE_AFTER_S = 55 * 60
+QUIET_BEFORE_ROTATE_S = 1.5
+
+
+def should_rotate(session_age_s: float, quiet_s: float) -> bool:
+    """Reopen the Meta session when it is close to its limit and nobody is mid-utterance."""
+    if session_age_s >= SESSION_LIMIT_S - 15:
+        return True  # last chance, even mid-utterance, before Meta cuts the stream
+    return session_age_s >= ROTATE_AFTER_S and quiet_s >= QUIET_BEFORE_ROTATE_S
 
 
 class MetaRealtimeSTTService(WebsocketSTTService):
@@ -60,6 +74,7 @@ class MetaRealtimeSTTService(WebsocketSTTService):
         self._session_started = 0.0  # monotonic time the current Meta session became ready
         self._sent_seconds = 0.0  # audio seconds sent in the current Meta session
         self._keepalive_logged = False
+        self._last_transcript = 0.0  # monotonic time of the last transcript event from Meta
 
     def can_generate_metrics(self) -> bool:
         return True
@@ -92,7 +107,7 @@ class MetaRealtimeSTTService(WebsocketSTTService):
             await ws.send(audio)
             self._last_send = time.monotonic()
             self._sent_seconds += len(audio) / 2 / self.sample_rate
-        elif len(self._pending) < 60:  # ~1.2 s while the handshake completes
+        elif len(self._pending) < 150:  # ~3 s while the handshake completes
             self._pending.append(audio)
         yield None
 
@@ -130,6 +145,12 @@ class MetaRealtimeSTTService(WebsocketSTTService):
             if not (self._ready and ws and ws.state is State.OPEN):
                 continue
             now = time.monotonic()
+            if should_rotate(now - self._session_started, now - self._last_transcript):
+                logger.info(f"{self}: reopening the Meta ASR session before its time limit")
+                self._pending.clear()
+                await self._disconnect_websocket()
+                await self._connect_websocket()
+                continue
             if now - self._last_send < tick * 1.5:
                 continue  # real audio is flowing
             deficit = (now - self._session_started) - self._sent_seconds + 0.3
@@ -200,14 +221,17 @@ class MetaRealtimeSTTService(WebsocketSTTService):
                 ws = self._websocket
                 if not ws:
                     raise Exception("Meta ASR websocket unavailable")
-            async for message in ws:
-                if isinstance(message, bytes):
-                    continue
-                try:
-                    msg = json.loads(message)
-                except json.JSONDecodeError:
-                    continue
-                await self._handle_meta_event(msg)
+            try:
+                async for message in ws:
+                    if isinstance(message, bytes):
+                        continue
+                    try:
+                        msg = json.loads(message)
+                    except json.JSONDecodeError:
+                        continue
+                    await self._handle_meta_event(msg)
+            except ConnectionClosed:
+                pass  # a close with an error code is handled below, the same as a clean one
             # Meta closed the session (max duration or policy). Reopen unless we are stopping.
             close_code = getattr(ws, "close_code", None)
             self._websocket = None
@@ -231,6 +255,8 @@ class MetaRealtimeSTTService(WebsocketSTTService):
             self._pending.clear()
             return
         kind = msg.get("type")
+        if kind in ("transcript", "speechComplete"):
+            self._last_transcript = time.monotonic()
         if kind == "transcript":
             text = (msg.get("transcript") or "").strip()
             if text:
@@ -242,4 +268,7 @@ class MetaRealtimeSTTService(WebsocketSTTService):
                 await self.stop_processing_metrics()
                 await self.push_frame(TranscriptionFrame(text=text, user_id="", timestamp=time_now_iso8601()))
         elif kind == "error":
+            if "max session duration" in str(msg.get("message") or "").lower():
+                logger.info("Meta ASR session reached its time limit; reopening")
+                return  # the close that follows is handled by the receive loop
             await self.push_error(error_msg=f"Meta ASR: {msg.get('message') or 'unknown error'}")

@@ -40,6 +40,7 @@ from .knowledge import KnowledgeBase
 from .prompt import ACTION_MARKER, VERIFIER_SYSTEM_PROMPT, build_system_prompt, parse_action
 from .revert import inverse_actions
 from .session import SessionState
+from .stepgate import drop_blocked_navigation, gate_note
 
 ACK_SYSTEM_PROMPT = (
     "You are the voice of an insurance advisor co-browsing a term-life proposal form with a customer. "
@@ -112,6 +113,10 @@ class ScreenStateInjector(FrameProcessor):
             for score, chunk in hits
         ]
         decorated = f"{text}\n\n[Relevant knowledge]\n{kb_ctx}" if kb_ctx else text
+        note = gate_note(text, s.screen_state)
+        if note:
+            decorated = f"{decorated}\n\n{note}"
+            logger.info(f"[gate] {note[:160]}")
         shot = s.fresh_screenshot()
         if shot:
             last["content"] = [
@@ -191,6 +196,7 @@ class ActionMarkerFilter(FrameProcessor):
             # The form as it was before this reply's action reaches the browser, so a reject can undo it.
             before = copy.deepcopy(self._session.screen_state or {})
             action = parse_action(self._action_raw) if self._marker_seen else None
+            action = drop_blocked_navigation(action, before)
             self._in_response = False
             spoken = self._spoken.strip()
             await self.push_frame(frame, direction)
