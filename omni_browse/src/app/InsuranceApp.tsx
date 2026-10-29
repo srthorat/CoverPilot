@@ -1,5 +1,7 @@
 'use client';
 
+import { blurCopy } from '@/lib/kyc-blur';
+import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent, type CaseRecord } from '@/lib/voice-client';
 import { MaskedIdField, maskAadhaar, maskPan, maskMobile } from '@/components/MaskedIdField';
@@ -371,6 +373,17 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Customer-picked document: the original stays in this browser (see handleRunSampleKycOcr).
   const [uploadDocType, setUploadDocType] = useState<'pan' | 'aadhaar' | 'salary-slip'>('pan');
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  // Step 2 needs a decision: at least one rider, or an explicit "no riders".
+  const [noRiders, setNoRiders] = useState(false);
+  // Pause and resume: every proposal in progress has its own code, saved in this browser only.
+  const [draftId, setDraftId] = useState('');
+  const [draftReady, setDraftReady] = useState(false); // autosave waits until the customer has chosen resume or new
+  const [pendingResume, setPendingResume] = useState<DraftMeta | null>(null);
+  const [showResumePanel, setShowResumePanel] = useState(false);
+  const [savedProposals, setSavedProposals] = useState<DraftMeta[]>([]);
+  const [resumeCode, setResumeCode] = useState('');
+  const [resumeError, setResumeError] = useState('');
+  const [pausedNote, setPausedNote] = useState<string | null>(null);
   const [stepNotice, setStepNotice] = useState<{ step: number; issues: string[] } | null>(null);
   const stepGateRef = useRef<{ issues: Record<number, Array<{ id: string; msg: string }>>; maxReachable: number }>({
     issues: {},
@@ -562,6 +575,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
     return {
       activeStep,
+      proposalCode: draftId,
       stepGate: {
         furthestStepAllowed: stepGateRef.current.maxReachable,
         missingOnThisStep: (stepGateRef.current.issues[activeStep] || []).map((i) => i.msg),
@@ -572,6 +586,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       termsHighlightedClause: highlightedClause ? TERMS_AND_CONDITIONS_CLAUSES.find((c) => c.id === highlightedClause)?.clauseNumber ?? null : null,
       baseSumAssured,
       selectedRiders,
+      noRiders: noRiders && !Object.values(selectedRiders).some(Boolean) && !lifeStageEscalator,
       ciTier,
       atpdOption,
       lifeStageEscalator,
@@ -865,6 +880,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           }
           setShowTermsDrawer(true);
         } else if (action.action === 'close_terms') setShowTermsDrawer(false);
+        else if (action.action === 'pause_proposal') window.setTimeout(() => pauseProposal(), 1500);
       } else if (action.type === 'select') {
         const on = Boolean(action.value);
         if (action.field === 'criticalIllness') {
@@ -882,6 +898,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         } else if (action.field === 'hospitalCash') {
           glideAgentCursorToElement('card-hospital-cash', title || 'Selecting Hospital Daily Cash Rider', () => {
             setSelectedRiders((r) => ({ ...r, hospitalCash: on }));
+          });
+        } else if (action.field === 'noRiders') {
+          glideAgentCursorToElement('card-no-riders', title || 'Choosing base cover only', () => {
+            if (on) {
+              setSelectedRiders({ criticalIllness: false, accidentalDeath: false, waiverOfPremium: false, hospitalCash: false });
+              setLifeStageEscalator(false);
+            }
+            setNoRiders(on);
           });
         } else if (action.field === 'isSmoker') {
           glideAgentCursorToElement('field-smoking', title || `Setting Smoker Status: ${on ? 'Yes' : 'No'}`, () => {
@@ -1363,26 +1387,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     });
   };
 
-  // Printed IDs are too small for SAM 3.1. Blur a copy until the text is unreadable (the layout
-  // survives) and ask Muse Spark where the identifiers are; the sharp image never leaves the page.
-  const blurForLocating = (img: HTMLImageElement, width: number): string => {
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    const small = document.createElement('canvas');
-    small.width = width;
-    small.height = Math.max(1, Math.round((width * h) / w));
-    const sctx = small.getContext('2d')!;
-    sctx.imageSmoothingQuality = 'high';
-    sctx.drawImage(img, 0, 0, small.width, small.height);
-    const big = document.createElement('canvas');
-    big.width = w;
-    big.height = h;
-    const bctx = big.getContext('2d')!;
-    bctx.imageSmoothingEnabled = true;
-    bctx.imageSmoothingQuality = 'high';
-    bctx.drawImage(small, 0, 0, w, h);
-    return big.toDataURL('image/png');
-  };
+  // Printed IDs are too small for SAM 3.1, so copies are blurred until text is unreadable (the layout
+  // survives) and only those copies leave the page. The blur is computed by hand in kyc-blur.ts so
+  // it is the same in every browser (Firefox's canvas downscale left a sharp, aliased picture).
+  const blurForLocating = blurCopy;
 
   const locateTextIds = async (type: 'pan' | 'aadhaar' | 'salary-slip', img: HTMLImageElement): Promise<{ regions: KycRegion[]; ms: number }> => {
     const res = await fetch('/api/locate-ids', {
@@ -1391,9 +1399,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       // Three blur levels, so the server can keep only the positions that agree.
       body: JSON.stringify({
         documentType: type,
-        // The Aadhaar number is large enough to stay readable at 72 px wide (measured), so it is
-        // located on much blurrier copies than the PAN, UAN and bank account number.
-        blurredDataUrls: (type === 'aadhaar' ? [54, 60, 63] : [105, 115, 125]).map((width) => blurForLocating(img, width)),
+        // Measured with this blur: the Aadhaar number is partly readable at 63 px and 72 px wide
+        // and fully at 80 px, so it is located on 48 to 54 px copies; the PAN card and salary slip
+        // were unreadable at 90 px (the PAN number leaks at 130 px).
+        blurredDataUrls: (type === 'aadhaar' ? [48, 50, 54] : [70, 80, 90]).map((width) => blurForLocating(img, width)),
       }),
     });
     const data = await res.json();
@@ -1486,10 +1495,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const samRes = await fetch('/api/sam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // The Aadhaar number stays readable above 66 px wide, so its copies are 60, 63 and 66 px. The PAN
-        // card has no large number (its PAN is unreadable at 110 px and below), so its copies can be
-        // less blurry, which finds the signature far more reliably (confidence 0.85 vs 0.78 at 66 px).
-        body: JSON.stringify({ documentType: type, blurredDataUrls: (type === 'aadhaar' ? [60, 63, 66] : [90, 110]).map((width) => blurForLocating(img, width)) }),
+        // Same measured limits as the locator: 48 to 54 px for the Aadhaar card, 70 to 90 px for the PAN card.
+        body: JSON.stringify({ documentType: type, blurredDataUrls: (type === 'aadhaar' ? [48, 50, 54] : [70, 80, 90]).map((width) => blurForLocating(img, width)) }),
       });
       const sam = await samRes.json();
       if (!samRes.ok || !Array.isArray(sam.regions)) throw new Error(sam.error || `SAM HTTP ${samRes.status}`);
@@ -1790,12 +1797,107 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Illustrative only: 31.2% slab, old tax regime, deduction capped at ₹1.5 lakh, not tax advice.
   const annualTaxSavings = Math.round(Math.min(subtotalMonthly * 12, 150000) * 0.312);
 
+  // ---- Pause and resume ----
+  // Identity numbers, the e-signature and the payment are never saved (see proposal-draft.ts).
+  const draftSnapshot = () => ({
+    v: 1,
+    profile: { ...profile, aadhaarNumber: '', panNumber: '', mobileNumber: '' },
+    baseSumAssured,
+    selectedRiders,
+    noRiders,
+    ciTier,
+    atpdOption,
+    lifeStageEscalator,
+    nomination,
+    underwriting,
+    activeStep,
+    lang: selectedLanguage,
+  });
+  const draftHasContent = Boolean(profile.fullName || profile.dob || profile.city || nomination.primaryName || activeStep > 1);
+
+  useEffect(() => {
+    const cur = currentId();
+    const existing = cur ? readIndex().find((m) => m.id === cur) : null;
+    if (cur && existing && loadDraft(cur)) {
+      setDraftId(cur);
+      setPendingResume(existing);
+    } else {
+      const id = newDraftId();
+      setDraftId(id);
+      setCurrent(id);
+      setDraftReady(true);
+    }
+    setSavedProposals(readIndex());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!draftId || !draftReady || policyIssued || !draftHasContent) return;
+    const t = setTimeout(() => saveDraft(draftId, draftSnapshot(), activeStep), 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftId, draftReady, policyIssued, profile, baseSumAssured, selectedRiders, noRiders, ciTier, atpdOption, lifeStageEscalator, nomination, underwriting, activeStep]);
+
+  const applyDraft = (id: string): boolean => {
+    const d = loadDraft<any>(id);
+    if (!d || d.v !== 1) return false;
+    setProfile((p) => ({ ...p, ...d.profile, aadhaarNumber: '', panNumber: '', mobileNumber: '' }));
+    setIdFromSample({ aadhaar: false, pan: false });
+    if (d.baseSumAssured) setBaseSumAssured(d.baseSumAssured);
+    if (d.selectedRiders) setSelectedRiders(d.selectedRiders);
+    setNoRiders(Boolean(d.noRiders));
+    if (d.ciTier) setCiTier(d.ciTier);
+    if (d.atpdOption) setAtpdOption(d.atpdOption);
+    setLifeStageEscalator(Boolean(d.lifeStageEscalator));
+    if (d.nomination) setNomination((n) => ({ ...n, ...d.nomination }));
+    if (d.underwriting) setUnderwriting((u) => ({ ...u, ...d.underwriting }));
+    setEsign({ typedName: '', consent: false, signedAt: null, hash: null, fingerprint: null, error: null });
+    setPayment({ mode: 'upi', status: 'idle', txnId: null, paidAt: null, amount: null });
+    setActiveStep(Math.min(5, Math.max(1, Number(d.activeStep) || 1)));
+    setDraftId(id);
+    setCurrent(id);
+    setDraftReady(true);
+    setPendingResume(null);
+    setShowResumePanel(false);
+    setPausedNote(null);
+    setStepNotice(null);
+    return true;
+  };
+
+  const startNewProposal = () => {
+    if (draftId && pendingResume) deleteDraft(draftId);
+    const id = newDraftId();
+    setCurrent(id);
+    window.location.reload();
+  };
+
+  const pauseProposal = () => {
+    if (!draftId) return;
+    const saved = draftHasContent ? saveDraft(draftId, draftSnapshot(), activeStep) : true;
+    setDraftReady(true);
+    setSavedProposals(readIndex());
+    if (isCoBrowsingConnectedRef.current) disconnectCoBrowsingSession();
+    setPausedNote(
+      saved
+        ? `Proposal ${draftId} is paused and saved in this browser. Use Resume and this code to continue. Your Aadhaar, PAN, mobile number, signature and payment are not saved, so you will enter them again.`
+        : `Could not save in this browser (storage is blocked). Proposal ${draftId} was not saved.`
+    );
+  };
+
+  const resumeByCode = () => {
+    const id = normalizeCode(resumeCode);
+    if (!id) return;
+    if (!applyDraft(id)) setResumeError('No saved proposal with that code in this browser.');
+    else setResumeError('');
+  };
+
   // Policy Issuance
   const submitPolicyProposal = () => {
     if (maxReachableStep < 5 || !esignValid || !paymentValid) return;
     const id = `NEXA-LIFE-2026-${Math.floor(100000 + Math.random() * 900000)}`;
     setProposalId(id);
     setPolicyIssued(true);
+    if (draftId) deleteDraft(draftId);
     setActiveStep(5);
     const msg = selectedLanguage === 'hi'
       ? `बधाई हो! आपकी NexaSure पॉलिसी ${id} सफलतापूर्वक जारी कर दी गई है।`
@@ -2069,6 +2171,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const dobDate = dobMatch ? new Date(Number(dobMatch[3]), Number(dobMatch[2]) - 1, Number(dobMatch[1])) : null;
   const dobReal = !!dobDate && dobDate.getDate() === Number(dobMatch![1]) && dobDate.getMonth() === Number(dobMatch![2]) - 1;
   const applicantAge = dobReal && dobDate ? Math.floor((Date.now() - dobDate.getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
+  const anyRiderSelected = Object.values(selectedRiders).some(Boolean) || lifeStageEscalator;
+  const noRidersEffective = noRiders && !anyRiderSelected;
   const stepIssues: Record<number, Array<{ id: string; msg: string }>> = {
     1: [
       ...(profile.fullName.trim().length < 2 ? [{ id: 'field-full-name', msg: 'Enter your full legal name.' }] : []),
@@ -2083,7 +2187,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ...(!/^[A-Z]{5}\d{4}[A-Z]$/.test(profile.panNumber) ? [{ id: 'field-identity', msg: 'Enter your PAN (like ABCDE1234F).' }] : []),
       ...(!/^[6-9]\d{9}$/.test(profile.mobileNumber) ? [{ id: 'field-identity', msg: 'Enter your 10-digit mobile number.' }] : []),
     ],
-    2: [],
+    2: !anyRiderSelected && !noRidersEffective
+      ? [{ id: 'card-no-riders', msg: 'Choose at least one rider, or tick "I do not want any riders".' }]
+      : [],
     3: [
       ...(!nomination.primaryName.trim() ? [{ id: 'nomination-section', msg: 'Name your primary nominee.' }] : []),
       ...(nomination.hasSecondaryNominee && !nomination.secondaryName.trim() ? [{ id: 'nomination-section', msg: 'Name the second nominee.' }] : []),
@@ -2345,6 +2451,32 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               <span>Terms & Conditions</span>
             </button>
 
+            {/* Pause and resume: each proposal has its own code */}
+            <span
+              className="hidden xl:inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-mono border border-slate-200"
+              title="This proposal's unique code"
+            >
+              {draftId || '…'}
+            </span>
+            <button
+              onClick={pauseProposal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
+              title="Save this proposal and stop the live session"
+            >
+              <span>Pause</span>
+            </button>
+            <button
+              onClick={() => {
+                setSavedProposals(readIndex());
+                setResumeError('');
+                setShowResumePanel(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors border border-slate-200"
+              title="Continue a paused proposal"
+            >
+              <span>Resume</span>
+            </button>
+
             {/* Application Guardian Audit Certificate */}
             <button
               onClick={handleDownloadAuditCertificate}
@@ -2357,6 +2489,83 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           </div>
         </div>
       </header>
+
+      {pendingResume && (
+        <div role="alert" className="shrink-0 mx-4 lg:mx-6 mt-2 rounded-xl border border-purple-300 bg-purple-50 px-3 py-2 text-xs text-purple-900 flex flex-wrap items-center gap-2">
+          <span>
+            You have a saved proposal <strong className="font-mono">{pendingResume.id}</strong> (step {pendingResume.step}, saved {new Date(pendingResume.savedAt).toLocaleString()}).
+          </span>
+          <button onClick={() => applyDraft(pendingResume.id)} className="px-3 py-1 rounded-lg bg-[#582be8] text-white font-semibold">Resume it</button>
+          <button onClick={startNewProposal} className="px-3 py-1 rounded-lg bg-white border border-purple-300 font-semibold">Start a new proposal</button>
+        </div>
+      )}
+
+      {(showResumePanel || pausedNote) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { setShowResumePanel(false); setPausedNote(null); }}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl text-sm text-slate-800" onClick={(e) => e.stopPropagation()}>
+            {pausedNote ? (
+              <>
+                <h3 className="font-bold text-base mb-1">Proposal paused</h3>
+                <p className="text-xs text-slate-600 mb-3">{pausedNote}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-base font-bold tracking-wider">{draftId}</span>
+                  <button
+                    onClick={() => navigator.clipboard?.writeText(draftId).catch(() => {})}
+                    className="px-3 py-1 rounded-lg border border-slate-300 text-xs font-semibold"
+                  >
+                    Copy code
+                  </button>
+                </div>
+                <div className="mt-4 text-right">
+                  <button onClick={() => setPausedNote(null)} className="px-4 py-1.5 rounded-lg bg-[#582be8] text-white text-xs font-semibold">Close</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="font-bold text-base mb-1">Resume a proposal</h3>
+                <p className="text-xs text-slate-600 mb-2">Proposals paused in this browser. Aadhaar, PAN, mobile, signature and payment are not saved.</p>
+                <ul className="mb-3 max-h-40 overflow-y-auto divide-y divide-slate-100">
+                  {savedProposals.length === 0 && <li className="py-2 text-xs text-slate-500">Nothing saved yet.</li>}
+                  {savedProposals.map((m) => (
+                    <li key={m.id} className="py-1.5 flex items-center justify-between gap-2 text-xs">
+                      <span>
+                        <span className="font-mono font-bold">{m.id}</span>
+                        <span className="text-slate-500"> · step {m.step} · {new Date(m.savedAt).toLocaleString()}</span>
+                      </span>
+                      <span className="flex gap-1.5">
+                        <button onClick={() => applyDraft(m.id)} className="px-2 py-0.5 rounded-lg bg-[#582be8] text-white font-semibold">Resume</button>
+                        <button
+                          onClick={() => {
+                            deleteDraft(m.id);
+                            setSavedProposals(readIndex());
+                          }}
+                          className="px-2 py-0.5 rounded-lg border border-slate-300"
+                        >
+                          Delete
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2">
+                  <input
+                    value={resumeCode}
+                    onChange={(e) => setResumeCode(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && resumeByCode()}
+                    placeholder="Code, e.g. NXP-7KQ2M9XD"
+                    className="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-mono"
+                  />
+                  <button onClick={resumeByCode} className="px-3 py-1.5 rounded-lg bg-[#582be8] text-white text-xs font-semibold">Resume</button>
+                </div>
+                {resumeError && <p className="mt-1 text-xs text-red-600">{resumeError}</p>}
+                <div className="mt-3 text-right">
+                  <button onClick={() => setShowResumePanel(false)} className="px-3 py-1 rounded-lg border border-slate-300 text-xs">Close</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Co-Browsing Status Bar: WebRTC Screen Share & Dual-Cursor Screen Control */}
       {isCoBrowsingConnected && (
@@ -3484,6 +3693,27 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   </div>
                 </div>
               </div>
+
+              <label
+                id="card-no-riders"
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs cursor-pointer ${
+                  spotlightedElementId === 'card-no-riders' ? 'co-browse-spotlight' : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={noRidersEffective}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedRiders({ criticalIllness: false, accidentalDeath: false, waiverOfPremium: false, hospitalCash: false });
+                      setLifeStageEscalator(false);
+                    }
+                    setNoRiders(e.target.checked);
+                  }}
+                  className="size-4 rounded text-[#582be8] border-slate-300"
+                />
+                <span className="text-slate-700">I do not want any riders (base cover only)</span>
+              </label>
 
               <div className="flex justify-between items-center pt-2">
                 <button

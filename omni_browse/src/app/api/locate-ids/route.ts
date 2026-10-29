@@ -37,10 +37,10 @@ const DOCUMENT: Record<string, string> = {
 // and 2% on the bottom. The padding is that error plus margin.
 const PAD = { left: 0.05, top: 0.02, right: 0.09, bottom: 0.035 };
 // The Aadhaar number must be located on a much blurrier copy (its digits are large, so they stay
-// readable down to about 72 px wide). Measured over 5 runs at each of 54, 57, 60 and 63 px wide:
-// the box missed the real digits by up to 5.9% on the left, up to 3.9% on top (one outlier, and
-// consensus drops outliers) and nothing on the right and bottom.
-const PAD_AADHAAR = { left: 0.07, top: 0.05, right: 0.04, bottom: 0.04 };
+// readable down to about 63 px wide). Measured over 6 runs at each of 48, 50 and 54 px wide: the
+// box missed the real digits by up to 4.4% on the left and up to 4.9% on top, and nothing on the
+// right and bottom.
+const PAD_AADHAAR = { left: 0.07, top: 0.06, right: 0.04, bottom: 0.04 };
 const MAX_WIDTH = 0.6;
 const MAX_HEIGHT = 0.12;
 

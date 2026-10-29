@@ -7,7 +7,7 @@ import { metaEnv, MetaApiError } from '@/lib/meta';
  * POST /v1/responses).
  *
  * SAM never receives the document itself. The browser blurs it until printed text is unreadable
- * (a few tens of pixels wide, measured: the Aadhaar number is still readable at 72 px, not at 66)
+ * (a few tens of pixels wide, measured: the Aadhaar number is partly readable at 63 px and 72 px, not at 54 px)
  * and sends only those copies. Photos, signatures and QR codes survive that blur, so SAM can
  * still find them; its boxes are in pixels of the image it was sent, which the browser draws on
  * the sharp image. Each concept is asked on every copy and the boxes are merged; a concept that
