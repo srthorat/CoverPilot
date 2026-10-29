@@ -2734,7 +2734,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         <div className="fixed inset-0 z-[60] bg-[#f8fafc] overflow-y-auto" id="entry-chooser">
           <div className="min-h-full flex flex-col items-center justify-center gap-6 px-4 py-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/nexasure-logo.png" alt="NexaSure" className="w-56 rounded-2xl" />
+            <img src="/brand/nexasure-mark.png" alt="NexaSure" className="w-48 rounded-2xl shadow-sm" />
             <div className="text-center">
               <h1 className="text-xl font-bold text-[#111827]">What would you like to do?</h1>
               <p className="text-sm text-slate-500">One voice assistant, two ways to help. Demo product, not a real insurer.</p>

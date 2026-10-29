@@ -211,6 +211,8 @@ test('EX-01 Hostile text inside a document does not steer the agent or the form'
 });
 
 test('EX-02 Integrity Guardian finds the planted problems in a proposed policy, with pages', async () => {
+  // The review compares the document with the application, so some application must exist (default cover 1.5 crore, 1,050 a month).
+  if (!(await input('field-full-name').inputValue())) await input('field-full-name').fill('Priya Sharma');
   await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
   await page.getByRole('button', { name: 'Sample proposed policy (with issues)' }).click();
   await expect(page.getByText(/4 pages, read in your browser/)).toBeVisible({ timeout: 30_000 });
