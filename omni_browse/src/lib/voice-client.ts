@@ -42,6 +42,7 @@ export type AgentEvent =
       usage?: { promptTokens?: number | null; completionTokens?: number | null };
     }
   | { type: 'policy_doc_ready'; ok: boolean; name?: string; pages?: number; passages?: number; error?: string }
+  | { type: 'agent_role'; role: 'cobrowse' | 'guardian'; name?: string }
   | { type: 'usage'; promptTokens?: number | null; completionTokens?: number | null }
   | { type: 'memory'; facts: string[]; summary: string; updated_at?: number | null }
   | { type: 'memory_updated'; added: number; facts: string[]; summary?: string | null }
@@ -231,6 +232,7 @@ export class VoiceAgentClient {
             case 'action':
             case 'action_verification':
             case 'usage':
+            case 'agent_role':
             case 'policy_doc_ready':
             case 'memory':
             case 'memory_updated':
@@ -374,6 +376,11 @@ export class VoiceAgentClient {
 
   clearPolicyDoc() {
     this.send('policy_doc_clear', {});
+  }
+
+  // Which agent answers: the co-browsing agent builds the application, Integrity Guardian reviews a policy.
+  setMode(mode: 'cobrowse' | 'guardian') {
+    this.send('set_mode', { mode });
   }
 
   setLanguage(lang: 'en' | 'hi' | 'mr') {

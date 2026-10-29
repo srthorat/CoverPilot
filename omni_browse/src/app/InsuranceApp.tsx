@@ -416,6 +416,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [mode, setMode] = useState<'cobrowse' | 'guardian'>('cobrowse');
   // On opening the page the customer chooses: a new policy (co-browse) or a review of a policy they already have.
   const [entry, setEntry] = useState<'choose' | 'done'>('choose');
+  // Two distinct agents on the server: the one that fills the application and the one that reviews a policy.
+  const [agentRole, setAgentRole] = useState<'cobrowse' | 'guardian'>('cobrowse');
+  const [agentName, setAgentName] = useState('OmniCB co-browsing agent');
+  const introducedModeRef = useRef<'cobrowse' | 'guardian' | null>(null);
   const [guardianReview, setGuardianReview] = useState<GuardianReviewState>({ status: 'idle', checks: [], history: [] });
   const [guardianSection, setGuardianSection] = useState(0);
   const [reviewedSections, setReviewedSections] = useState<number[]>([]);
@@ -1169,6 +1173,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         }
         break;
       }
+      case 'agent_role':
+        setAgentRole(ev.role);
+        setAgentName(ev.name || (ev.role === 'guardian' ? 'Integrity Guardian' : 'OmniCB co-browsing agent'));
+        break;
       case 'policy_doc_ready':
         setPolicyDoc((p) => (p ? { ...p, status: ev.ok ? 'sent' : 'error', error: ev.ok ? undefined : ev.error } : p));
         if (ev.ok)
@@ -2629,6 +2637,27 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStep, profile.fullName, baseSumAssured, selectedRiders, ciTier, totalMonthlyPayable, nomination.primaryName, nomination.primaryRelation, nomination.primaryShare]);
 
+  // The server runs a different agent per tab (own prompt, knowledge base and voice), so keep it matching the
+  // visible tab: on connect, and whenever the customer switches. A switch during a live session is introduced once.
+  useEffect(() => {
+    const agent = agentRef.current;
+    if (!isListeningVoice || !agent || !agent.isOpen) {
+      introducedModeRef.current = null;
+      return;
+    }
+    agent.setMode(mode);
+    if (introducedModeRef.current !== null && introducedModeRef.current !== mode) {
+      const line =
+        mode === 'guardian'
+          ? "I'm Integrity Guardian, the independent reviewer. I explain your policy document and flag anything worth querying. I never change your application."
+          : 'Back with the co-browsing agent. Tell me what to fill in next.';
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: line, time: stampNow() }]);
+      speakText(line, selectedLanguage);
+    }
+    introducedModeRef.current = mode;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, isListeningVoice]);
+
   // Refresh the picture every 45 s while a session is live, so it is never older than the agent's 90 s limit.
   const [shotTick, setShotTick] = useState(0);
   useEffect(() => {
@@ -2640,7 +2669,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Visual grounding: send Muse Spark a JPEG of the form area when the step changes while the agent is live.
   useEffect(() => {
     const el = formBodyRef.current;
-    if (!el || !isListeningVoice || isSharingPaused) return;
+    if (!el || !isListeningVoice || isSharingPaused || mode === 'guardian') return; // the reviewer never receives form pictures
     let cancelled = false;
     const step = activeStep;
     const t = setTimeout(async () => {
@@ -5113,16 +5142,16 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             {/* Header with Connection Status & Connect/Disconnect Button */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="size-9 rounded-xl bg-[#582be8] flex items-center justify-center text-white font-bold text-xs">
-                  OB
+                <div className={`size-9 rounded-xl flex items-center justify-center text-white font-bold text-xs ${mode === 'guardian' ? 'bg-teal-700' : 'bg-[#582be8]'}`}>
+                  {mode === 'guardian' ? 'IG' : 'OB'}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-[#111827]">OmniCB Co-Browse</h4>
+                  <h4 className="text-xs font-bold text-[#111827]" data-agent-role={agentRole}>{mode === 'guardian' ? 'Integrity Guardian' : 'OmniCB Co-Browse'}</h4>
                   <p className="text-[11px] text-slate-500 font-medium">
                     {isCoBrowsingConnected ? (
                       <span className="text-emerald-600 font-bold flex items-center gap-1">
                         <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Live voice & form sync</span>
+                        {mode === 'guardian' ? 'Live voice & document review' : 'Live voice & form sync'}</span>
                     ) : (
                       <span className="text-slate-400">Disconnected</span>
                     )}
