@@ -2629,6 +2629,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStep, profile.fullName, baseSumAssured, selectedRiders, ciTier, totalMonthlyPayable, nomination.primaryName, nomination.primaryRelation, nomination.primaryShare]);
 
+  // Refresh the picture every 45 s while a session is live, so it is never older than the agent's 90 s limit.
+  const [shotTick, setShotTick] = useState(0);
+  useEffect(() => {
+    if (!isListeningVoice) return;
+    const id = window.setInterval(() => setShotTick((n) => n + 1), 45_000);
+    return () => window.clearInterval(id);
+  }, [isListeningVoice]);
+
   // Visual grounding: send Muse Spark a JPEG of the form area when the step changes while the agent is live.
   useEffect(() => {
     const el = formBodyRef.current;
@@ -2659,7 +2667,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       cancelled = true;
       clearTimeout(t);
     };
-  }, [activeStep, isListeningVoice, isSharingPaused]);
+  }, [activeStep, isListeningVoice, isSharingPaused, shotTick, mode]);
 
   // The agent cursor is positioned in viewport pixels; a step change replaces the DOM under it.
   useEffect(() => {

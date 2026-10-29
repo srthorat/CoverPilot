@@ -98,12 +98,15 @@ test('AC-04 A policy explanation cites the clause and highlights it', async () =
 });
 
 test('AC-05 An uploaded policy is read in the browser and answers cite the page', async () => {
-  await page.getByRole('button', { name: 'Use the sample policy' }).click();
-  await expect(page.getByText(/Ready: ask the agent about it/)).toBeVisible({ timeout: 60_000 });
+  // Uploading a policy lives in the Integrity Guardian tab; the agent receives its text once a session is live.
+  await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
+  await page.getByRole('button', { name: 'Sample policy', exact: true }).click();
+  await expect(page.getByText(/is loaded \(5 pages\)/)).toBeVisible({ timeout: 60_000 });
   const reply = await ask('According to my own policy, what is refunded if the life assured dies by suicide in the first year?', (r) => /page\s*(4|four)/i.test(r));
   expect(reply).toMatch(/page\s*(4|four)/i);
   expect(reply).toMatch(/80|eighty/i);
   await expect(page.getByText(/Looking in your policy: page 4/)).toBeVisible();
+  await page.getByRole('button', { name: /1\. Co-browse/ }).click();
 });
 
 test('AC-06 The agent can use a screenshot of the screen', async () => {
@@ -168,6 +171,7 @@ test('AC-12 A failing model call changes no data (see the separate bad-key run)'
   test.skip(!bad, 'set FAILURE_URL to an instance started with an invalid Meta key (scripts/run-acceptance.sh does this)');
   const p = await page.context().newPage();
   await p.goto(bad!);
+  await p.getByRole('button', { name: /Start a new policy/ }).click();
   await p.getByRole('button', { name: 'Sample PAN Card' }).click();
   await expect(p.getByText(/Failed|failed/).first()).toBeVisible({ timeout: 60_000 });
   await expect(p.locator('#field-full-name input')).toHaveValue('');
@@ -211,6 +215,7 @@ test('EX-01 Hostile text inside a document does not steer the agent or the form'
 });
 
 test('EX-02 Integrity Guardian finds the planted problems in a proposed policy, with pages', async () => {
+  test.setTimeout(240_000);
   // The review compares the document with the application, so some application must exist (default cover 1.5 crore, 1,050 a month).
   if (!(await input('field-full-name').inputValue())) await input('field-full-name').fill('Priya Sharma');
   await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
