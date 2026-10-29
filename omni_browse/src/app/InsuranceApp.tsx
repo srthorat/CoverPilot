@@ -367,6 +367,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     screenState: () => unknown;
     activeStep: number;
   }>({ applyAction: () => {}, lang: 'en', screenState: () => ({}), activeStep: 1 });
+  // A step may only be left once it is valid; this holds what the customer was told when blocked.
+  const [stepNotice, setStepNotice] = useState<{ step: number; issues: string[] } | null>(null);
+  const stepGateRef = useRef<{ issues: Record<number, Array<{ id: string; msg: string }>>; maxReachable: number }>({
+    issues: {},
+    maxReachable: 1,
+  });
   const stampNow = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // Observation Timer & Focused Field Tracking
@@ -553,6 +559,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
     return {
       activeStep,
+      stepGate: {
+        furthestStepAllowed: stepGateRef.current.maxReachable,
+        missingOnThisStep: (stepGateRef.current.issues[activeStep] || []).map((i) => i.msg),
+      },
       focusedFieldId: currentFocusedField,
       checkout: { eSigned: esignValid, paid: paymentValid },
       termsDrawerOpen: showTermsDrawer,
@@ -759,7 +769,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     const applyOne = (action: Record<string, any>, title: string | undefined) => {
       if (action.type === 'nominate') {
         glideAgentCursorToElement('nomination-section', title || 'Configuring Nominee & Trust Protection', () => {
-          if (activeStep < 3) setActiveStep(3);
+          if (latestRef.current.activeStep < 3) goToStep(3);
           setNomination((prev) => {
             const next = {
               ...prev,
@@ -814,18 +824,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         });
       } else if (action.type === 'fill') {
         const value = String(action.value ?? '').trim();
-        const targets: Record<string, { el: string; apply: () => void }> = {
+        const targets: Record<string, { el: string; aim?: string; apply: () => void }> = {
           fullName: { el: 'field-full-name', apply: () => setProfile((p) => ({ ...p, fullName: value })) },
           dob: { el: 'field-dob', apply: () => setProfile((p) => ({ ...p, dob: value })) },
           annualIncome: {
             el: 'field-annual-income',
+            aim: 'select-annual-income',
             apply: () => setProfile((p) => ({ ...p, annualIncome: incomeRangeFor(value) || p.annualIncome })),
           },
-          pincode: { el: 'field-city', apply: () => setProfile((p) => ({ ...p, pincode: value })) },
-          city: { el: 'field-city', apply: () => setProfile((p) => ({ ...p, city: value })) },
+          pincode: { el: 'field-city', aim: 'input-pincode', apply: () => setProfile((p) => ({ ...p, pincode: value })) },
+          city: { el: 'field-city', aim: 'input-city', apply: () => setProfile((p) => ({ ...p, city: value })) },
         };
         const target = targets[action.field];
-        if (target && value) glideAgentCursorToElement(target.el, title || `Entering ${action.field}`, target.apply);
+        if (target && value) glideAgentCursorToElement(target.el, title || `Entering ${action.field}`, target.apply, target.aim);
       } else if (action.type === 'cover') {
         const v = String(action.value ?? '').toLowerCase().replace(/\s|₹|,/g, '');
         const tier = /^1(cr|crore|0000000)?$/.test(v) || v === '1cr' ? '1cr' : /1\.5|15000000|150/.test(v) ? '1.5cr' : /^2|20000000/.test(v) ? '2cr' : null;
@@ -835,8 +846,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       } else if (action.type === 'navigate') {
         const step = Math.min(5, Math.max(1, Number(action.step) || 1));
         glideAgentCursorToElement(`step-tab-${step}`, title || `Opening step ${step}`, () => {
-          setActiveStep(step);
-          formBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+          if (goToStep(step)) formBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         });
       } else if (action.type === 'ui') {
         if (action.action === 'open_terms') {
@@ -1748,7 +1758,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Policy Issuance
   const submitPolicyProposal = () => {
-    if (!esignValid || !paymentValid) return;
+    if (maxReachableStep < 5 || !esignValid || !paymentValid) return;
     const id = `NEXA-LIFE-2026-${Math.floor(100000 + Math.random() * 900000)}`;
     setProposalId(id);
     setPolicyIssued(true);
@@ -1790,9 +1800,31 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // Glide Agent Virtual Cursor smoothly across viewport to target element
   // Which step renders each clickable target, so the agent can switch screens before clicking.
+  // Move to a step only if every step before it is valid; otherwise stop at the first incomplete one
+  // and say what is missing. Going back is always allowed.
+  const goToStep = (target: number): boolean => {
+    const { issues, maxReachable } = stepGateRef.current;
+    if (target <= maxReachable) {
+      setStepNotice(null);
+      setActiveStep(target);
+      return true;
+    }
+    setActiveStep(maxReachable);
+    setStepNotice({ step: maxReachable, issues: issues[maxReachable].map((i) => i.msg) });
+    const first = issues[maxReachable][0];
+    if (first) {
+      window.setTimeout(() => {
+        const el = document.getElementById(first.id);
+        el?.scrollIntoView({ block: 'center' });
+        (el as HTMLElement | null)?.focus?.();
+      }, 120);
+    }
+    return false;
+  };
+
   const stepForElement = (elementId: string): number | null => {
     if (/^step-tab-/.test(elementId)) return null;
-    if (/^(field-|select-)/.test(elementId) && elementId !== 'field-section-45') return 1;
+    if (/^(field-|select-|input-)/.test(elementId) && elementId !== 'field-section-45') return 1;
     if (elementId === 'card-esign' || elementId === 'card-payment') return 5;
     if (/^(cover-tier-|card-)/.test(elementId) && elementId !== 'card-premium-summary') return 2;
     if (elementId === 'nomination-section') return 3;
@@ -1818,17 +1850,17 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Agent clicks run one at a time, in order: switch step if needed, wait for the element,
   // scroll it into view, measure it after layout settles, move the cursor, click, apply.
   const agentActionQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const glideAgentCursorToElement = (elementId: string, actionLabel: string, onArrival?: () => void) => {
+  const glideAgentCursorToElement = (elementId: string, actionLabel: string, onArrival?: () => void, aimId?: string) => {
     if (typeof window === 'undefined') return;
     agentActionQueueRef.current = agentActionQueueRef.current
-      .then(() => performAgentClick(elementId, actionLabel, onArrival))
+      .then(() => performAgentClick(elementId, actionLabel, onArrival, aimId))
       .catch((e) => console.warn('agent click failed', elementId, e));
   };
 
-  const performAgentClick = async (elementId: string, actionLabel: string, onArrival?: () => void) => {
+  const performAgentClick = async (elementId: string, actionLabel: string, onArrival?: () => void, aimId?: string) => {
     const step = stepForElement(elementId);
     if (step && latestRef.current.activeStep !== step) {
-      setActiveStep(step);
+      goToStep(step);
       await sleep(350); // let the new step render
     }
     const el = await waitForElement(elementId);
@@ -1837,11 +1869,24 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       onArrival?.();
       return;
     }
-    el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-    await sleep(450);
-    const rect = el.getBoundingClientRect();
-    const targetX = rect.left + Math.min(rect.width / 2, 160);
-    const targetY = rect.top + Math.min(rect.height / 2, 40);
+    // Aim at the control itself (the exact input or select), not the label block around it.
+    const aimEl: HTMLElement =
+      (aimId ? document.getElementById(aimId) : null) ||
+      (/^field-/.test(elementId) ? (el.querySelector('input:not([type=hidden]),select,textarea') as HTMLElement | null) : null) ||
+      el;
+    const isControl = aimEl !== el || /^(INPUT|SELECT|TEXTAREA)$/.test(aimEl.tagName);
+    aimEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    // Measure only once the element has stopped moving (smooth scroll and step changes shift it).
+    let rect = aimEl.getBoundingClientRect();
+    for (let i = 0; i < 20; i++) {
+      await sleep(80);
+      const next = aimEl.getBoundingClientRect();
+      const still = Math.abs(next.top - rect.top) < 0.5 && Math.abs(next.left - rect.left) < 0.5;
+      rect = next;
+      if (still && i >= 3) break;
+    }
+    const targetX = isControl ? rect.left + Math.min(rect.width / 2, 120) : rect.left + Math.min(rect.width / 2, 160);
+    const targetY = isControl ? rect.top + rect.height / 2 : rect.top + Math.min(rect.height / 2, 40);
     setSpotlightedElementId(elementId);
     setAgentCursor({ visible: true, x: targetX, y: targetY, clicking: false, label: 'OmniCB Agent (Screen Control Active)', actionDesc: actionLabel });
     await sleep(700); // cursor glide transition
@@ -1985,6 +2030,34 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const anyMinorNominee = allNominees.slice(1).some((n) => n.age < 18);
   const nomineeSummary = allNominees.map((n) => `${n.name} (${n.relation}, ${n.share}%)`).join(', ');
 
+  // Per-step validation. A step is complete only when every item below is clean.
+  const dobMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(profile.dob.trim());
+  const dobDate = dobMatch ? new Date(Number(dobMatch[3]), Number(dobMatch[2]) - 1, Number(dobMatch[1])) : null;
+  const dobReal = !!dobDate && dobDate.getDate() === Number(dobMatch![1]) && dobDate.getMonth() === Number(dobMatch![2]) - 1;
+  const applicantAge = dobReal && dobDate ? Math.floor((Date.now() - dobDate.getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
+  const stepIssues: Record<number, Array<{ id: string; msg: string }>> = {
+    1: [
+      ...(profile.fullName.trim().length < 2 ? [{ id: 'field-full-name', msg: 'Enter your full legal name.' }] : []),
+      ...(applicantAge === null ? [{ id: 'field-dob', msg: 'Enter your date of birth as DD/MM/YYYY.' }]
+        : applicantAge < 18 || applicantAge > 65 ? [{ id: 'field-dob', msg: 'This demo product covers ages 18 to 65.' }] : []),
+      ...(!profile.gender ? [{ id: 'field-gender', msg: 'Choose your gender.' }] : []),
+      ...(!profile.annualIncome ? [{ id: 'field-annual-income', msg: 'Enter your annual income.' }] : []),
+      ...(profile.isSmoker === null ? [{ id: 'field-smoking', msg: 'Say whether you use tobacco.' }] : []),
+      ...(!profile.city.trim() ? [{ id: 'field-city', msg: 'Enter your city.' }] : []),
+    ],
+    2: [],
+    3: [
+      ...(!nomination.primaryName.trim() ? [{ id: 'nomination-section', msg: 'Name your primary nominee.' }] : []),
+      ...(nomination.hasSecondaryNominee && !nomination.secondaryName.trim() ? [{ id: 'nomination-section', msg: 'Name the second nominee.' }] : []),
+      ...(nomination.hasSecondaryNominee && nomination.additionalNominees.some((n) => !n.name.trim()) ? [{ id: 'nomination-section', msg: 'Name every additional nominee.' }] : []),
+      ...(nomineeTotalShare !== 100 ? [{ id: 'nomination-section', msg: `Nominee shares add up to ${nomineeTotalShare}%; they must total 100%.` }] : []),
+      ...(anyMinorNominee && !nomination.appointeeName.trim() ? [{ id: 'nomination-section', msg: 'A nominee under 18 needs an adult appointee.' }] : []),
+    ],
+    4: [...(!underwriting.section45Consent ? [{ id: 'field-section-45', msg: 'Tick the Section 45 declaration.' }] : [])],
+  };
+  const maxReachableStep = [1, 2, 3, 4].find((n) => stepIssues[n].length > 0) ?? 5;
+  stepGateRef.current = { issues: stepIssues, maxReachable: maxReachableStep };
+
   // What the signature covers: change any of it after signing and the signature no longer counts.
   const proposalFingerprint = JSON.stringify({
     name: profile.fullName,
@@ -2114,6 +2187,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Keep what the long-lived agent callbacks need current (every render).
   useEffect(() => {
     latestRef.current = { applyAction: applyAgentAction, lang: selectedLanguage, screenState: getLiveScreenSnapshot, activeStep };
+    // Dev only: lets a browser test drive the agent cursor without a live voice session.
+    if (process.env.NODE_ENV !== 'production') (window as any).__coverpilot = latestRef;
     voicePersonaRef.current = selectedVoicePersona;
     accentRef.current = englishAccent;
     devRef.current = showDevPanel;
@@ -2369,7 +2444,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             {/* Step 1 */}
             <button
               id="step-tab-1"
-              onClick={() => setActiveStep(1)}
+              onClick={() => goToStep(1)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 1 ? 'text-[#582be8] font-bold' : activeStep > 1 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
@@ -2386,7 +2461,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             {/* Step 2 */}
             <button
               id="step-tab-2"
-              onClick={() => setActiveStep(2)}
+              onClick={() => goToStep(2)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 2 ? 'text-[#582be8] font-bold' : activeStep > 2 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
@@ -2403,7 +2478,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             {/* Step 3 */}
             <button
               id="step-tab-3"
-              onClick={() => setActiveStep(3)}
+              onClick={() => goToStep(3)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 3 ? 'text-[#582be8] font-bold' : activeStep > 3 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
@@ -2420,7 +2495,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             {/* Step 4 */}
             <button
               id="step-tab-4"
-              onClick={() => setActiveStep(4)}
+              onClick={() => goToStep(4)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 4 ? 'text-[#582be8] font-bold' : activeStep > 4 ? 'text-emerald-700 font-semibold' : 'text-slate-400'
               }`}
@@ -2437,7 +2512,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             {/* Step 5 */}
             <button
               id="step-tab-5"
-              onClick={() => setActiveStep(5)}
+              onClick={() => goToStep(5)}
               className={`flex items-center gap-2 transition-all whitespace-nowrap ${
                 activeStep === 5 ? 'text-[#582be8] font-bold' : 'text-slate-400'
               }`}
@@ -2502,6 +2577,17 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_clamp(340px,30%,440px)] gap-3">
         {/* Form Body (8 Columns): scrolls on its own */}
         <div ref={formBodyRef} className="@container min-h-0 overflow-y-auto pr-2 flex flex-col gap-4">
+
+          {stepNotice && stepNotice.step === activeStep && stepIssues[activeStep]?.length > 0 && (
+            <div role="alert" className="shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <strong>Finish this step before moving on:</strong>
+              <ul className="list-disc pl-4 mt-1">
+                {stepIssues[activeStep].map((i) => (
+                  <li key={i.msg}>{i.msg}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* STEP 1: Blank Profile (Click any field -> auto-played regional guidance!) */}
           {activeStep === 1 && (
@@ -2862,7 +2948,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                           : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                       }`}
                     >
-                      ✓ Non-Smoker (20% Discount)
+                      {profile.isSmoker === false ? '✓ ' : ''}Non-Smoker (20% Discount)
                     </button>
                     <button
                       type="button"
@@ -2898,6 +2984,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input
+                      id="input-city"
                       type="text"
                       value={profile.city}
                       onFocus={() => handleFieldClickOrFocus('field-city')}
@@ -2906,6 +2993,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 font-medium focus:outline-none focus:border-[#582be8]"
                     />
                     <input
+                      id="input-pincode"
                       type="text"
                       value={profile.pincode}
                       onFocus={() => handleFieldClickOrFocus('field-city')}
@@ -2973,16 +3061,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               <div className="flex justify-end pt-1.5 border-t border-slate-100">
                 <button
                   onClick={() => {
-                    if (!profile.fullName) {
-                      triggerFieldGuidance('field-full-name');
-                      return;
+                    if (goToStep(2)) setIdleSeconds(0);
+                    else {
+                      const first = stepIssues[1][0];
+                      if (first) triggerFieldGuidance(first.id);
                     }
-                    if (!profile.dob) {
-                      triggerFieldGuidance('field-dob');
-                      return;
-                    }
-                    setActiveStep(2);
-                    setIdleSeconds(0);
                   }}
                   className="px-5 py-2 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
@@ -3332,8 +3415,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 </button>
                 <button
                   onClick={() => {
-                    setActiveStep(3);
-                    setIdleSeconds(0);
+                    if (goToStep(3)) setIdleSeconds(0);
                   }}
                   className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
@@ -3708,14 +3790,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   ← Back to Step 2: Benefit Ladders
                 </button>
                 <button
-                  disabled={nomineeTotalShare !== 100}
-                  title={nomineeTotalShare !== 100 ? 'Nominee shares must total 100%' : undefined}
                   onClick={() => {
-                    if (!nomination.primaryName) {
-                      setNomination(prev => ({ ...prev, primaryName: 'Priya Ramesh Thorat' }));
-                    }
-                    setActiveStep(4);
-                    setIdleSeconds(0);
+                    if (goToStep(4)) setIdleSeconds(0);
                   }}
                   className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
@@ -3811,11 +3887,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 </button>
                 <button
                   onClick={() => {
-                    if (!underwriting.section45Consent) {
-                      triggerFieldGuidance('field-section-45');
-                      return;
-                    }
-                    setActiveStep(5);
+                    if (!goToStep(5)) triggerFieldGuidance('field-section-45');
                   }}
                   className="px-6 py-3 rounded-xl bg-[#582be8] hover:bg-[#481dd4] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
                 >
@@ -4073,7 +4145,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <span className="text-2xl font-bold text-[#582be8] tabular-nums">₹{totalMonthlyPayable}</span>
               </span>
               <span className="text-[11px] text-emerald-700">
-                saves <span className="font-bold tabular-nums">₹{annualTaxSavings}</span>/yr
+                est. tax saving <span className="font-bold tabular-nums">₹{annualTaxSavings}</span>/yr
               </span>
             </div>
             {showPremiumDetail && (<>
