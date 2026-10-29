@@ -1,6 +1,7 @@
 'use client';
 
 import { blurCopy } from '@/lib/kyc-blur';
+import { extractPolicyPages, type PolicyPage } from '@/lib/pdf-text';
 import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
 import React, { useState, useEffect, useRef } from 'react';
@@ -403,6 +404,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       };
     });
   };
+  // The customer's own policy or CIS: read and masked in this browser; the agent gets only matching passages.
+  const [policyDoc, setPolicyDoc] = useState<{ name: string; pages: PolicyPage[]; masked: number; status: 'reading' | 'ready' | 'sent' | 'error'; error?: string } | null>(null);
+  const policyInputRef = useRef<HTMLInputElement | null>(null);
   const [docDiscrepancies, setDocDiscrepancies] = useState<DocDiscrepancy[]>([]);
   // Pause and resume: every proposal in progress has its own code, saved in this browser only.
   const [draftId, setDraftId] = useState('');
@@ -1042,6 +1046,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         if (!ev.final && ev.text) setVoiceTranscriptLive(ev.text);
         break;
       case 'user_turn':
+        if (ev.kbChunks?.some((c) => c.doc)) {
+          const src = ev.kbChunks.filter((c) => c.doc).map((c) => `${c.label.replace('Your policy › ', '')}: "${(c.excerpt || '').replace(/\s+/g, ' ').slice(0, 110)}…"`).join('  •  ');
+          setChatMessages((prev) => [...prev, { sender: 'agent', text: `Looking in your policy: ${src}`, time: stampNow() }]);
+        }
         setVoiceTranscriptLive('');
         setVoiceTelemetry((t) => ({ ...t, asrTurnMs: ev.asrTurnMs }));
         setTurns((prev) => [
@@ -1127,6 +1135,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         }
         break;
       }
+      case 'policy_doc_ready':
+        setPolicyDoc((p) => (p ? { ...p, status: ev.ok ? 'sent' : 'error', error: ev.ok ? undefined : ev.error } : p));
+        if (ev.ok)
+          setChatMessages((prev) => [...prev, { sender: 'agent', text: `Your policy "${ev.name}" is loaded (${ev.pages} pages). Ask me about it and I will tell you which page the answer is on.`, time: stampNow() }]);
+        break;
       case 'usage':
         recordModel(voiceTelemetryRef.current.sparkModel || 'Muse Spark', 'agent', undefined, ev);
         break;
@@ -1473,6 +1486,33 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     recordModel(data.telemetry?.model, 'ID locator', data.telemetry?.totalMs ?? 0);
     return { regions, ms: data.telemetry?.totalMs ?? 0 };
   };
+
+  const loadPolicyFile = async (file: File) => {
+    setPolicyDoc({ name: file.name, pages: [], masked: 0, status: 'reading' });
+    try {
+      const { pages, masked } = await extractPolicyPages(file);
+      setPolicyDoc({ name: file.name, pages, masked, status: 'ready' });
+    } catch (e: any) {
+      setPolicyDoc({ name: file.name, pages: [], masked: 0, status: 'error', error: e?.message || String(e) });
+    }
+  };
+  const loadSamplePolicy = async () => {
+    try {
+      const res = await fetch('/samples/sample-policy.pdf');
+      await loadPolicyFile(new File([await res.blob()], 'sample-nexasure-policy.pdf', { type: 'application/pdf' }));
+    } catch (e: any) {
+      setPolicyDoc({ name: 'sample policy', pages: [], masked: 0, status: 'error', error: e?.message || String(e) });
+    }
+  };
+  // Share the text with the agent once a session is live (and again after a reconnect).
+  useEffect(() => {
+    if (policyDoc?.status !== 'ready' || !isListeningVoice || !agentRef.current) return;
+    try {
+      agentRef.current.sendPolicyDoc(policyDoc.name, policyDoc.pages);
+    } catch (e: any) {
+      setPolicyDoc((p) => p && { ...p, status: 'error', error: e?.message || String(e) });
+    }
+  }, [policyDoc?.status, policyDoc?.name, isListeningVoice]);
 
   const requestApproval = (key: PendingApproval['key'], label: string, undo: () => void) => {
     setPendingApprovals((prev) => (prev.some((a) => a.key === key) ? prev : [...prev, { key, label, undo }]));
@@ -3074,6 +3114,57 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   }}
                 />
                 <span className="text-slate-500">Your original is never uploaded.</span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 -mt-1">
+                <span className="font-semibold text-slate-700">Your policy or CIS (PDF):</span>
+                <button
+                  type="button"
+                  onClick={() => policyInputRef.current?.click()}
+                  className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-[11px]"
+                >
+                  Choose a PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={loadSamplePolicy}
+                  className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-[11px]"
+                >
+                  Use the sample policy
+                </button>
+                <input
+                  ref={policyInputRef}
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) loadPolicyFile(file);
+                  }}
+                />
+                {policyDoc && (
+                  <span className={policyDoc.status === 'error' ? 'text-red-600' : 'text-slate-500'}>
+                    {policyDoc.status === 'reading'
+                      ? 'Reading the PDF in your browser…'
+                      : policyDoc.status === 'error'
+                      ? policyDoc.error
+                      : `${policyDoc.name}: ${policyDoc.pages.length} pages${policyDoc.masked ? `, ${policyDoc.masked} personal numbers masked` : ''}. ${
+                          policyDoc.status === 'sent' ? 'Ready: ask the agent about it.' : 'Start a session to ask about it.'
+                        }`}
+                    {policyDoc.status !== 'reading' && (
+                      <button
+                        onClick={() => {
+                          setPolicyDoc(null);
+                          agentRef.current?.clearPolicyDoc();
+                        }}
+                        className="ml-2 underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </span>
+                )}
               </div>
 
               {kycRedaction && (

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -40,7 +41,7 @@ from pipecat.transports.base_transport import BaseTransport, TransportParams
 from coverpilot import cases
 from coverpilot.config import Settings
 from coverpilot.google_tts import GoogleRestTTSService
-from coverpilot.knowledge import KnowledgeBase
+from coverpilot.knowledge import Chunk, KnowledgeBase
 from coverpilot.memory import MemoryStore, MemoryWriter
 from coverpilot.meta_stt import MetaRealtimeSTTService
 from coverpilot.processors import AckProcessor, ActionMarkerFilter, ScreenStateInjector, WonderVerifier
@@ -128,6 +129,35 @@ def build_processors(settings: Settings, session: SessionState, *, sample_rate_i
     injector = ScreenStateInjector(session, settings, kb=KNOWLEDGE)
     ack = AckProcessor(session, settings, downstream=actions)
     return stt, llm, tts, context, aggregators, injector, ack, actions, verifier
+
+
+def load_policy_document(session: SessionState, raw: str) -> dict:
+    """Index an uploaded policy (JSON {name, pages: [{page, text}]}) for this session only."""
+    try:
+        doc = json.loads(raw)
+        pages = [p for p in doc.get("pages", []) if isinstance(p, dict) and isinstance(p.get("text"), str)][:150]
+        name = str(doc.get("name") or "policy.pdf")[:80]
+    except Exception:
+        return {"ok": False, "error": "could not read the document"}
+    chunks: list[Chunk] = []
+    for p in pages:
+        page = int(p.get("page") or 0)
+        text = re.sub(r"[ \t]+", " ", p["text"]).strip()
+        # About 900 characters per passage, cut at sentence ends, so a retrieved passage stays short.
+        buf = ""
+        for sentence in re.split(r"(?<=[.;:])\s+", text):
+            if buf and len(buf) + len(sentence) > 900:
+                chunks.append(Chunk(source=f"Your policy ({name})", heading=f"page {page}", text=buf.strip()))
+                buf = ""
+            buf += sentence + " "
+        if buf.strip():
+            chunks.append(Chunk(source=f"Your policy ({name})", heading=f"page {page}", text=buf.strip()))
+    if not chunks:
+        return {"ok": False, "error": "the document had no readable text"}
+    session.policy_doc = KnowledgeBase.from_chunks(chunks)
+    session.policy_name = name
+    logger.info(f"[policy] loaded {name}: {len(pages)} pages, {len(chunks)} passages (kept in memory only)")
+    return {"ok": True, "name": name, "pages": len(pages), "passages": len(chunks)}
 
 
 def load_customer_memory(session: SessionState, customer_id: str | None) -> dict:
@@ -225,6 +255,22 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
                             session.set_screenshot(url)
                     elif len(session.screenshot_chunks) > 3:
                         session.screenshot_chunks.pop(next(iter(session.screenshot_chunks)))
+            elif kind == "policy_doc_chunk":
+                # The customer's uploaded policy arrives as text already extracted in the browser, with
+                # identity-number patterns masked there, in 64 KB pieces: {id, index, total, data}.
+                sid, idx, total, part = str(data.get("id") or ""), int(data.get("index", -1)), int(data.get("total", 0)), data.get("data")
+                if sid and 0 <= idx < total <= 40 and isinstance(part, str) and len(part) <= 65536:
+                    entry = session.policy_chunks.setdefault(sid, {"total": total, "parts": {}})
+                    entry["parts"][idx] = part
+                    if len(entry["parts"]) == total:
+                        raw = "".join(entry["parts"][i] for i in range(total))
+                        session.policy_chunks.clear()
+                        info = load_policy_document(session, raw)
+                        await rtvi_proc.send_server_message({"type": "policy_doc_ready", **info})
+                    elif len(session.policy_chunks) > 2:
+                        session.policy_chunks.pop(next(iter(session.policy_chunks)))
+            elif kind == "policy_doc_clear":
+                session.policy_doc, session.policy_name = None, ""
             elif kind == "interrupt":
                 await task.queue_frames([InterruptionWorkerFrame()])
             elif kind == "text":

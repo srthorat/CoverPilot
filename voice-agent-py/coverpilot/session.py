@@ -48,6 +48,9 @@ class SessionState:
     turn_source: str = "voice"  # "voice" or "text" for the next user turn
     screenshot_chunks: dict[str, Any] = field(default_factory=dict)  # id -> {total, parts}
     last_kb_chunks: list[dict] = field(default_factory=list)  # [{label, score}] for current turn
+    policy_doc: Any = None  # KnowledgeBase over the customer's uploaded policy pages (in memory only)
+    policy_name: str = ""
+    policy_chunks: dict[str, Any] = field(default_factory=dict)  # id -> {total, parts} while a document arrives
 
     def set_screenshot(self, data_url: str) -> None:
         self.screenshot_data_url = data_url

@@ -41,6 +41,7 @@ export type AgentEvent =
       ms?: number;
       usage?: { promptTokens?: number | null; completionTokens?: number | null };
     }
+  | { type: 'policy_doc_ready'; ok: boolean; name?: string; pages?: number; passages?: number; error?: string }
   | { type: 'usage'; promptTokens?: number | null; completionTokens?: number | null }
   | { type: 'memory'; facts: string[]; summary: string; updated_at?: number | null }
   | { type: 'memory_updated'; added: number; facts: string[]; summary?: string | null }
@@ -70,6 +71,8 @@ export interface KbChunk {
   label: string;
   score: number;
   terms?: string[];
+  doc?: boolean; // from the customer's uploaded policy rather than the built-in knowledge base
+  excerpt?: string;
 }
 
 export interface AgentTelemetry {
@@ -228,6 +231,7 @@ export class VoiceAgentClient {
             case 'action':
             case 'action_verification':
             case 'usage':
+            case 'policy_doc_ready':
             case 'memory':
             case 'memory_updated':
             case 'interrupt':
@@ -355,6 +359,21 @@ export class VoiceAgentClient {
     for (let i = 0; i < total; i++) {
       this.send('screenshot_chunk', { id, index: i, total, data: dataUrl.slice(i * SCREENSHOT_CHUNK_CHARS, (i + 1) * SCREENSHOT_CHUNK_CHARS) });
     }
+  }
+
+  // Hands the agent the text of the customer's policy (already extracted and masked in the browser).
+  // Characters can take 3 bytes in a data-channel message, so pieces are kept small.
+  sendPolicyDoc(name: string, pages: Array<{ page: number; text: string }>) {
+    const raw = JSON.stringify({ name, pages });
+    const size = 15_000;
+    const total = Math.ceil(raw.length / size);
+    if (total > 40) throw new Error('The document is too long to share with the assistant.');
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    for (let i = 0; i < total; i++) this.send('policy_doc_chunk', { id, index: i, total, data: raw.slice(i * size, (i + 1) * size) });
+  }
+
+  clearPolicyDoc() {
+    this.send('policy_doc_clear', {});
   }
 
   setLanguage(lang: 'en' | 'hi' | 'mr') {

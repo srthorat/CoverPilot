@@ -118,6 +118,14 @@ class KnowledgeBase:
         self._load(directory)
         self._index()
 
+    @classmethod
+    def from_chunks(cls, chunks: list["Chunk"]) -> "KnowledgeBase":
+        """An index over chunks that are not files, such as the pages of a customer's uploaded policy."""
+        kb = cls.__new__(cls)
+        kb.chunks = list(chunks)
+        kb._index()
+        return kb
+
     # ----------------------------------------------------------- loading
     def _load(self, directory: Path) -> None:
         if not directory.exists():
