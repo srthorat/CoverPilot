@@ -21,12 +21,12 @@ Digital term life insurance conversion suffers from a **78% drop-off rate** in I
 | **🪜 Complex Living Benefit Ladders** | 3-tier Critical Illness cover (Silver ₹10L / Gold ₹25L / Platinum ₹50L), ATPD 100-month salary replacement ladder, and Life Stage Cover Escalator. |
 | **🛡️ Nomination & MWPA 1874 Trust Shield** | Nominee split, minor-appointee rules and the Section 6 Married Women's Property Act creditor shield, explained by Muse Spark and **verified by Meta Muse Wonder** after every applied form action (approve / amend / reject, spoken back to the customer). |
 | **⚖️ Statutory Terms & Conditions Drawer** | Interactive slide-over drawer with 8 IRDAI clauses (Section 45 incontestability, 30-day grace, 30-day free-look 100% refund, suicide 80% refund, 99.1% CSR). |
-| **🪪 1-Click KYC with a real PII shield** | **Meta SAM 3.1** locates the photo, the 12-digit Aadhaar number and the QR code (one text-prompted request per concept, pixel masks returned); the **browser pixelates those regions**; only the redacted image goes to **Muse Spark** for OCR, so the model that reads the document never sees the ID. Results for the sample cards are pre-computed at server start. |
+| **🪪 1-Click KYC with a real PII shield** | **Meta SAM 3.1** locates the photo, signature, QR code and the 12-digit Aadhaar number (one text-prompted request per concept, pixel masks returned). SAM cannot find small printed IDs, so for the PAN number, UAN and bank account number the browser blurs a copy until the text is unreadable and **Muse Spark** locates the fields from the layout alone. The **browser pixelates all of those regions** on the sharp image, and only the redacted image goes to **Muse Spark** for OCR, so the model that reads the document never sees the photo, signature or any ID number. Name and date of birth stay readable on purpose, because the form is filled from them. If the reader can still return a full ID, the app warns. Results for SAM on the sample cards are pre-computed at server start. |
 | **💰 "What-If" Dual Tax & Net Cost Engine** | Real-time calculation of statutory deductions under Section 80C (Life Cover) and Section 80D (Health/Critical Illness). |
 | **ℹ️ "Why Does ACKO Ask This?"** | Contextual explainer chips next to sensitive inputs explaining underwriting risk rationale in layman's terms with statutory citations. |
 | **📜 Application Guardian Audit Certificate** | Downloadable compliance certificate (`.json`) with an independent auditor's narrative written by **Meta Muse Wonder** from the certificate payload. |
 | **🖼️ Policy summary card** | Personalised policy card rendered by **Meta Muse Image 1.0**, pre-generated in the background on the last step so it is ready at issuance. |
-| **💼 Income proof OCR** | Sample salary slip read by Muse Spark; annual income autofilled, bank account and UAN masked server-side. |
+| **💼 Income proof OCR** | Sample salary slip goes through the same shield (PAN, UAN and bank account number pixelated first), then is read by Muse Spark; annual income is autofilled. |
 
 ---
 
@@ -78,8 +78,9 @@ For the earlier design notes see [coverpilot_video_understanding_architecture.md
 |---|---|---|
 | **Muse Voice Transcribe** `muse-voice-transcribe-1.0` | Realtime speech-to-text, server-side endpointing, Hindi / Marathi / English language bias | `server/processors.mjs` → `MetaRealtimeSTT` |
 | **Muse Spark 1.3** `muse-spark-1.3` | Streamed conversational reasoning, form actions, KYC document OCR (image input) | `server/processors.mjs` → `MetaSparkLLM`, `src/app/api/ocr/route.ts` |
-| **SAM 3.1** `sam-3.1` | Text-prompted PII region detection on ID cards (boxes + masks) before OCR; cached and warmed at boot | `src/app/api/sam/route.ts`, warm-up in `server.mjs` |
+| **SAM 3.1** `sam-3.1` | Text-prompted PII region detection on ID cards (photo, signature, QR code, Aadhaar number; boxes + masks) before OCR; cached and warmed at boot | `src/app/api/sam/route.ts`, warm-up in `server.mjs` |
 | **Muse Wonder 1.0** `muse-wonder-1.0` | Asynchronous compliance verifier for every applied form action (4–9 s, off the spoken path); auditor's narrative for the certificate | `server/processors.mjs` → `WonderVerifier`, `src/app/api/audit/route.ts` |
+| **Muse Spark** (ID locator) | Finds the PAN number, UAN and bank account number on a blurred copy of the document (it never sees the numbers); the boxes are padded by the measured error before the browser pixelates them | `src/app/api/locate-ids/route.ts` |
 | **Muse Image 1.0** `muse-image-1.0` | Policy summary card at issuance (pre-generated on the last step, ~15 s, cached); also generated the sample-card portrait and signature | `src/app/api/policy-card/route.ts`, `public/samples/` |
 
 All five Model API models are therefore live in the product. Muse Spark Open and Muse Glimmer (open weights) are on the roadmap only; Spark's native tool calling was evaluated and found inconsistent (one of two answers skipped the call), so form actions use a strict `<<ACTION>>` JSON marker instead. Muse Spark Open and Muse Glimmer are open-weights downloads, not Model API endpoints.

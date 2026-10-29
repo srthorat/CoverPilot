@@ -354,7 +354,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [kycSampleCard, setKycSampleCard] = useState<'pan' | 'aadhaar' | null>(null);
   // SAM 3.1 PII shield: regions found, the locally redacted image, and timings
   const [kycRedaction, setKycRedaction] = useState<{
-    type: 'pan' | 'aadhaar';
+    type: 'pan' | 'aadhaar' | 'salary-slip';
     imageUrl: string;
     width: number;
     height: number;
@@ -362,6 +362,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     redactedDataUrl: string | null;
     samMs: number | null;
     samCached: boolean;
+    locateMs: number | null;
     ocrMs: number | null;
     status: string;
   } | null>(null);
@@ -1218,6 +1219,55 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     return canvas.toDataURL('image/png');
   };
 
+  const loadSampleImage = (url: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('could not load the sample image'));
+      i.src = url;
+    });
+
+  // Printed IDs are too small for SAM 3.1. Blur a copy until the text is unreadable (the layout
+  // survives) and ask Muse Spark where the identifiers are; the sharp image never leaves the page.
+  const blurForLocating = (img: HTMLImageElement): string => {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const small = document.createElement('canvas');
+    small.width = 100;
+    small.height = Math.max(1, Math.round((100 * h) / w));
+    const sctx = small.getContext('2d')!;
+    sctx.imageSmoothingQuality = 'high';
+    sctx.drawImage(img, 0, 0, small.width, small.height);
+    const big = document.createElement('canvas');
+    big.width = w;
+    big.height = h;
+    const bctx = big.getContext('2d')!;
+    bctx.imageSmoothingEnabled = true;
+    bctx.imageSmoothingQuality = 'high';
+    bctx.drawImage(small, 0, 0, w, h);
+    return big.toDataURL('image/png');
+  };
+
+  const locateTextIds = async (type: 'pan' | 'salary-slip', img: HTMLImageElement): Promise<{ regions: KycRegion[]; ms: number }> => {
+    const res = await fetch('/api/locate-ids', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documentType: type, blurredDataUrl: blurForLocating(img) }),
+    });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data.regions)) throw new Error(data.error || `Locate HTTP ${res.status}`);
+    const W = img.naturalWidth;
+    const H = img.naturalHeight;
+    const regions: KycRegion[] = data.regions.map((r: { concept: string; box: { left: number; top: number; right: number; bottom: number } }) => ({
+      concept: r.concept,
+      box: { left: r.box.left * W, top: r.box.top * H, right: r.box.right * W, bottom: r.box.bottom * H },
+      confidence: null,
+      masks: [],
+      members: 1,
+    }));
+    return { regions, ms: data.telemetry?.totalMs ?? 0 };
+  };
+
   // 1-click KYC: SAM 3.1 locates PII -> browser pixelates it -> only the redacted image
   // goes to Muse Spark for OCR. Two Meta models, and the reader never sees the ID.
   // Income proof: Muse Spark reads the sample salary slip; account identifiers are masked server-side.
@@ -1225,10 +1275,20 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     playChime();
     setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? 'Reading the sample salary slip with Meta Muse Spark for income proof…' : 'Reading your salary slip for income proof…', time: stampNow() }]);
     try {
+      const slipUrl = '/samples/sample-salary-slip.png';
+      setKycRedaction({ type: 'salary-slip', imageUrl: slipUrl, width: 1000, height: 630, regions: [], redactedDataUrl: null, samMs: null, samCached: false, locateMs: null, ocrMs: null, status: 'Locating ID numbers on a blurred copy…' });
+      const slipImg = await loadSampleImage(slipUrl);
+      const located = await locateTextIds('salary-slip', slipImg);
+      const slipRedacted = pixelateRegions(slipImg, located.regions);
+      setKycRedaction((prev) => prev && { ...prev, regions: located.regions, redactedDataUrl: slipRedacted, locateMs: located.ms, status: 'Pixelated in your browser. Sending redacted image to Muse Spark…' });
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? `Muse Spark located ${located.regions.length} identifiers on a blurred copy (${located.ms} ms): ${located.regions.map((r) => r.concept).join(', ')}.` : `Hidden on your device before reading: ${located.regions.map((r) => r.concept).join(', ')}.`, time: stampNow() }]);
       const t0 = performance.now();
-      const res = await fetch('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentType: 'salary-slip' }) });
+      const res = await fetch('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentType: 'salary-slip', imageDataUrl: slipRedacted }) });
       const data = await res.json();
       if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
+      const slipLeaks: string[] = Array.isArray(data.redactionLeaks) ? data.redactionLeaks : [];
+      setKycRedaction((prev) => prev && { ...prev, ocrMs: Math.round(performance.now() - t0), status: slipLeaks.length ? `Warning: ${slipLeaks.join(', ')} still readable after redaction` : 'Done' });
+      if (slipLeaks.length) setChatMessages((prev) => [...prev, { sender: 'agent', text: `Warning: the shield missed the ${slipLeaks.join(', ')}; it was still readable in the redacted image.`, time: stampNow() }]);
       const f = data.fields as { fullName: string | null; employerName: string | null; monthlyGross: string | null; annualIncome: string | null; payPeriod: string | null; bankAccountMasked: string | null };
       const ms = Math.round(performance.now() - t0);
       setChatMessages((prev) => [
@@ -1246,6 +1306,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         });
       }
     } catch (e: any) {
+      setKycRedaction((prev) => prev && { ...prev, status: `Failed: ${e?.message || e}` });
       setChatMessages((prev) => [...prev, { sender: 'agent', text: `Income proof OCR failed (Meta API, no fallback): ${e?.message || e}`, time: stampNow() }]);
     }
   };
@@ -1265,6 +1326,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       redactedDataUrl: null,
       samMs: null,
       samCached: false,
+      locateMs: null,
       ocrMs: null,
       status: 'SAM 3.1 locating PII regions…',
     });
@@ -1280,7 +1342,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       });
       const sam = await samRes.json();
       if (!samRes.ok || !Array.isArray(sam.regions)) throw new Error(sam.error || `SAM HTTP ${samRes.status}`);
-      const regions: KycRegion[] = sam.regions;
+      const regions: KycRegion[] = [...sam.regions];
 
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const i = new Image();
@@ -1288,6 +1350,13 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         i.onerror = () => reject(new Error('could not load the sample image'));
         i.src = sam.imageUrl || imageUrl;
       });
+      let locateMs: number | null = null;
+      if (type === 'pan') {
+        setKycRedaction((prev) => prev && { ...prev, status: 'Locating the PAN number on a blurred copy…' });
+        const located = await locateTextIds('pan', img);
+        regions.push(...located.regions);
+        locateMs = located.ms;
+      }
       const redactedDataUrl = pixelateRegions(img, regions);
       const samMs = sam.telemetry?.totalMs ?? null;
       const samCached = Boolean(sam.telemetry?.cached);
@@ -1301,6 +1370,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           redactedDataUrl,
           samMs,
           samCached,
+          locateMs,
           status: 'Pixelated in your browser. Sending redacted image to Muse Spark…',
         }
       );
@@ -1325,7 +1395,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const data = await res.json();
       if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
       const ocrMs = Math.round(performance.now() - t0);
-      setKycRedaction((prev) => prev && { ...prev, ocrMs, status: 'Done' });
+      const leaks: string[] = Array.isArray(data.redactionLeaks) ? data.redactionLeaks : [];
+      setKycRedaction((prev) => prev && { ...prev, ocrMs, status: leaks.length ? `Warning: ${leaks.join(', ')} still readable after redaction` : 'Done' });
+      if (leaks.length) setChatMessages((prev) => [...prev, { sender: 'agent', text: `Warning: the shield missed the ${leaks.join(', ')}; it was still readable in the redacted image.`, time: stampNow() }]);
       const f = data.fields as {
         fullName: string | null;
         dob: string | null;
@@ -1353,8 +1425,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ]);
       const voice =
         selectedLanguage === 'hi'
-          ? `सैम ३.१ ने आपके ${type === 'pan' ? 'पैन' : 'आधार'} कार्ड की निजी जानकारी छिपा दी और म्यूज़ स्पार्क ने बाकी विवरण पढ़ लिया है। मैं फॉर्म भर रहा हूँ।`
-          : `SAM 3.1 masked the private regions of your ${label} card and Muse Spark read the rest${f.fullName ? `for ${f.fullName}` : ''}. Populating the form now.`;
+          ? `आपके ${type === 'pan' ? 'पैन' : 'आधार'} कार्ड की निजी जानकारी आपके डिवाइस पर छिपा दी गई और म्यूज़ स्पार्क ने बाकी विवरण पढ़ लिया है। मैं फॉर्म भर रहा हूँ।`
+          : `The private regions of your ${label} card were hidden on your device and Muse Spark read the rest${f.fullName ? ` for ${f.fullName}` : ''}. Populating the form now.`;
       speakText(voice, selectedLanguage);
       const gender = f.gender ? (/^m/i.test(f.gender) ? 'Male' : /^f/i.test(f.gender) ? 'Female' : '') : '';
       glideAgentCursorToElement(type === 'pan' ? 'field-full-name' : 'field-pincode', `Populate ${label} OCR fields`, () => {
@@ -2320,7 +2392,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         Private parts hidden before reading</span>
                     </div>
                     <p className="text-[11px] text-slate-600">
-                      Photos, signatures, QR codes and Aadhaar numbers are located and pixelated on your device before the image is read. Other printed text, such as a PAN, UAN or account number, is still read and then masked in the results.
+                      Photos, signatures, QR codes and ID numbers (Aadhaar, PAN, UAN, bank account) are located and pixelated on your device before the image is read. Your name and date of birth stay readable so the form can be filled.
                     </p>
                   </div>
                 </div>
@@ -2355,10 +2427,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               {kycRedaction && (
                 <div className="p-3 rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                    <span className="font-bold"> Privacy shield • {kycRedaction.type.toUpperCase()}</span>
+                    <span className="font-bold"> Privacy shield • {kycRedaction.type.replace('-', ' ').toUpperCase()}</span>
                     <span className="text-slate-500">
                       {kycRedaction.status}
                       {showDevPanel && kycRedaction.samMs !== null ? ` • SAM 3.1 ${kycRedaction.samMs} ms${kycRedaction.samCached ? '(cached)' : ''}` : ''}
+                      {showDevPanel && kycRedaction.locateMs !== null ? ` • Spark locate ${kycRedaction.locateMs} ms` : ''}
                       {showDevPanel && kycRedaction.ocrMs !== null ? ` • Spark OCR ${kycRedaction.ocrMs} ms` : ''}</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -3955,7 +4028,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     </div>
                   </div>
                   {kycRedaction?.redactedDataUrl && (
-                    <div className="text-slate-400">Document read by the agent: the version shown in the privacy shield above, with photos, signatures, QR codes and Aadhaar numbers pixelated.</div>
+                    <div className="text-slate-400">Document read by the agent: the version shown in the privacy shield above, with photos, signatures, QR codes and ID numbers pixelated.</div>
                   )}
                   <div className="flex items-center justify-between pt-1 border-t border-slate-200">
                     <button
@@ -4497,7 +4570,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   ))}
                 </ul>
                 <div className="mt-3 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] leading-snug">
-                  Form details and screenshots contain only masked placeholders for Aadhaar, PAN and mobile numbers. A document you choose to scan is read separately, with photos, signatures, QR codes and Aadhaar numbers pixelated first.
+                  Form details and screenshots contain only masked placeholders for Aadhaar, PAN and mobile numbers. A document you choose to scan is read separately, with photos, signatures, QR codes and ID numbers pixelated first.
                 </div>
                 <p className="mt-3 text-slate-500 text-[11px] leading-snug">
                   Frames are taken when you change steps, not streamed. Pause sharing stops frames and form details; voice stays on.

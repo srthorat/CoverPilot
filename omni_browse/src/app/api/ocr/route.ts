@@ -127,9 +127,23 @@ export async function POST(req: NextRequest) {
       bankAccountMasked: maskTail(data.bankAccountNumber),
       uanMasked: maskTail(data.uan),
     };
+    // The reader was given a redacted image. If it can still return a full ID from it, the shield
+    // missed something; say so instead of letting the "hidden" claim stand.
+    const redactionLeaks: string[] = [];
+    if (redacted) {
+      const idCompact = String(data.idNumber ?? '').replace(/\s+/g, '').toUpperCase();
+      if (documentType === 'pan' && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(idCompact)) redactionLeaks.push('PAN number');
+      if (documentType === 'aadhaar' && /^[0-9]{12}$/.test(idCompact)) redactionLeaks.push('Aadhaar number');
+      if (documentType === 'salary-slip') {
+        if ((digitsOnly(data.uan)?.length ?? 0) >= 10) redactionLeaks.push('UAN');
+        if ((digitsOnly(data.bankAccountNumber)?.length ?? 0) >= 9) redactionLeaks.push('Bank account number');
+      }
+      if (redactionLeaks.length) console.error(`[ocr] redaction leak in ${documentType}: ${redactionLeaks.join(', ')}`);
+    }
     return Response.json({
       fields,
       redactedInput: redacted,
+      redactionLeaks,
       telemetry: { model, totalMs: Date.now() - startedAt },
     });
   } catch (err: any) {

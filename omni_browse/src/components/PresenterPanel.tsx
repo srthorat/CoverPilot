@@ -148,7 +148,7 @@ export function PresenterPanel({ turns, memoryFacts, agentState, stats, cases, o
         </div>
         <div className="mt-2 flex items-center gap-1.5 text-[10px]">
           <span className="px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 font-sans font-bold whitespace-nowrap">
-            🔒 Photos, signatures &amp; Aadhaar nos. hidden on device
+            🔒 Photos, signatures &amp; ID numbers hidden on device
           </span>
         </div>
         <div className="mt-1.5 flex items-center gap-1.5 text-[10px]">
