@@ -1,34 +1,45 @@
-# What happens if a field is declared wrongly (NexaSure Flexi Shield)
+# What happens if a field is declared wrongly
 
-## Smoking status declared wrongly for the 20% discount
-If you use tobacco in any form (cigarettes, bidi, gutka, khaini, vaping, nicotine gum) in the last 12 months and still declare non-smoker, that is a material misrepresentation under Clause 5. The 20% non-smoker discount is obtained on a false basis. Under Section 45 of the Insurance Act (Clause 1) the insurer can call the policy in question within 3 years of issue; a tobacco-related or any death claim in that window can be investigated with medical records and cotinine tests and repudiated, with only premiums refunded. After 3 continuous years the policy cannot be questioned on this ground except for proven fraud. Declaring smoker honestly costs about 25% more premium but the claim is fully protected from day one. If you quit, you can request reclassification as non-smoker after 12 tobacco-free months with a fresh declaration and test.
+## Smoking status declared wrongly
+If you used tobacco in the last twelve months and still declare non-smoker, that is a wrong statement of a fact that matters. Within three years of issue the insurer may question the policy under Section 45, in writing with the grounds, and if it rejects the claim it returns the premiums. After three years it can only be questioned for proven fraud. Declaring honestly costs more premium but protects the claim. The discount itself is a NexaSure demo term.
+Source: Insurance Act 1938 section 45, https://lawgist.in/insurance-act/45; NexaSure demo terms for the discount.
 
 ## Income declared higher or lower than actual
-Sum assured is financially underwritten at up to 25 times verified annual income (Human Life Value). Overstating income to get a larger cover can lead to a demand for income proof (Form 16, ITR, salary slips) before issue, and at claim time the insurer can reduce or repudiate the claim for misrepresentation within the Section 45 window. Understating income only limits the cover you are offered; it does not harm a claim. The salary slip read in this session is used as income proof and the annual figure is mapped to the nearest income band.
+Insurers set cover limits from your income and may ask for proof such as a salary slip, Form 16 or a tax return. Overstating income to get more cover can be treated as a misstatement within the three-year window. Understating only limits the cover offered. The salary slip scanned in this session is used as income proof.
+Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, proposal form para iv; Insurance Act 1938 section 45.
 
 ## Date of birth or age declared wrongly
-Premium is rated on age. If the age proof (PAN, Aadhaar, passport) later shows a different date of birth, the insurer corrects the premium: if the true age is higher, the sum assured is reduced to what the paid premium would have bought at the correct age, or extra premium is recovered from the claim; if the true age was above the maximum entry age, the policy is void and premiums are refunded. Deliberate misstatement within 3 years is treated as misrepresentation under Section 45.
+Premium depends on age. If your age proof shows a different date of birth, the insurer corrects the premium or adjusts the benefit as the policy says. If the true age was outside the entry limit, the policy can be cancelled. A deliberate misstatement within three years can be treated as misrepresentation under Section 45.
+Source: Insurance Act 1938 section 45; IRDAI Master Circular on Protection of Policyholders' Interests 2024, KYC para v.
 
 ## Pre-existing illness or hospital history not disclosed
-Clause 5 requires disclosure of past surgeries, hospitalisation, diabetes, hypertension, heart, kidney, liver or cancer history and family cardiac history asked in the form. Non-disclosure is the most common reason for term claim rejection in India. Within 3 years the insurer can repudiate a claim after examining hospital records, even if the death cause is unrelated, when the fact would have changed underwriting. Once declared and accepted (possibly with an extra premium), the condition is covered and cannot be disputed later. This is a disclosure rule, not medical advice.
+Answer every question about past surgeries, hospital stays and family history truthfully. Within three years the insurer can question a claim if a hidden fact would have changed its decision, and it must give the grounds in writing. A condition you declared and the insurer accepted cannot later be used against you. This is a disclosure rule, not medical advice.
+Source: Insurance Act 1938 section 45; IRDAI Master Circular on Protection of Policyholders' Interests 2024, proposal form para viii.
 
 ## Occupation or hazardous activity not disclosed
-Hazardous occupations (mining, offshore, armed forces field duty, aviation crew) and activities (motor racing, scuba, mountaineering) are rated or excluded at underwriting. Hiding them to avoid loading is misrepresentation; a death arising from the undisclosed activity can be repudiated within the Section 45 window. Declared and accepted activities are covered.
+Risky jobs and activities such as mining, offshore work, aviation crew, scuba or racing may raise the premium or be excluded. Hiding them to avoid a higher premium is a misstatement, and a claim linked to it can be questioned within three years. Declared and accepted activities are covered.
+Source: Insurance Act 1938 section 45; NexaSure underwriting practice (demo).
 
 ## Alcohol consumption declared wrongly
-Heavy alcohol use is underwritten with medical tests and may carry an extra premium. Declaring "none" while medical records show alcohol-related treatment is misrepresentation under Clause 5 with the same Section 45 consequences.
+Heavy alcohol use can be tested at underwriting and may add premium. Declaring none when records show otherwise is a misstatement with the same Section 45 consequences.
+Source: Insurance Act 1938 section 45.
 
 ## Nominee details wrong or incomplete
-Nomination under IRDAI Section 39 decides who receives the claim. Shares must total 100%. A minor nominee without an adult appointee means the payout is held until a guardian is appointed by a court. Naming someone who is not a family member makes them a collector, not the owner, unless MWPA trust or a will says otherwise. Wrong nominee details do not void the policy but delay the payout; they can be corrected any time with an endorsement.
+Shares across nominees must total one hundred percent. A minor nominee needs an adult appointee. A nominee who is not a parent, spouse or child is only a collector, and legal heirs may still claim. Wrong nominee details do not void the policy but can delay payout, and you can correct them at any time by endorsement.
+Source: Insurance Act 1938 section 39; IRDAI Master Circular on Life Insurance Products 2024, para 6.
 
 ## Address, city or pincode wrong
-Address does not affect premium for term life. A wrong address delays policy documents, premium reminders and claim correspondence. KYC mismatch between the proposal address and Aadhaar can hold issuance until corrected.
+Address does not change a term premium. A wrong address delays the policy document, reminders and claim letters. A mismatch with your Aadhaar address can hold up KYC until it is fixed.
+Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, KYC para v.
 
 ## Mobile, email or bank details wrong
-Claim payout and free-look refund go to the registered bank account; a wrong account delays payment. OTP consent and policy delivery use the mobile and email given, so errors can block e-signing and free-look timelines (Clause 3 counts 30 days from electronic receipt).
+Payouts and the free-look refund go to your registered bank account, so a wrong account delays payment. The mobile and email are used for OTP, e-signing and policy delivery, and the thirty-day free-look period runs from when you receive the policy.
+Source: IRDAI Master Circular on Life Insurance Products 2024, para 5.
 
 ## Premium not paid on time
-A missed premium starts the grace period (Clause 2: 30 days, 15 for monthly mode) with full cover. After grace the policy lapses and a death claim is not payable. Revival is possible within 5 years with arrears, interest and fresh health declaration; a new 3-year Section 45 window starts from revival for the revived portion.
+A missed premium starts the grace period of thirty days, or fifteen for monthly, with full cover. After that the policy lapses and a death claim is not payable. You can revive it within the period in your policy document, in this demo five years, by paying dues with interest. The three-year window restarts from revival.
+Source: IRDAI Master Circular on Life Insurance Products 2024, paras 8 and 10; five years is a NexaSure demo term.
 
-## Declared everything honestly: what you get
-After 3 continuous years no claim can be questioned on any ground except proven fraud (Section 45). Declared and accepted conditions are covered without retrospective exclusion (Clause 5). The 20% non-smoker discount, if truthfully taken, is locked for the full term.
+## Declared everything honestly
+After three years from issue no claim can be questioned on any ground except proven fraud, and declared and accepted conditions are not used against you. Honest disclosure gives you the strongest claim.
+Source: Insurance Act 1938 section 45, https://lawgist.in/insurance-act/45

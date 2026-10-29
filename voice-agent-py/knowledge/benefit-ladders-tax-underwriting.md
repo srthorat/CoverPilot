@@ -1,28 +1,37 @@
 # Cover, riders, tax and underwriting
 
 ## Base cover options
-Base sum assured of one crore, one and a half crore or two crore rupees. The thirty-year premium rate is locked at issuance and never increases with age.
+In this demo product the base sum assured is one crore, one and a half crore or two crore rupees. The demo rate is locked at issue for the thirty-year term and does not rise with age. These are NexaSure demo terms, not an offer.
+Source: NexaSure demo product terms (not a regulation).
 
 ## Critical illness rider tiers
-Tier 1 Silver: ten lakh rupees cover at eighty-nine rupees a month for ten major illnesses. Tier 2 Gold: twenty-five lakh rupees at one hundred forty-nine rupees a month for thirty-six illnesses, the recommended tier. Tier 3 Platinum: fifty lakh rupees at two hundred sixty-nine rupees a month for sixty-four illnesses plus a second medical opinion allowance. The payout is a lump sum on diagnosis, independent of hospital bills.
+Demo tiers: Silver pays ten lakh rupees for ten major illnesses at eighty-nine rupees a month. Gold pays twenty-five lakh for thirty-six illnesses at one hundred forty-nine a month and is the suggested tier. Platinum pays fifty lakh for sixty-four illnesses at two hundred sixty-nine a month. The payout is a lump sum on diagnosis, not linked to hospital bills. Illness lists vary by insurer, so read the policy wording.
+Source: NexaSure demo product terms (not a regulation).
 
-## Accidental total and permanent disability (ATPD) ladder
-Option A: fifty lakh rupees immediate lump sum, plus seventy-nine rupees a month. Option B: income replacement of one lakh rupees a month for one hundred months (one crore in total), plus one hundred twenty-nine rupees a month, to replace lost salary.
+## Accidental total and permanent disability ladder
+Demo options: Option A pays fifty lakh rupees as a lump sum for seventy-nine rupees a month. Option B pays one lakh rupees a month for one hundred months, one crore in total, for one hundred twenty-nine rupees a month, to replace lost income. IRDAI caps total rider premium at thirty percent of the base premium, and accident benefit riders at a limited share.
+Source: NexaSure demo product terms; IRDAI Master Circular on Life Insurance Products 2024, rider limits.
 
 ## Life stage cover escalator
-Cover increases ten percent annually, or fifty percent on marriage and twenty-five percent on the birth of a child, with no fresh medical tests, for forty-nine rupees a month.
+Demo rider: cover rises ten percent a year, or fifty percent on marriage and twenty-five percent on the birth of a child, with no new medical test, for forty-nine rupees a month. This helps when you add a second child, since cover grows without fresh underwriting.
+Source: NexaSure demo product terms (not a regulation).
 
 ## Waiver of premium rider
-For forty-two rupees a month, on accidental disability all future premiums for the thirty-year term are waived while the full cover stays active.
+Demo rider at forty-two rupees a month: if you become accidentally disabled, future premiums for the thirty-year term are waived and full cover stays active.
+Source: NexaSure demo product terms (not a regulation).
 
 ## Terminal illness accelerated benefit
-One hundred percent of the sum assured is paid immediately on diagnosis of a terminal condition with less than six months life expectancy. Built in at no extra cost.
+In this demo product the full sum assured is paid early on diagnosis of a terminal illness with under six months of life expectancy, at no extra cost. The death benefit then ends. Real products differ, so check the wording.
+Source: NexaSure demo product terms (not a regulation).
 
-## Tax benefits: Section 80C and 80D
-Base term premium is deductible under Section 80C up to one lakh fifty thousand rupees a year, worth about forty-six thousand eight hundred rupees of tax at the thirty-one point two percent slab. The critical illness rider premium qualifies under Section 80D up to twenty-five thousand rupees a year, about seven thousand eight hundred rupees of tax. The death benefit is tax free under Section 10(10D).
+## Tax benefits on premium and payout
+Term premium qualifies for the deduction of up to one lakh fifty thousand rupees a year, formerly Section 80C and now section 123 of the Income-tax Act 2025, but only under the old tax regime. Health insurance premium has a separate deduction, formerly 80D, now section 126. Whether a rider counts depends on the rider, so ask a tax adviser. A death benefit is tax free under Section 10(10D) of the old Act. This is general information, not tax advice.
+Source: Income-tax Act 2025 sections 123 and 126, https://www.axismaxlife.com/blog/section-123-income-tax-act-2025; Income-tax Act 1961 section 10(10D).
 
 ## Underwriting and discounts
-Non-smokers who have used no tobacco in the last twelve months get a twenty percent lifetime discount. Annual income determines the maximum cover, typically ten to fifteen times gross annual income under IRDAI human life value norms. Name and date of birth must match Aadhaar or PAN exactly to avoid identity mismatches at claim time.
+In this demo product, non-smokers with no tobacco use in the last twelve months get a twenty percent discount. Your income decides how much cover you can be offered, and the insurer may ask for proof. Name and date of birth must match your Aadhaar or PAN exactly, to avoid identity mismatches at claim time.
+Source: NexaSure demo product terms; IRDAI Master Circular on Protection of Policyholders' Interests 2024, proposal form.
 
 ## Hospital daily cash rider
-For fifty-five rupees a month, the hospital daily cash rider pays two thousand rupees for every day the policyholder is admitted to a hospital, regardless of the actual bill. The payout goes directly to the policyholder, not the hospital, so it covers loss of income, travel for family members, or any personal expense during the stay. There is no limit on the number of claims per year. Select it with the hospitalCash toggle on the riders card.
+Demo rider at fifty-five rupees a month: it pays two thousand rupees for every day you are admitted to hospital, whatever the bill. The money goes to you, so it can cover lost income or family travel. Select it with the hospital cash toggle on the riders card.
+Source: NexaSure demo product terms (not a regulation).

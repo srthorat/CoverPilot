@@ -58,6 +58,25 @@ _SYNONYMS: dict[str, list[str]] = {
     "धूम्रपान": ["tobacco", "smoker"], "तंबाकू": ["tobacco", "smoker"], "सिगरेट": ["tobacco"],
     "गंभीर": ["critical", "illness"], "बीमारी": ["illness", "critical"], "आजार": ["illness", "critical"], "दुर्घटना": ["accidental", "atpd"], "अपघात": ["accidental", "atpd"],
     "धारा": ["section"], "कलम": ["section"], "नियम": ["terms", "clause"], "शर्त": ["terms", "clause"], "अटी": ["terms", "clause"],
+    # Process, claims, grievance and cover-choice vocabulary
+    "complaint": ["grievance", "ombudsman"], "complain": ["grievance", "ombudsman"], "grievance": ["complaint", "ombudsman"],
+    "ombudsman": ["complaint", "grievance"], "irdai": ["ombudsman", "grievance"], "escalate": ["grievance", "ombudsman"],
+    "esign": ["signature", "consent"], "signature": ["esign", "consent"], "sign": ["esign", "signature"], "otp": ["esign", "consent"],
+    "kyc": ["identity", "documents", "aadhaar"], "aadhaar": ["kyc", "identity"], "pan": ["kyc", "identity"], "passport": ["kyc", "identity"],
+    "gst": ["tax", "exempt"], "taxable": ["tax", "benefits", "payout"], "deduction": ["tax", "benefits"], "payment": ["paying", "premium"], "upi": ["paying", "premium"], "autopay": ["paying", "premium"],
+    "revive": ["revival", "lapse"], "revival": ["lapse", "revive"], "lapse": ["grace", "revival"], "lapsed": ["grace", "revival"],
+    "documents": ["claim", "documents"], "settle": ["claim", "settlement"], "settled": ["claim", "settlement"], "interest": ["claim", "late"],
+    "sibling": ["nominee", "collector"], "brother": ["nominee", "collector"], "sister": ["nominee", "collector"], "parent": ["nominee", "parents"],
+    "mother": ["nominee", "parents"], "father": ["nominee", "parents"], "second": ["another", "nominee"], "another": ["nominee", "shares"],
+    "share": ["shares", "nominee"], "split": ["shares", "nominee"], "appointee": ["minor", "appointee"],
+    "term": ["term", "years"], "tenure": ["term", "years"], "duration": ["term", "years"],
+    "rider": ["riders", "premium"], "riders": ["rider"], "endowment": ["savings", "pure", "term"], "savings": ["pure", "term"],
+    "maturity": ["pure", "term"], "surrender": ["pure", "term"], "medical": ["test", "examination"], "checkup": ["test", "examination"],
+    "scam": ["licensed", "irdai", "safe"], "safe": ["licensed", "irdai", "solvency"],
+    "शिकायत": ["complaint", "grievance", "ombudsman"], "तक्रार": ["complaint", "grievance", "ombudsman"],
+    "भुगतान": ["paying", "premium"], "पेमेंट": ["paying", "premium"], "भरणा": ["paying", "premium"],
+    "हस्ताक्षर": ["esign", "signature"], "सही": ["esign", "signature"],
+    "दस्तावेज": ["documents", "claim"], "कागदपत्रे": ["documents", "claim"], "मृत्यू": ["death", "claim"], "मृत्यु": ["death", "claim"],
 }
 
 

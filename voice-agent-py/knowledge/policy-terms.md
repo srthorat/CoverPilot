@@ -1,25 +1,33 @@
 # NexaSure Flexi Shield — statutory terms (demo product)
 
 ## Clause 1: Section 45 incontestability
-Under Section 45 of the Insurance Act 1938, no life insurance policy can be called in question or repudiated by the insurer after the expiry of three continuous years from the policy inception date, on any grounds whatsoever (documented fraud excepted). Full honest disclosure at proposal guarantees irrevocable settlement for the nominee after 36 months.
+Under Section 45 of the Insurance Act 1938, no life insurance policy can be questioned on any ground after three years from the latest of the issue date, the date risk began, the revival date or the rider date. Inside those three years the insurer can question a policy only for fraud, or for a wrong or hidden fact that matters to life expectancy, and it must give the grounds in writing. If it rejects a claim for a misstatement, it must return the premiums collected within ninety days. This is a legal rule.
+Source: Insurance Act 1938 section 45, consolidated text, https://lawgist.in/insurance-act/45 (secondary host; the Gazette text governs); IRDAI Master Circular on Life Insurance Products 2024, para 10.
 
 ## Clause 2: Grace period for premium payment
-Thirty calendar days grace period for quarterly, half-yearly and annual premium frequencies; fifteen days for monthly mode. The policy remains in full force during the grace period and valid claims in that window are paid in full.
+You get thirty days of grace after the due date for quarterly, half-yearly and annual premiums, and fifteen days for monthly premiums. There is no penalty or late fee. The policy stays in force and cover continues without a break during the grace period. Single premium policies have no grace period. This is an IRDAI rule.
+Source: IRDAI Master Circular on Life Insurance Products, 12 Jun 2024, para 8; IRDAI Master Circular on Protection of Policyholders' Interests 2024, https://www.caalley.com/irdai_mc/MC_Protection_of_Policyholders_interests_2024.pdf
 
-## Clause 3: Free-look cancellation and full refund
-A thirty-day free-look period runs from the date of electronic receipt of the policy. The customer may cancel for a hundred percent refund with zero cancellation penalty; only stamp duty and medical test charges are deducted.
+## Clause 3: Free-look cancellation and refund
+You have thirty days from receiving the policy document to review it, for policies of one year or more. If you do not like any term you can cancel, and the insurer must accept whatever your reason. The refund is the premium paid minus a proportionate risk premium for the time you were covered, the medical examination cost and the stamp duty. So it is not always a full refund. This is an IRDAI rule.
+Source: IRDAI Master Circular on Life Insurance Products 2024, para 5; refund deductions: IRDAI policyholder portal, https://policyholder.gov.in/en/free-look-period
 
 ## Clause 4: Suicide exclusion
-Death due to suicide within the first twelve months from inception: eighty percent of total premiums paid are refunded to the nominee. After twelve continuous months the full sum assured is payable.
+If the life assured dies by suicide within twelve months of the date risk started, or of a revival, the nominee gets at least eighty percent of the premiums paid or the surrender value, whichever is higher, provided the policy is in force. This is the IRDAI minimum for non-linked life products. Death after those twelve months is not excluded for this reason. NexaSure follows this minimum.
+Source: IRDAI Master Circular on Life Insurance Products, 12 Jun 2024, para 21, irdai.gov.in (full URL in SOURCES.md).
 
 ## Clause 5: Pre-existing diseases and medical disclosure
-Past surgeries, hospitalisations and family cardiac history must be disclosed. Once declared and accepted by underwriting, NexaSure cannot dispute coverage after issuance on those grounds.
+Answer every question on past surgeries, hospital stays and family history truthfully, because the proposal is the basis of the policy. Insurers may also ask for a medical examination and income proof. Once the insurer has accepted your declarations, a fact you disclosed cannot later be used against you. This explains the form, it is not medical advice.
+Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, life section, proposal form paras iv and viii, https://www.caalley.com/irdai_mc/MC_Protection_of_Policyholders_interests_2024.pdf
 
 ## Clause 6: Critical illness waiting and survival periods
-A ninety-day initial waiting period applies from inception. A fourteen-day survival period after diagnosis applies before the lump sum (₹10 lakh, ₹25 lakh or ₹50 lakh depending on tier) is paid.
+In this demo product the critical illness rider has a ninety-day waiting period from the start, and a fourteen-day survival period after diagnosis before the lump sum of ten lakh, twenty-five lakh or fifty lakh rupees is paid, depending on the tier. These periods are NexaSure demo terms, not an IRDAI rule, so a real policy document may differ.
+Source: NexaSure demo product terms (not a regulation).
 
 ## Clause 7: Digital claims and response target
-NexaSure registers claims digitally with a two-hour response target and no physical paperwork. These are demo targets, not audited results, and no claim settlement ratio is quoted.
+NexaSure registers claims digitally with a two-hour response target and no physical paperwork. These are demo targets, not audited results, and no claim settlement ratio is quoted. The legal timelines are separate: IRDAI requires a death claim to be settled within fifteen days of intimation, or forty-five days if it needs investigation.
+Source: NexaSure demo product terms; IRDAI Master Circular on Protection of Policyholders' Interests 2024, life section, claim timelines.
 
 ## Clause 8: Policy revival
-A lapsed policy can be revived within five continuous years by clearing unpaid premiums and submitting fresh medical declarations.
+If the policy lapses after the grace period, you can revive it during the period stated in your policy document by paying the unpaid premiums with interest or a late fee. You may need to give a health declaration or take a medical examination. In this demo product the revival period is five years. IRDAI leaves the revival period to the policy document for non-linked products.
+Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, life section, "Lapse and revival"; five years is a NexaSure demo term.
