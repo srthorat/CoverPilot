@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin', 'latin-ext'], variable: '--font-inter', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'CoverPilot | ACKO Life proposal assistant',
-  description: 'Voice co-browsing assistant for the ACKO Life Flexi Shield proposal, built on the Meta Model API.',
+  title: 'CoverPilot | NexaSure proposal assistant',
+  description: 'Voice co-browsing assistant for the NexaSure Flexi Shield proposal (NexaSure is a fictional AI-first digital insurance company), built on the Meta Model API.',
 };
 
 export default function RootLayout({

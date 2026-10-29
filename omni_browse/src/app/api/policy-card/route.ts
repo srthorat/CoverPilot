@@ -26,10 +26,10 @@ interface PolicyInput {
 function buildPrompt(p: PolicyInput): string {
   const riders = p.riders.length ? p.riders.join(', ') : 'none';
   return (
-    `A clean, premium insurance policy summary card for "ACKO Life Flexi Shield", pure term life insurance, India. ` +
+    `A clean, premium insurance policy summary card for "NexaSure Flexi Shield", pure term life insurance, India. ` +
     `Flat modern design, deep purple (#582be8) and white, subtle rounded card on a soft gradient background, a small shield icon, no people, no photos. ` +
     `The card must show this exact text, clearly legible, in this order:\n` +
-    `Title: ACKO Life Flexi Shield\n` +
+    `Title: NexaSure Flexi Shield\n` +
     `Policyholder: ${p.policyholder}\n` +
     `Sum Assured: ${p.sumAssured}\n` +
     `Policy Term: ${p.term}\n` +
@@ -37,7 +37,7 @@ function buildPrompt(p: PolicyInput): string {
     `Premium: ${p.monthlyPremium} per month\n` +
     (p.nominee ? `Nominee: ${p.nominee}\n` : '') +
     (p.policyId ? `Policy No: ${p.policyId}\n` : '') +
-    `Footer small text: IRDAI UIN 157N001V01 · 30-day free look · Section 45 protection after 3 years.\n` +
+    `Footer small text: Demo product · 30-day free look · Section 45 protection after 3 years.\n` +
     `No other text. No spelling changes. Landscape composition centred in the frame.`
   );
 }
