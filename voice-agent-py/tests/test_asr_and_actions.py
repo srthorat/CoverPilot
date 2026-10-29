@@ -81,3 +81,13 @@ def test_system_prompt_carries_medical_boundary():
     prompt = build_system_prompt("en", "in", "muse-spark-1.3")
     assert "MEDICAL BOUNDARY" in prompt
     assert "not a doctor" in prompt
+
+
+def test_prompt_supports_extra_nominees_clause_highlight_and_customer_only_payment():
+    from coverpilot.prompt import VERIFIER_SYSTEM_PROMPT, build_system_prompt
+
+    prompt = build_system_prompt("en", "in", "muse-spark-1.3")
+    assert "additionalNominees" in prompt
+    assert '"clause"?' in prompt and "highlighted" in prompt
+    assert "never say that you paid, signed or submitted" in prompt
+    assert "additionalNominees" in VERIFIER_SYSTEM_PROMPT

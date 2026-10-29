@@ -246,6 +246,17 @@ class ActionMarkerFilter(FrameProcessor):
         await self.push_frame(RTVIServerMessageFrame(data={"type": "agent_text", "delta": text}))
 
 
+def settle_verdict(status: str, amended: Any, applied: list[dict[str, Any]]) -> tuple[str, Any]:
+    """An amendment may only correct an action that was applied (same type and field). Anything else is a
+    suggestion for a different change; it must not undo what the customer asked for, so the action stands."""
+    if status != "amend":
+        return status, amended
+    same = isinstance(amended, dict) and any(
+        a.get("type") == amended.get("type") and a.get("field") == amended.get("field") for a in applied
+    )
+    return ("amend", amended) if same else ("approve", None)
+
+
 class WonderVerifier(FrameProcessor):
     def __init__(self, session: SessionState, settings: Settings, **kwargs):
         super().__init__(**kwargs)
@@ -297,20 +308,15 @@ class WonderVerifier(FrameProcessor):
             cleaned = re.sub(r"```(?:json)?", "", raw, flags=re.I).replace("```", "").strip()
             s, e = cleaned.find("{"), cleaned.rfind("}")
             verdict = json.loads(cleaned[s : e + 1]) if s >= 0 and e > s else {"verdict": "approve", "reason": raw[:120]}
-            status = verdict.get("verdict") if verdict.get("verdict") in ("approve", "amend", "reject") else "approve"
+            status = verdict.get("verdict") if verdict.get("verdict") in ("approve", "amend", "reject", "ask") else "approve"
             reason = str(verdict.get("reason") or "").strip()
             amended = verdict.get("amendedAction")
             if status == "amend":
-                # An amendment may only correct an action that was applied (same type and field);
-                # anything else would be a new, unrequested change, so it is treated as a reject.
-                applied = [a for a in actions if isinstance(a, dict)]
-                same = isinstance(amended, dict) and any(
-                    a.get("type") == amended.get("type") and a.get("field") == amended.get("field") for a in applied
-                )
-                if not same:
-                    logger.warning(f"[wonder] amendment ignored (does not match an applied action): {amended}")
-                    status, amended = "reject", None
+                settled, settled_amended = settle_verdict(status, amended, [a for a in actions if isinstance(a, dict)])
+                if settled != status:
+                    logger.warning(f"[wonder] amendment ignored (does not match an applied action), the action stands: {amended}")
                     verdict["amendedAction"] = None
+                status, amended = settled, settled_amended
             logger.info(f"[wonder] {status}: {reason} | clause={verdict.get('clause')} | amended={amended}")
             await self.push_frame(
                 RTVIServerMessageFrame(

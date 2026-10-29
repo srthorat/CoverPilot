@@ -83,3 +83,26 @@ def test_refresh_records_the_last_three_user_turns():
         injector._refresh(context)
     assert session.user_turns == ["why we still are in this thing only", "hello", "city is Pune"]
     assert session.last_user_text == "city is Pune"
+
+
+def test_an_amendment_that_matches_no_applied_action_leaves_the_action_standing():
+    from coverpilot.processors import settle_verdict
+
+    applied = [{"type": "fill", "field": "city", "value": "Pune"}]
+    # Wonder suggested a different change (an invalid shape): do not reject, so nothing is reverted.
+    assert settle_verdict("amend", {"type": "field", "field": "section45Consent", "value": True}, applied) == ("approve", None)
+    # A real correction of the applied field is kept.
+    fix = {"type": "fill", "field": "city", "value": "Mumbai"}
+    assert settle_verdict("amend", fix, applied) == ("amend", fix)
+    # Other verdicts pass through untouched.
+    assert settle_verdict("reject", None, applied) == ("reject", None)
+    assert settle_verdict("approve", None, applied) == ("approve", None)
+
+
+def test_ask_verdict_keeps_the_action_and_the_verifier_is_told_when_to_use_it():
+    from coverpilot.processors import settle_verdict
+    from coverpilot.prompt import VERIFIER_SYSTEM_PROMPT
+
+    applied = [{"type": "nominate", "primaryName": "Priya"}]
+    assert settle_verdict("ask", None, applied) == ("ask", None)  # only a reject is ever reverted
+    assert '"ask"' in VERIFIER_SYSTEM_PROMPT and "appointee" in VERIFIER_SYSTEM_PROMPT
