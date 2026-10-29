@@ -5,7 +5,7 @@ You fill in your details, choose the cover amount and riders, name your nominees
 Source: NexaSure app behaviour (not a regulation).
 
 ## KYC documents needed
-Insurers must verify your identity and address before issuing a policy. Accepted proofs include Aadhaar, PAN, passport, voter ID or driving licence, and a few verification routes such as Aadhaar OTP, video KYC or documents. Your name and date of birth must match the document exactly. PAN is required for larger premiums.
+Insurers must verify your identity and address before issuing a policy. Accepted proofs include Aadhaar, PAN, passport, voter ID or driving licence, and a few verification routes such as Aadhaar OTP, video KYC or documents. Your name and date of birth must match the document exactly. PAN has to be quoted if you pay more than fifty thousand rupees a year in life insurance premium, otherwise a Form 60 declaration is used. The income-tax rules were renumbered from 1 April 2026, so the insurer will confirm the current rule.
 Source: IRDAI Master Guidelines on AML/CFT, 1 Aug 2022; IRDAI Master Circular on Protection of Policyholders' Interests 2024, KYC para v.
 
 ## Paying the premium

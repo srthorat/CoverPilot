@@ -3,7 +3,11 @@
 # IRDAI Master Circular on Protection of Policyholders' Interests 2024, 5 Sep 2024: https://www.caalley.com/irdai_mc/MC_Protection_of_Policyholders_interests_2024.pdf
 # IRDAI Master Guidelines on Anti Money Laundering and Counter Financing of Terrorism, 1 Aug 2022: https://irdai.gov.in
 # IRDAI policyholder portal, free-look period: https://policyholder.gov.in/en/free-look-period
-# Insurance Act 1938 sections 38, 39 and 45 (consolidated text): https://lawgist.in/insurance-act/39 and https://lawgist.in/insurance-act/45
+# Insurance Act 1938 sections 38, 39 and 45 (consolidated text): https://lawgist.in/insurance-act/39 and https://lawgist.in/insurance-act/45, cross-checked against Indian Kanoon https://indiankanoon.org/doc/695200/ and IRDAI Master Circular on Life Insurance Products 2024 para 6 (three-year rule, primary source). indiacode.nic.in refused automated access, so the Gazette text itself was not read.
+# Insurance Ombudsman Rules 2017 (consolidated to 18 May 2021), rules 14, 16, 17: https://cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017%20-updated%20as%20on%2018.5.2021.pdf; IRDAI FAQ https://irdai.gov.in (free, no lawyer); fifty lakh cap: Business Standard 27 Nov 2023 and nyvo.in citing G.S.R. 828(E) of 9 Nov 2023 (the Gazette itself not read)
+# PAN for premium over Rs 50,000: Income-tax Rule 114B (Income Tax Department list); renumbering from 1 April 2026 seen in one blog only
+# Critical illness rider tax: insurer guides only (Bajaj Life, Canara HSBC Life, Kotak Life); no CBDT circular found
+# No IRDAI rule caps cover at a multiple of income: IRDAI says insurers set eligibility in their own underwriting policies; IRDAI (Insurance Products) Regulations 2024 set a minimum sum assured of 7x annual premium (5x from age 50)
 # Married Women's Property Act 1874 section 6: secondary summary on taxguru.in
 # GST Council 56th meeting press release, 3 Sep 2025 (individual life insurance exempt from 22 Sep 2025): https://gstcouncil.gov.in
 # Income-tax Act 2025, section 123 (formerly 80C) and 126 (formerly 80D): https://www.axismaxlife.com/blog/section-123-income-tax-act-2025

@@ -1239,7 +1239,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       en: 'Insurers require your name to match government records (PAN/Aadhaar) exactly so your beneficiaries face zero legal delays during death claim settlement under IRDAI norms.',
       hi: 'आईआरडीएआई नियमों के अनुसार, कानूनी नाम पैन या आधार से बिल्कुल मेल खाना चाहिए ताकि भविष्य में क्लेम निपटान में परिवार को कोई परेशानी न हो।',
       mr: 'आयआरडीएआय नियमानुसार तुमचे कायदेशीर नाव पॅन किंवा आधारशी तंतोतंत जुळणे आवश्यक आहे, जेणेकरून भविष्यात क्लेम सेटलमेंटमध्ये वारसदारांना विलंब होणार नाही.',
-      clauseRef: 'Section 45 & IRDAI Master Circular 2024, Reg 12',
+      clauseRef: 'Section 45 & IRDAI Master Circular on Life Insurance Products 2024',
     },
     'field-dob': {
       title: 'Date of Birth & Mortality Lock',
@@ -1250,10 +1250,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     },
     'field-income': {
       title: 'Annual Income & Human Life Value',
-      en: 'Under IRDAI underwriting regulations, the maximum life insurance cover you can purchase is capped at 25x your verified annual salary (Human Life Value principle).',
-      hi: 'आईआरडीएआई के मानव जीवन मूल्य (HLV) नियम के अनुसार, आपकी अधिकतम बीमा राशि आपकी वार्षिक आय का 25 गुना तक हो सकती है।',
-      mr: 'आयआरडीएआयच्या ह्यूमन लाईफ व्हॅल्यू (HLV) नियमांनुसार, तुमचे कमाल संरक्षण तुमच्या वार्षिक उत्पन्नाच्या २५ पटींपर्यंत मर्यादित असते.',
-      clauseRef: 'IRDAI Underwriting Guidelines 2024, Circular 14',
+      en: 'Insurers decide how much cover your income supports and may ask for income proof. IRDAI sets no fixed multiple; insurers commonly offer about 15 to 25 times annual income when you are young, and less as you get older.',
+      hi: 'आपकी आय के आधार पर बीमा कंपनी तय करती है कि कितना कवर मिलेगा और आय का प्रमाण मांग सकती है। आईआरडीएआई ने कोई तय गुणक नहीं रखा है; कम उम्र में बीमा कंपनियां आम तौर पर आय का लगभग 15 से 25 गुना कवर देती हैं।',
+      mr: 'तुमच्या उत्पन्नावरून विमा कंपनी किती कव्हर द्यायचे ते ठरवते आणि उत्पन्नाचा पुरावा मागू शकते. आयआरडीएआयने कोणताही ठराविक गुणक ठरवलेला नाही; तरुण वयात विमा कंपन्या साधारणपणे उत्पन्नाच्या सुमारे १५ ते २५ पट कव्हर देतात.',
+      clauseRef: 'Insurer underwriting policy (IRDAI sets no income multiple)',
     },
     'field-smoker': {
       title: 'Tobacco Disclosure & Section 45',
@@ -3373,15 +3373,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     <span className="text-xl"></span>
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-[#582be8]">
-                        Meta Muse Wonder 1.0 • Actuarial Recommendation
+                        Meta Muse Wonder 1.0 • Suggested split (not a rule)
                       </h4>
                       <p className="text-xs text-slate-700 font-medium">
-                        For salaried professionals with dependents, IRDAI recommends allocating <strong>70% to Spouse</strong> and <strong>30% to Minor Child</strong> (with an adult appointee), shielded by the <strong>MWPA 1874 Trust</strong>.
+                        One common split for a family with a minor child is <strong>70% to Spouse</strong> and <strong>30% to Minor Child</strong> with an adult appointee. It is a suggestion, not an IRDAI rule, and you can choose any split totalling 100%.
                       </p>
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded-lg bg-purple-100 text-[#582be8] text-[11px] tabular-nums font-bold border border-purple-200 shrink-0">
-                    Actuarial Match 99.4%</span>
+                    Suggestion</span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-purple-200/60">
@@ -4698,8 +4698,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                           </a>
                           <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
-                        <td className="p-3"><strong>Deep Multimodal Actuarial Reasoning</strong><br />Calculates 30-year risk projections, Human Life Value (HLV) benchmarks, and an illustrative old-regime tax estimate (not tax advice).</td>
-                        <td className="p-3"><strong>Financial Risk & Actuarial Analysis</strong>:<br />Evaluates Critical Illness vs Accidental Death trade-offs based on applicant family medical history.</td>
+                        <td className="p-3"><strong>Deep Multimodal Actuarial Reasoning</strong><br />Reasons about cover against income, and an illustrative old-regime tax estimate (not tax advice).</td>
+                        <td className="p-3"><strong>Financial Risk & Actuarial Analysis</strong>:<br />Explains the Critical Illness and Accidental Death riders and what each costs. It does not give medical advice.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-[#582be8]">

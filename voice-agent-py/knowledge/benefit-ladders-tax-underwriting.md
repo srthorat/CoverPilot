@@ -25,7 +25,7 @@ In this demo product the full sum assured is paid early on diagnosis of a termin
 Source: NexaSure demo product terms (not a regulation).
 
 ## Tax benefits on premium and payout
-Term premium qualifies for the deduction of up to one lakh fifty thousand rupees a year, formerly Section 80C and now section 123 of the Income-tax Act 2025, but only under the old tax regime. Health insurance premium has a separate deduction, formerly 80D, now section 126. Whether a rider counts depends on the rider, so ask a tax adviser. A death benefit is tax free under Section 10(10D) of the old Act. This is general information, not tax advice.
+Term premium qualifies for the deduction of up to one lakh fifty thousand rupees a year, formerly Section 80C and now section 123 of the Income-tax Act 2025, but only under the old tax regime. Health insurance premium has a separate deduction, formerly 80D, now section 126. Insurers' guides say a critical illness rider that is health cover can claim the health deduction on the rider premium alone, within the health limit, but this rests on insurer guides, not a tax circular, and depends on the rider terms and on the premium being shown separately, so ask a tax adviser. A death benefit is tax free under Section 10(10D) of the old Act. This is general information, not tax advice.
 Source: Income-tax Act 2025 sections 123 and 126, https://www.axismaxlife.com/blog/section-123-income-tax-act-2025; Income-tax Act 1961 section 10(10D).
 
 ## Underwriting and discounts
