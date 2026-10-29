@@ -1139,13 +1139,13 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       summary: 'After 3 continuous years, the insurance company cannot legally reject or dispute any death claim. Full disclosure today guarantees lifetime claim peace of mind.',
     },
     'clause-73': {
-      title: 'Clause 7.3: Dual Tax Deductions (Section 80C + Section 80D)',
+      title: 'Clause 7.3: Tax Treatment of Premium (illustrative)',
       clauseId: 'Clause 7.3 (Tax Certificates)',
-      document: 'Income Tax Act 1961 & NexaSure Annual Tax Schedule Guide',
+      document: 'Income-tax Act 2025 & NexaSure Annual Tax Schedule Guide',
       page: 12,
       effectiveDate: 'Financial Year 2024-2025',
-      highlightedText: 'Premiums paid towards the Base Pure Term Protection component are eligible for tax deduction under Section 80C up to ₹1,50,000 per financial year. Incremental premiums paid towards the Critical Illness Rider qualify under Section 80D (Health Insurance) up to ₹25,000 for self/family and up to ₹50,000 for senior citizen parents.',
-      summary: 'Base cover saves up to ₹46,800 under Section 80C. The Critical Illness rider unlocks an extra ₹7,800 savings under Section 80D, offsetting the rider cost.',
+      highlightedText: 'Under the old tax regime, life insurance premiums can qualify for a deduction under sections 123 and 126 of the Income-tax Act 2025, subject to the limits and conditions there, including the ₹1,50,000 overall cap. The new regime does not allow it. Death benefits are generally tax free under section 10(10D) subject to its conditions. This is general information, not tax advice.',
+      summary: 'Premiums may reduce tax under the old regime (up to the ₹1.5 lakh cap); the new regime gives no such deduction. Illustrative only, not tax advice.',
     },
     'clause-81': {
       title: 'Clause 8.1: Statutory 30-Day Electronic Free-Look Guarantee',
@@ -1153,8 +1153,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       document: 'IRDAI Policyholders Interests Protection Regulations',
       page: 4,
       effectiveDate: 'Active Standard',
-      highlightedText: 'The Policyholder has a period of thirty (30) days from the date of electronic receipt of the policy schedule to review the terms and conditions. If the Policyholder disagrees with any terms, they may return the policy with a written statement, upon which 100% of the premium paid shall be refunded, subject only to deduction of proportionate risk premium.',
-      summary: 'You have 30 days to review the policy after issuance. If not completely satisfied, you receive a full refund with zero lock-in penalties.',
+      highlightedText: 'The Policyholder has a period of thirty (30) days from the date of electronic receipt of the policy schedule to review the terms and conditions. If the Policyholder disagrees with any terms, they may return the policy with a written statement, upon which the premium paid shall be refunded after deducting a proportionate risk premium, the medical examination cost and the stamp duty.',
+      summary: 'You have 30 days to review the policy after issuance. If not satisfied, you get a refund net of the proportionate risk premium, medical examination cost and stamp duty.',
     },
   };
 
@@ -1165,44 +1165,44 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       title: 'Section 45 Statutory Claim Guarantee (3-Year Incontestability Rule)',
       category: 'Statutory Protection',
       irdaiRef: 'Insurance Act 1938, Section 45',
-      summary: 'After 3 continuous years of the policy in force, NexaSure cannot dispute, question, or reject any death claim on any grounds whatsoever (except documented deliberate fraud).',
-      fullText: 'No policy of life insurance shall be called in question on any ground whatsoever after the expiry of three years from the date on which the policy was effected, or the date of revival. Full honest disclosure at proposal guarantees irrevocable settlement for your nominee.',
+      summary: 'After 3 years, a life policy cannot be questioned on any ground. Within 3 years the insurer can question it only for fraud or a hidden fact that matters, and must give written grounds.',
+      fullText: 'No life insurance policy can be called in question on any ground after three years from the latest of the issue date, the date risk began, the revival date or the rider date. Within those three years it can be questioned only for fraud, or for a wrong or hidden fact that matters to life expectancy, and the insurer must give the grounds in writing. If a claim is rejected for a misstatement, the premiums collected are returned within ninety days.',
     },
     {
       id: 'tc-grace-period',
       clauseNumber: 'Clause 2',
       title: '30-Day Statutory Grace Period for Premium Payment',
       category: 'Payment Safeguards',
-      irdaiRef: 'IRDAI Master Circular 2024, Reg 14',
-      summary: 'You receive 30 calendar days of grace period for premium payments (15 days for monthly mode). Your full cover remains 100% active with zero lapse risk during this period.',
-      fullText: 'A grace period of thirty (30) days from the premium due date is allowed for payment of quarterly, half-yearly, and annual premiums; fifteen (15) days for monthly mode. If a claim arises during the grace period, the full sum assured is payable subject to deduction of unpaid premium.',
+      irdaiRef: 'IRDAI Master Circular on Life Insurance Products 2024, para 8',
+      summary: 'You receive 30 calendar days of grace period for premium payments (15 days for monthly mode). Cover continues without a break and there is no late fee during this period.',
+      fullText: 'A grace period of thirty (30) days from the premium due date is allowed for payment of quarterly, half-yearly, and annual premiums; fifteen (15) days for monthly mode. Single premium policies have no grace period. The policy stays in force during the grace period.',
     },
     {
       id: 'tc-free-look',
       clauseNumber: 'Clause 3',
-      title: '30-Day Free-Look Cancellation with 100% Full Refund',
+      title: '30-Day Free-Look Cancellation',
       category: 'Consumer Rights',
-      irdaiRef: 'IRDAI Policyholders Protection Reg 8.1',
-      summary: 'You have 30 days from electronic policy receipt to review all terms. If unsatisfied, cancel anytime for a 100% refund with zero cancellation penalty.',
-      fullText: 'The Policyholder is entitled to a 30-day Free-Look Period from the date of electronic receipt of the policy document. If the Policyholder does not agree with any terms, they may return the policy for cancellation and receive a full 100% refund of the premium paid (less statutory stamp duty).',
+      irdaiRef: 'IRDAI Master Circular on Life Insurance Products 2024, para 5',
+      summary: 'You have 30 days from electronic policy receipt to review all terms. If unsatisfied, cancel and get the premium back minus a proportionate risk premium, medical examination cost and stamp duty.',
+      fullText: 'The Policyholder is entitled to a 30-day Free-Look Period from the date of electronic receipt of the policy document. If the Policyholder does not agree with any terms, they may return the policy for cancellation and receive the premium paid minus a proportionate risk premium for the time covered, the medical examination cost and the stamp duty. It is not always a full refund.',
     },
     {
       id: 'tc-suicide-clause',
       clauseNumber: 'Clause 4',
-      title: 'Suicide Exclusion & 80% Premium Refund Rule',
+      title: 'Suicide Exclusion and Minimum Refund',
       category: 'Exclusions',
-      irdaiRef: 'NexaSure Flexi Shield Schedule, Section 9.2',
-      summary: 'In the event of suicide within 12 months of inception, 80% of total premiums paid are refunded to the nominee. After 12 months, 100% of the full sum assured is paid with zero dispute.',
-      fullText: 'If the Life Assured commits suicide within twelve (12) months from the Date of Inception or Date of Revival, the policy shall terminate and 80% of total premiums paid shall be refunded to the nominee. After 12 continuous months, death claim is fully payable in accordance with the schedule.',
+      irdaiRef: 'IRDAI Master Circular on Life Insurance Products 2024, para 21',
+      summary: 'In the event of suicide within 12 months of inception, the nominee gets at least 80% of the premiums paid or the surrender value, whichever is higher. Death after 12 months is not excluded for this reason.',
+      fullText: 'If the Life Assured commits suicide within twelve (12) months from the Date of Inception or Date of Revival, the nominee receives at least eighty percent of the premiums paid or the surrender value, whichever is higher, provided the policy is in force. Death after twelve months is not excluded for this reason.',
     },
     {
       id: 'tc-ped-disclosure',
       clauseNumber: 'Clause 5',
       title: 'Pre-Existing Disease (PED) & Medical Acceptance',
       category: 'Underwriting',
-      irdaiRef: 'IRDAI Underwriting Norms & Section 45',
-      summary: 'Disclose all medical history honestly. Once accepted by underwriting without loading, NexaSure cannot dispute coverage post-issuance.',
-      fullText: 'All pre-existing medical conditions, surgical histories, or chronic illnesses disclosed in the proposal form and accepted by the underwriter are covered under the policy terms without retrospective exclusion or dispute.',
+      irdaiRef: 'IRDAI Protection of Policyholders Interests 2024 & Section 45',
+      summary: 'Disclose all medical history honestly. Once the insurer accepts your declarations, a fact you disclosed cannot later be used against you.',
+      fullText: 'All pre-existing medical conditions, surgical histories, or chronic illnesses disclosed in the proposal form and accepted by the underwriter cannot later be used against you. Answer every question truthfully, because the proposal is the basis of the policy.',
     },
     {
       id: 'tc-waiting-period',
@@ -1210,7 +1210,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       title: 'Critical Illness Waiting Period & 14-Day Survival Period',
       category: 'Living Benefits',
       irdaiRef: 'Clause 4.2 Living Benefit Rider Schedule',
-      summary: 'A 90-day waiting period from policy inception applies for Critical Illness. A 14-day survival period post-diagnosis triggers the full tax-free lump sum transfer.',
+      summary: 'A 90-day waiting period from policy inception applies for Critical Illness. A 14-day survival period after diagnosis applies before the lump sum is paid. These are NexaSure demo terms, not an IRDAI rule.',
       fullText: 'The Critical Illness Living Benefit Rider is subject to an initial waiting period of ninety (90) days from the inception date. Upon confirmed medical diagnosis of any of the 36 defined illnesses and survival for fourteen (14) days, 100% of the rider sum assured is paid as a cash lump sum.',
     },
     {
@@ -1225,11 +1225,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     {
       id: 'tc-revival-policy',
       clauseNumber: 'Clause 8',
-      title: '5-Year Continuous Policy Revival Guarantee',
+      title: 'Policy Revival',
       category: 'Policy Continuity',
-      irdaiRef: 'Insurance Laws (Amendment) Act & Reg 16',
-      summary: 'If your policy ever lapses due to missed payments, you have 5 full years to reinstate your coverage and lock in your original premium rate.',
-      fullText: 'A lapsed policy may be reinstated or revived within a continuous period of five (5) years from the date of first unpaid premium, subject to clearing unpaid dues and submitting a satisfactory good-health declaration.',
+      irdaiRef: 'IRDAI Protection of Policyholders Interests 2024, lapse and revival',
+      summary: 'If your policy ever lapses due to missed payments, you can revive it within the period in your policy document by paying unpaid premiums with interest. In this demo the period is five years; a health declaration may be needed.',
+      fullText: 'A lapsed policy may be revived within the period stated in the policy document, on paying the unpaid premiums with interest or a late fee, and possibly a health declaration or medical examination. In this demo product the revival period is five years from the first unpaid premium; IRDAI leaves the period to the policy document.',
     },
   ];
 
@@ -1554,12 +1554,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const handleDownloadAuditCertificate = async () => {
     const certId = `NEXA-AUDIT-2026-${Math.random().toString(16).substring(2, 8).toUpperCase()}`;
     const timestamp = new Date().toISOString();
-    const rates: Record<'1cr' | '1.5cr' | '2cr', number> = { '1cr': 580, '1.5cr': 780, '2cr': 990 };
-    const currentMonthlyBase = rates[baseSumAssured] || 580;
-    const annualBase = currentMonthlyBase * 12;
-    const tax80C = Math.round(annualBase * 0.312);
-    const tax80D = selectedRiders.criticalIllness ? 5580 : 0;
-    const totalSaved = tax80C + tax80D;
+    const currentMonthlyBase = monthlyBase;
+    const totalSaved = annualTaxSavings;
     const netCost = Math.max(0, (totalMonthlyPayable * 12) - totalSaved);
 
     const certPayload = {
@@ -1587,9 +1583,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         freeLookPeriod: '30-Day Statutory Electronic Free-Look Cancellation Period Guaranteed',
       },
       taxOptimizationSummary: {
-        section80CLifeDeduction: `₹${tax80C.toLocaleString()}/yr savings (Base Cover)`,
-        section80DCriticalIllnessDeduction: selectedRiders.criticalIllness ? '₹5,580/yr savings (Health Rider)' : '₹0',
-        totalAnnualTaxSaved: `₹${totalSaved.toLocaleString()}/yr`,
+        basis: 'Illustrative estimate: 31.2% slab, old tax regime only, deduction capped at ₹1.5 lakh (sections 123/126 of the Income-tax Act 2025). Not tax advice.',
+        totalAnnualTaxSaved: `about ₹${totalSaved.toLocaleString()}/yr (estimate)`,
         netEffectiveYearlyCost: `₹${netCost.toLocaleString()}/yr (effective ₹${Math.round(netCost / 12)}/month)`,
       },
       eSignature: esignValid
@@ -1746,9 +1741,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     (lifeStageEscalator ? riderRates.lifeStageEscalator : 0);
 
   const subtotalMonthly = monthlyBase + monthlyRiders;
-  const gst18Percent = Math.round(subtotalMonthly * 0.18);
-  const totalMonthlyPayable = subtotalMonthly + gst18Percent;
-  const annualTaxSavings = Math.round(subtotalMonthly * 12 * 0.312);
+  // Individual life insurance premiums are exempt from GST (from 22 Sep 2025), so none is added.
+  const totalMonthlyPayable = subtotalMonthly;
+  // Illustrative only: 31.2% slab, old tax regime, deduction capped at ₹1.5 lakh, not tax advice.
+  const annualTaxSavings = Math.round(Math.min(subtotalMonthly * 12, 150000) * 0.312);
 
   // Policy Issuance
   const submitPolicyProposal = () => {
@@ -3882,7 +3878,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 </div>
 
                 <div className="border-t border-slate-300 pt-3 flex justify-between items-baseline text-sm font-bold text-slate-900">
-                  <span>Total Monthly Premium (incl. 18% GST):</span>
+                  <span>Total Monthly Premium (no GST on life cover):</span>
                   <span className="text-xl font-bold text-[#582be8] tabular-nums">₹{totalMonthlyPayable}/mo</span>
                 </div>
               </div>
@@ -4000,7 +3996,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                         ))}
                       </div>
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-xs text-slate-600">First month, including 18% GST: <strong className="text-slate-900 tabular-nums">₹{totalMonthlyPayable}</strong>. Your cover starts once the first premium is received.</span>
+                        <span className="text-xs text-slate-600">First month's premium: <strong className="text-slate-900 tabular-nums">₹{totalMonthlyPayable}</strong>. Your cover starts once the first premium is received.</span>
                         <button
                           type="button"
                           disabled={!esignValid || payment.status === 'processing'}
@@ -4121,18 +4117,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               </div>
 
               <div className="flex justify-between text-slate-500">
-                <span>GST (18% Statutory):</span>
-                <span>+₹{gst18Percent}</span>
+                <span>GST on individual life cover:</span>
+                <span>Exempt</span>
               </div>
 
             </div>
             <div className="mt-2">
-            {/* Feature 1: Interactive Dual Tax & Net Cost Widget (80C + 80D) */}
+            {/* Feature 1: Illustrative tax & net cost widget */}
             <div className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-800 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm"></span>
-                  <button type="button" onClick={() => setShowTaxBreakdownWidget((v) => !v)} className="text-xs font-bold text-emerald-950 hover:text-[#582be8]">Dual Tax & Net Cost {showTaxBreakdownWidget ? '▾' : '▸'}</button>
+                  <button type="button" onClick={() => setShowTaxBreakdownWidget((v) => !v)} className="text-xs font-bold text-emerald-950 hover:text-[#582be8]">Tax & Net Cost (estimate) {showTaxBreakdownWidget ? '▾' : '▸'}</button>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
@@ -4143,7 +4139,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     View Clause 7.3 
                   </button>
                   <span className="text-[11px] tabular-nums font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    80C + 80D</span>
+                    Illustrative</span>
                 </div>
               </div>
 
@@ -4157,10 +4153,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <div className="p-2 rounded-xl bg-emerald-100/70 border border-emerald-200">
                   <span className="text-[11px] text-emerald-700 block font-semibold">Total Tax Saved:</span>
                   <strong className="text-xs text-emerald-900 font-bold tabular-nums">
-                    -₹{(Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)).toLocaleString()}/yr
+                    -₹{annualTaxSavings.toLocaleString()}/yr
                   </strong>
                   <span className="text-[11px] text-emerald-700 block font-bold">
-                    {selectedRiders.criticalIllness ? 'Sec 80C + 80D Active' : 'Sec 80C Active'}</span>
+                    Old regime, 31.2% slab</span>
                 </div>
               </div>
 
@@ -4168,21 +4164,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <div>
                   <span className="text-[11px] text-slate-500 block">Net Effective Cost:</span>
                   <strong className="text-sm font-bold text-[#582be8] tabular-nums">
-                    ₹{Math.round(Math.max(0, (totalMonthlyPayable * 12) - (Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0))) / 12)}/mo
+                    ₹{Math.round(Math.max(0, (totalMonthlyPayable * 12) - annualTaxSavings) / 12)}/mo
                   </strong>
                 </div>
                 <div className="text-right">
                   <span className="text-[11px] font-bold text-emerald-700 block">
-                    Saves {Math.round(((Math.round(monthlyBase * 12 * 0.312) + (selectedRiders.criticalIllness ? 5580 : 0)) / (totalMonthlyPayable * 12)) * 100)}%</span>
+                    Saves about {Math.round((annualTaxSavings / (totalMonthlyPayable * 12)) * 100)}%</span>
                   <span className="text-[11px] text-slate-400 tabular-nums">after tax refund</span>
                 </div>
               </div>
 
-              {selectedRiders.criticalIllness && (
-                <p className="text-[11px] text-emerald-800 bg-emerald-100/60 p-1.5 rounded-lg border border-emerald-200 leading-tight">
-                   <strong>Actuarial Insight:</strong> ₹5,580 Sec 80D tax savings exceeds the ₹1,788 annual rider premium, making your ₹25 Lakhs Critical Illness cover <strong>net cost-negative</strong>!
-                </p>
-              )}
+              <p className="text-[11px] text-slate-500 leading-tight">
+                Illustrative only. Applies to the old tax regime; rider tax treatment depends on the rider terms. Not tax advice.
+              </p>
             </>)}
             </div>
 
@@ -4704,7 +4698,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                           </a>
                           <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
                         </td>
-                        <td className="p-3"><strong>Deep Multimodal Actuarial Reasoning</strong><br />Calculates 30-year risk projections, Human Life Value (HLV) benchmarks, and Section 80C + 80D tax deductions (up to ₹54,600/yr).</td>
+                        <td className="p-3"><strong>Deep Multimodal Actuarial Reasoning</strong><br />Calculates 30-year risk projections, Human Life Value (HLV) benchmarks, and an illustrative old-regime tax estimate (not tax advice).</td>
                         <td className="p-3"><strong>Financial Risk & Actuarial Analysis</strong>:<br />Evaluates Critical Illness vs Accidental Death trade-offs based on applicant family medical history.</td>
                       </tr>
                       <tr className="hover:bg-slate-50/50">
@@ -5010,7 +5004,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               </div>
 
               <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-[11px] text-emerald-950">
-                <strong>Tax Optimization:</strong> {auditCertData.taxOptimizationSummary.totalAnnualTaxSaved} saved via Section 80C + 80D.
+                <strong>Tax Optimization:</strong> {auditCertData.taxOptimizationSummary.totalAnnualTaxSaved}, illustrative, old regime only. Not tax advice.
               </div>
 
               <div className="p-2 rounded-lg bg-slate-100 text-[11px] text-slate-600 tabular-nums">

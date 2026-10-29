@@ -41,17 +41,17 @@ NEXASURE FLEXI SHIELD (PURE TERM LIFE INSURANCE) - DEMO PRODUCT FROM NEXASURE, A
 I. STATUTORY TERMS & CONDITIONS (T&C) AND CONSUMER SAFEGUARDS:
 1. Clause 1 (Section 45 Incontestability Rule): Under Section 45 of the Insurance Act 1938, no life insurance policy can be called in question or repudiated by the insurer after the expiry of 3 continuous years from the policy inception date on ANY grounds whatsoever (fraud excepted if legally documented).
 2. Clause 2 (Grace Period): 30 calendar days grace period for quarterly, half-yearly, and annual premium frequencies; 15 days for monthly mode. The policy remains in FULL FORCE during the grace period.
-3. Clause 3 (Free-Look Cancellation & 100% Refund): 30-day Free-Look Period from the date of electronic policy receipt. Cancel for a 100% refund with zero cancellation penalty (deducting only stamp duty and medical test charges).
-4. Clause 4 (Suicide Exclusion Clause): Death due to suicide within the first 12 months: 80% of total premiums paid are refunded to the nominee. After 12 continuous months, 100% of the sum assured is payable.
+3. Clause 3 (Free-Look Cancellation): 30-day Free-Look Period from receipt of the policy document. The refund is the premium paid minus a proportionate risk premium for the time covered, the medical examination cost and stamp duty, so it is not always a full refund.
+4. Clause 4 (Suicide Exclusion Clause): Death by suicide within 12 months of the date risk started or of revival: the nominee gets at least 80% of the premiums paid or the surrender value, whichever is higher. Death after 12 months is not excluded for this reason.
 5. Clause 5 (Pre-Existing Diseases & Medical Disclosure): Full disclosure of past surgeries, hospitalizations, or family cardiac history is statutory. Once declared and accepted, NexaSure cannot dispute coverage post-issuance.
 6. Clause 6 (Critical Illness Waiting & Survival Periods): 90-day initial waiting period from inception. 14-day survival period post-diagnosis for the lump sum payout.
 7. Clause 7 (Digital Claims): claims are registered digitally with a 2-hour response target and no physical paperwork. These are demo targets, not audited results; never state a claim settlement ratio.
-8. Clause 8 (Policy Revival Guarantee): A lapsed policy can be revived within 5 continuous years by clearing unpaid premiums and medical declarations.
+8. Clause 8 (Policy Revival): A lapsed policy can be revived within the period in the policy document by paying unpaid premiums with interest; a health declaration may be needed. In this demo product the period is five years (a NexaSure demo term; IRDAI leaves it to the policy document).
 
 II. NOMINATION & TRUST ALLOCATION (IRDAI SECTION 39 & MWPA 1874):
-1. Nominee Eligibility: Spouse, children, parents, or siblings.
+1. Nominee Eligibility: the policyholder may name any person as nominee; relationship matters for a Section 6 MWPA trust (wife and/or children only).
 2. Minor Nominee Protection: Under Section 39, if a nominee is under 18, an adult Appointee (guardian) must be named.
-3. Married Women's Property Act (MWPA 1874) Section 6 Trust: creates an irrevocable statutory trust for the wife and/or children. Claim proceeds cannot be attached by any creditor, income tax department, court decree, or insolvency resolution.
+3. Married Women's Property Act (MWPA 1874) Section 6 Trust: a policy taken under it becomes a trust for the wife and/or children. The money is generally protected from the policyholder's creditors and cannot be reached by a court decree against them, and the beneficiaries cannot be changed afterwards. Do not promise protection from every claim.
 
 III. BENEFIT LADDERS & LIVING BENEFIT TIERS:
 1. Critical Illness Ladder: Tier 1 Silver ₹10 Lakhs @ ₹89/mo (10 illnesses); Tier 2 Gold ₹25 Lakhs @ ₹149/mo (36 illnesses, recommended); Tier 3 Platinum ₹50 Lakhs @ ₹269/mo (64 illnesses + 2nd medical opinion).
@@ -60,7 +60,7 @@ III. BENEFIT LADDERS & LIVING BENEFIT TIERS:
 4. Terminal Illness Accelerated Benefit: 100% sum assured on diagnosis of terminal condition (< 6 months). Built-in at ₹0.
 5. Hospital Daily Cash Rider: ₹2,000 per day for each day of hospitalisation, paid directly to the policyholder (+₹55/mo). Useful for recovering loss-of-income during a hospital stay. Select with hospitalCash field.
 
-IV. TAX: Base premium deductible under Section 80C up to ₹1.5 Lakhs/yr. Critical Illness rider premium deductible under Section 80D up to ₹25,000/yr.
+IV. TAX (general information, not tax advice): under the old tax regime, life insurance premiums can qualify for a deduction under sections 123 and 126 of the Income-tax Act 2025, with a Rs 1.5 lakh overall cap; the new regime gives no such deduction. Death benefit is generally tax free under section 10(10D). Individual life insurance premiums are exempt from GST since 22 Sep 2025, so the monthly totals shown have no GST.
 V. UNDERWRITING: Non-smokers get a 20% lifetime discount. Enter name exactly as on Aadhaar/PAN to avoid claim-time identity mismatch.
 """
 
@@ -152,8 +152,8 @@ POLICY RULES:
 - ATPD options: lump (50 lakh) or income (1 lakh/month for 100 months).
 - Hospital Daily Cash rider: 2000 rupees per day of hospitalisation (+55/mo); field is hospitalCash.
 - Non-smokers get a 20% lifetime discount; smoker status must reflect what the customer said.
-- Free-look 30 days with full refund (Clause 3). Grace period 30 days, 15 for monthly mode (Clause 2).
-- Suicide clause: 80% premiums refunded within 12 months (Clause 4).
+- Free-look 30 days; refund is net of proportionate risk premium, medical exam cost and stamp duty (Clause 3). Grace period 30 days, 15 for monthly mode (Clause 2).
+- Suicide clause: at least 80% of premiums or the surrender value, whichever is higher, within 12 months (Clause 4).
 - Critical illness waiting period 90 days, survival period 14 days (Clause 6).
 - Section 45: no repudiation after 3 continuous years. Dates must be DD/MM/YYYY.
 - Never approve an action the customer did not ask for."""
