@@ -16,6 +16,11 @@ const agentLines = async () => {
 
 /** Type a message to the agent and return its next reply (waits for a new one that satisfies `ok`). */
 async function ask(text: string, ok: (reply: string) => boolean = () => true, timeout = 90_000): Promise<string> {
+  // Explaining a clause opens the terms drawer, which covers the ask box; close it first.
+  await page.evaluate(() => {
+    const drawer = [...document.querySelectorAll('div')].find((d) => d.textContent?.startsWith('Statutory Terms & Conditions (T&C)') && d.querySelector('button'));
+    [...(drawer?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === '✕')?.click();
+  });
   const before = (await agentLines()).length;
   await page.getByTestId('ask-input').fill(text);
   await page.getByTestId('ask-button').click();

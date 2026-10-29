@@ -8,7 +8,7 @@ const browser = (process.env.BROWSER || 'chromium') as 'chromium' | 'firefox';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 150_000,
+  timeout: 100_000,
   workers: 1,
   retries: 0,
   reporter: [['list'], ['./e2e/report.ts']],
