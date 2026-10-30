@@ -24,6 +24,9 @@ WORKDIR /app/omni_browse
 COPY omni_browse/package.json omni_browse/pnpm-lock.yaml omni_browse/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY omni_browse/ ./
+# The demo reads the bundled sample documents only; build with --build-arg NEXT_PUBLIC_ALLOW_OWN_FILES=true to show the own-file controls.
+ARG NEXT_PUBLIC_ALLOW_OWN_FILES=false
+ENV NEXT_PUBLIC_ALLOW_OWN_FILES=$NEXT_PUBLIC_ALLOW_OWN_FILES
 RUN pnpm build && pnpm prune --prod
 
 

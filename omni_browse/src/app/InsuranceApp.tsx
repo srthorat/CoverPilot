@@ -293,7 +293,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [spotlightedElementId, setSpotlightedElementId] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
-  // WebRTC gateway Video / WebRTC Co-Browsing Assist Flow
+  // WebRTC co-browsing session state
   const [isCoBrowsingConnected, setIsCoBrowsingConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [dismissOffer, setDismissOffer] = useState<boolean>(false);
@@ -688,7 +688,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     };
   };
 
-  // Establish Live WebRTC gateway Video / WebRTC Session with Meta Agent
+  // Establish the live WebRTC session with the voice agent
   const connectCoBrowsingSession = async () => {
     setIsConnecting(true);
     playChime();
@@ -730,7 +730,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     }
   };
 
-  // Disconnect WebRTC Session
+  // Disconnect the WebRTC session
   const disconnectCoBrowsingSession = () => {
     setIsCoBrowsingConnected(false);
     setIsScreenSharing(false);
@@ -2486,7 +2486,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             ...prev,
             {
               sender: 'agent',
-              text: '[SCREEN CONTROL ACTION]: OmniCB Agent glided to and selected the Critical Illness Living Benefit Rider (+₹149/mo). Spatial grounding via Meta Glimmer, policy logic via Meta Muse Spark 1.3.',
+              text: '[SCREEN CONTROL ACTION]: OmniCB Agent moved its cursor to the Critical Illness Living Benefit Rider card and selected it (+₹149/mo). Nothing is saved until you confirm.',
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             },
           ]);
@@ -3172,7 +3172,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         </div>
       )}
 
-      {/* Co-Browsing Status Bar: WebRTC Screen Share & Dual-Cursor Screen Control */}
+      {/* Co-Browsing Status Bar: session controls and dual-cursor screen control */}
       {isCoBrowsingConnected && (
         <div className={`shrink-0 bg-gradient-to-r from-[#180d40] via-[#24135e] to-[#180d40] text-white px-4 lg:px-6 py-1.5 border-b border-purple-800/40 transition-all ${
           isScreenSharing && !isSharingPaused ? 'screen-share-active-border' : ''
@@ -5788,144 +5788,72 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               <div>
                 <h4 className="text-sm font-bold text-[#111827] mb-2 flex items-center gap-2">
                   <span>1.</span>
-                  <span>How Meta Models Process Screen & Video Feeds</span>
+                  <span>Which model does what</span>
                 </h4>
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 text-slate-800 font-bold border-b border-slate-200">
                       <tr>
                         <th className="p-3">Meta Model / Technology</th>
-                        <th className="p-3">Video & Screen Feed Capability</th>
-                        <th className="p-3">Role in Co-Browsing</th>
+                        <th className="p-3">What it does here</th>
+                        <th className="p-3">Where it is used</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-spark"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta Muse Spark Series</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
-                        </td>
-                        <td className="p-3"><strong>High-Effort Multimodal Intent Reasoning</strong><br />Accepts high-res viewport frames, user queries, and live DOM state. Reasons through insurance clauses, underwriting questions, and proposal fields with chain-of-thought verification.</td>
-                        <td className="p-3"><strong>Conversational Co-Browsing Lead</strong>:<br />Powers dynamic guidance without hardcoding. Directs spatial spotlights and virtual dual-cursor actions in real-time.</td>
-                      </tr>
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-wonder"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta Muse Wonder</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
-                        </td>
-                        <td className="p-3"><strong>Deep Multimodal Actuarial Reasoning</strong><br />Reasons about cover against income, and an illustrative old-regime tax estimate (not tax advice).</td>
-                        <td className="p-3"><strong>Financial Risk & Actuarial Analysis</strong>:<br />Explains the Critical Illness and Accidental Death riders and what each costs. It does not give medical advice.</td>
-                      </tr>
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-image"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta Muse Image</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
-                        </td>
-                        <td className="p-3"><strong>Text-to-Image Generation (reserved)</strong><br />Image generation model on the Model API. KYC document OCR in this app is performed by Muse Spark's image input via /api/ocr.</td>
-                        <td className="p-3"><strong>Not yet wired</strong>:<br />Reserved for rendering policy certificate previews after issuance.</td>
-                      </tr>
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-voice-transcribe"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta Muse Voice Transcribe</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
-                        </td>
-                        <td className="p-3"><strong>Real-time Audio Uplink Transcription</strong><br />Transcribes customer microphone streams in real time with support for English, Hindi (हिंदी), and Marathi (मराठी) speech phonemes.</td>
-                        <td className="p-3"><strong>Two-Way Customer Voice Uplink</strong>:<br />Transcribes verbal questions directly from the browser microphone to feed the reasoning engine.</td>
-                      </tr>
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/sam-3-1"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta SAM 3.1</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">Meta Model API</span>
-                        </td>
-                        <td className="p-3"><strong>Native 60 FPS Video Segmentation & Memory Tracking</strong><br />Tracks dynamic viewport frames, modals, and elements across WebRTC screenshare video streams.</td>
-                        <td className="p-3"><strong>ID Privacy Shield</strong>:<br />SAM 3.1 finds photos, signatures, QR codes and Aadhaar numbers; Muse Spark locates printed IDs on a blurred copy; the browser pixelates them before a document is read.</td>
-                      </tr>
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-glimmer"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta Muse Glimmer</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-normal">Open Weights Edge</span>
-                        </td>
-                        <td className="p-3"><strong>DOM & UI Spatial Grounding</strong><br />Bridges raw visual screen pixels with DOM elements, calculating sub-pixel center coordinates.</td>
-                        <td className="p-3"><strong>Coordinate Precision & Glide</strong>:<br />Directs the agent's virtual cursor with smooth sub-pixel gliding to target elements.</td>
-                      </tr>
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/models/muse-spark-open"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta Muse Spark Open</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-normal">Open Weights Edge</span>
-                        </td>
-                        <td className="p-3"><strong>Local On-Device Reasoning</strong><br />Runs on-premises/edge with zero cloud latency and complete data sovereignty.</td>
-                        <td className="p-3"><strong>Sub-100ms Edge Fallback</strong>:<br />Guarantees instantaneous offline conversational responses when cloud network is offline.</td>
-                      </tr>
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-[#582be8]">
-                          <a href="https://dev.meta.ai/lp/muse-code"target="_blank"rel="noopener noreferrer"className="hover:underline flex items-center gap-1">
-                            <span>Meta Muse Code</span>
-                            <span className="text-[11px]"></span>
-                          </a>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-normal">Coding Agent</span>
-                        </td>
-                        <td className="p-3"><strong>Autonomous Software Architecture Agent</strong><br />Engineered the end-to-end co-browsing application, WebRTC pipeline, and multi-model routing.</td>
-                        <td className="p-3"><strong>Accelerated Development</strong>:<br />Created production-grade Next.js, WebRTC, and Meta AI agent integrations.</td>
-                      </tr>
+                      {[
+                        { name: 'Muse Spark 1.3', tag: 'Meta Model API', does: 'Reads the form state, a screenshot of the form and the passages found for the question, answers in English, Hindi or Marathi and returns one allowed action.', role: 'Replies for both agents; reads documents after the private parts are hidden; finds ID numbers on blurred copies; writes underwriter case notes.' },
+                        { name: 'Muse Spark Open', tag: 'Open weights, served on Modal', does: 'Reads a whole masked policy document in one call and returns its sections, coverage, exclusions, the facts it states and questions to put to the insurer.', role: 'Integrity Guardian document review only. It is not on the live voice path, and if it is unavailable the review shows an error.' },
+                        { name: 'Muse Wonder', tag: 'Meta Model API', does: 'Checks each action the agent took against what the customer said: approve, amend, reject, or ask for one more detail. Rejected actions are reverted.', role: 'Action verifier, and the narrative in the audit certificate.' },
+                        { name: 'Muse Voice Transcribe', tag: 'Meta Model API', does: 'Real-time speech to text for English, Hindi and Marathi from the customer microphone.', role: 'Customer voice in. The session is reopened before its 60 minute limit.' },
+                        { name: 'SAM 3.1', tag: 'Meta Model API', does: 'Finds the photo, signature and QR code on heavily blurred copies of an ID card.', role: 'Privacy shield: the original image stays in the browser and the browser hides those areas before anything reads the card.' },
+                        { name: 'Muse Image', tag: 'Meta Model API', does: 'Generates the personalised policy summary card.', role: 'Policy card at the end of the application.' },
+                        { name: 'Google Cloud Text-to-Speech', tag: 'Not a Meta model', does: 'Speaks the agents\' replies. Meta has no text-to-speech model, so this is the one outside voice service.', role: 'Voice out. The two agents use different voices.' },
+                        { name: 'Muse Glimmer and Muse Code', tag: 'Not used', does: 'Muse Glimmer (open weights for local agents) is not part of this product. Muse Code is a coding tool and is not part of the product either.', role: 'None.' },
+                      ].map((r) => (
+                        <tr key={r.name} className="hover:bg-slate-50/50 align-top">
+                          <td className="p-3 font-bold text-[#582be8]">
+                            <span>{r.name}</span>
+                            <div><span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-normal">{r.tag}</span></div>
+                          </td>
+                          <td className="p-3">{r.does}</td>
+                          <td className="p-3">{r.role}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </div>
 
-              {/* Section 2: Real-time Video Pipeline Diagram */}
+              {/* Section 2: How a turn works */}
               <div>
                 <h4 className="text-sm font-bold text-[#111827] mb-2 flex items-center gap-2">
                   <span>2.</span>
-                  <span>How the Real-Time Video Pipeline Works in Co-Browsing</span>
+                  <span>What happens on each turn</span>
                 </h4>
-                <div className="p-4 rounded-2xl bg-slate-900 text-white tabular-nums space-y-3">
-                  <div className="text-[11px] text-purple-300 font-bold border-b border-slate-200 pb-2">
-                    PIPELINE ARCHITECTURE (USER VIEWPORT → SAM 3 → WEBRTC → AGENT DUAL-CURSOR):
-                  </div>
+                <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-center text-[11px]">
-                    <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200">
-                      <div className="text-emerald-400 font-bold mb-1">1. Live Voice</div>
-                      <span>Mic PCM 24kHz → Muse Voice Transcribe WS</span>
+                    <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-900">
+                      <div className="text-emerald-700 font-bold mb-1">1. Voice in</div>
+                      <span>Microphone audio goes over WebRTC to the agent; Muse Voice Transcribe turns it into text.</span>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-purple-950 border border-purple-800">
-                      <div className="text-purple-300 font-bold mb-1">2. SAM 3.1 & PII Shield</div>
-                      <span>Client-Side Aadhaar/PAN Masking</span>
+                    <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-900">
+                      <div className="text-amber-700 font-bold mb-1">2. Reason</div>
+                      <span>Muse Spark gets the form state, a screenshot and a few retrieved passages, and replies with one allowed action.</span>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200">
-                      <div className="text-amber-300 font-bold mb-1">3. Muse Spark 1.3</div>
-                      <span>Sub-5ms DOM Reasoning & Co-Browsing</span>
+                    <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-900">
+                      <div className="text-purple-700 font-bold mb-1">3. Check</div>
+                      <span>The step gate and Muse Wonder check the action; material answers wait for your Confirm.</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-[#582be8]/30 border border-purple-500">
-                      <div className="text-white font-bold mb-1">4. Dual-Cursor & Visuals</div>
-                      <span>Sub-pixel Glide & Milestone WebP</span>
+                      <div className="text-white font-bold mb-1">4. Act and speak</div>
+                      <span>The form is updated with a visible second cursor and the reply is spoken by Google text-to-speech.</span>
                     </div>
                   </div>
-                  <ul className="list-disc pl-4 space-y-1 text-slate-600 text-[11px] font-sans pt-1">
-                    <li><strong>Live Voice Loop</strong>: Microphone PCM streams to Meta Muse Voice Transcribe (server-side endpointing). Muse Spark answers stream back and are spoken sentence by sentence with barge-in.</li>
-                    <li><strong>Decoupled DOM Engine</strong>: Agent navigates via live DOM coordinates (sub-5ms) instead of bandwidth-heavy continuous video streaming.</li>
-                    <li><strong>Live DOM State</strong>: The form state is sent to Muse Spark as JSON with every turn. No screenshots or video leave the browser.</li>
-                    <li><strong>Dual-Cursor Screen Control</strong>: Virtual cursor demonstrates field inputs with immediate emergency user override (ESC).</li>
+                  <ul className="list-disc pl-4 space-y-1 text-slate-300 text-[11px] font-sans pt-1">
+                    <li><strong>What the model receives:</strong> the form values as JSON, a reduced-size picture of the form (identity-number fields left out), and only the passages that match your question. Aadhaar, PAN and mobile numbers you type are never sent.</li>
+                    <li><strong>Documents:</strong> the original stays in your browser. Only heavily blurred copies, where text cannot be read, go to Meta's locator models; the reader then gets the image with those areas pixelated. Name, date of birth, address and PIN stay readable on that image and do go to Meta.</li>
+                    <li><strong>Two agents:</strong> the co-browsing agent fills the application; Integrity Guardian reviews the proposed policy with its own prompt, knowledge base and voice and never changes the application.</li>
+                    <li><strong>Your control:</strong> pause sharing or revoke control at any time (ESC); you make the declarations, sign and pay yourself.</li>
                   </ul>
                 </div>
               </div>
@@ -6005,7 +5933,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs flex items-center gap-2">
                   <span className="text-base"></span>
-                  <span><strong>Zero-Hallucination Grounding:</strong> Verified verbatim against official IRDAI filed policy contract.</span>
+                  <span><strong>Source:</strong> wording follows IRDAI's master circulars. NexaSure is a fictional demo product, so this is not a filed policy contract.</span>
                 </div>
               </div>
             )}

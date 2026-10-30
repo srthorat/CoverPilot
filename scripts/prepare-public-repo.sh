@@ -6,7 +6,8 @@
 # - Exports ONLY what is committed at HEAD (git archive), so untracked or ignored files such as
 #   omni_browse/.env.local, voice-agent-py/data or a stray key file can never enter the export.
 # - Leaves out private working notes: docs/notes/ (pasted AI-chat and early design notes, not part of the
-#   product) and the root todo.md (private task list).
+#   product), the root todo.md (private task list) and TODAYS_WORK_HISTORY_AND_NEXT_STEPS.md (a private
+#   work log that names accounts and an employer).
 # - Leaves out build output, test output, local data, any .env* except .env.example, and any PDF larger than
 #   2 MB except the bundled sample PDFs.
 # - Scans the export for secrets and aborts if anything looks like one. The scan compares against the real
@@ -90,7 +91,7 @@ fi
 git archive HEAD | tar -x -C "$TARGET"
 (
   cd "$TARGET"
-  rm -rf docs/notes todo.md voice-agent-py/data tools/sample-policy/__pycache__
+  rm -rf docs/notes todo.md TODAYS_WORK_HISTORY_AND_NEXT_STEPS.md voice-agent-py/data tools/sample-policy/__pycache__
   find . -type d \( -name test-results -o -name __pycache__ \) -prune -exec rm -rf {} +
   find . -type f \( -name '.env' -o -name '.env.*' \) ! -name '.env.example' -delete
   find . -type f -name '*.pdf' -size +2097152c ! -path './omni_browse/public/samples/*' -delete
