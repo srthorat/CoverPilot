@@ -30,6 +30,13 @@ def test_known_misrecognitions_are_corrected(heard: str, expected: str):
     assert correct(heard) == expected
 
 
+def test_marathi_cash_rider_mishear_is_corrected_and_hindi_rok_is_left_alone():
+    assert correct("रुग्णालयातील दैनिक रोक रायडर किती आहे?") == "रुग्णालयातील दैनिक रोख रायडर किती आहे?"
+    assert correct("रुग्णालयातील दैनिक रोग रायडर किती आहे?") == "रुग्णालयातील दैनिक रोख रायडर किती आहे?"
+    assert correct("गाड़ी रोक दीजिए") == "गाड़ी रोक दीजिए"
+    assert correct("रोख रायडर") == "रोख रायडर"
+
+
 def test_correction_is_case_insensitive():
     assert correct("HOSPITALITY DAILY CASH") == "hospital daily cash"
 

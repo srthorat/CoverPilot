@@ -10,8 +10,10 @@ const LATIN = /[A-Za-z]/g;
 // Product words and names that stay in English letters in a Hindi or Marathi answer.
 const KEEP_ENGLISH = /\b(rider|riders|premium|free[- ]?look|section|irdai|nexasure|omnicb|mwpa|pan|aadhaar|kyc|nominee|appointee|ok|guardian|integrity|ci|atpd|upi|otp|pin|gst|uin)\b/gi;
 
-const HINDI_WORDS = new Set(['है', 'हैं', 'आप', 'आपका', 'आपकी', 'आपके', 'नहीं', 'सकते', 'सकता', 'सकती', 'और', 'यह', 'लिए', 'करें', 'कीजिए', 'होगा', 'होगी', 'हूँ', 'हूं', 'मैं', 'था', 'थी']);
-const MARATHI_WORDS = new Set(['आहे', 'आहेत', 'आणि', 'तुम्ही', 'तुमचा', 'तुमची', 'तुमचे', 'तुमच्या', 'नाही', 'शकता', 'मध्ये', 'साठी', 'करा', 'होईल', 'मी', 'होते', 'तुम्हाला', 'आपल्या', 'आपण']);
+const HINDI_WORDS = new Set(['है', 'हैं', 'आप', 'आपका', 'आपकी', 'आपके', 'नहीं', 'सकते', 'सकता', 'सकती', 'और', 'यह', 'लिए', 'करें', 'कीजिए', 'होगा', 'होगी', 'हूँ', 'हूं', 'मैं', 'था', 'थी', 'कितना', 'कितनी', 'कितने', 'क्या', 'कौन', 'होता', 'होती', 'होते', 'मुझे', 'मेरी', 'मेरे', 'मेरा', 'कैसे', 'चाहिए', 'वाली', 'वाला', 'जाए', 'जाता', 'करना', 'रहा', 'रही', 'बताइए', 'मिलता', 'मिलती', 'भी', 'पर', 'में', 'को', 'से', 'के', 'की']);
+const MARATHI_WORDS = new Set(['आहे', 'आहेत', 'आणि', 'तुम्ही', 'तुमचा', 'तुमची', 'तुमचे', 'तुमच्या', 'नाही', 'शकता', 'मध्ये', 'साठी', 'करा', 'होईल', 'मी', 'होते', 'तुम्हाला', 'आपल्या', 'आपण', 'किती', 'म्हणजे', 'काय', 'कोण', 'होऊ', 'शकतो', 'शकते', 'झाली', 'झाले', 'असतो', 'असते', 'असतात', 'घ्यावे', 'मिळते', 'मिळतो', 'मला', 'माझ्या', 'माझा', 'माझी', 'माझे', 'करायचा', 'करायची', 'सांगा', 'विसरलो', 'येईल', 'लागते', 'लागतो', 'करावे', 'यांचा', 'त्याचा', 'ते', 'हे', 'ला', 'चा', 'ची', 'चे']);
+// Marathi attaches these to the noun before them (रायडरमध्ये, प्रीमियमसाठी, रुग्णालयातील), so a whole-word list misses them.
+const MARATHI_SUFFIXES = ['मध्ये', 'साठी', 'ातील', 'ाचा', 'ाची', 'ाचे', 'ांचा', 'ांची', 'ांचे'];
 
 /** Share of letters that are Devanagari, ignoring product words that stay in English letters. */
 export function devanagariShare(text: string): number {
@@ -27,7 +29,7 @@ export function guessIndicLanguage(text: string): IndicLang | 'unknown' {
   let mr = 0;
   for (const t of tokens) {
     if (HINDI_WORDS.has(t)) hi++;
-    if (MARATHI_WORDS.has(t)) mr++;
+    if (MARATHI_WORDS.has(t) || (t.length > 5 && MARATHI_SUFFIXES.some((x) => t.endsWith(x)))) mr++;
   }
   if (hi === mr) return 'unknown';
   return hi > mr ? 'hi' : 'mr';

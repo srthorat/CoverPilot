@@ -18,12 +18,18 @@ _KEEP_ENGLISH = re.compile(
 
 _HINDI_WORDS = {
     "है", "हैं", "आप", "आपका", "आपकी", "आपके", "नहीं", "सकते", "सकता", "सकती", "और", "यह", "लिए", "करें", "कीजिए",
-    "होगा", "होगी", "हूँ", "हूं", "मैं", "था", "थी",
+    "होगा", "होगी", "हूँ", "हूं", "मैं", "था", "थी", "कितना", "कितनी", "कितने", "क्या", "कौन", "होता", "होती", "होते",
+    "मुझे", "मेरी", "मेरे", "मेरा", "कैसे", "चाहिए", "वाली", "वाला", "जाए", "जाता", "करना", "रहा", "रही", "बताइए", "मिलता",
+    "मिलती", "भी", "पर", "में", "को", "से", "के", "की",
 }
 _MARATHI_WORDS = {
     "आहे", "आहेत", "आणि", "तुम्ही", "तुमचा", "तुमची", "तुमचे", "तुमच्या", "नाही", "शकता", "मध्ये", "साठी", "करा",
-    "होईल", "मी", "होते", "तुम्हाला", "आपल्या", "आपण",
+    "होईल", "मी", "होते", "तुम्हाला", "आपल्या", "आपण", "किती", "म्हणजे", "काय", "कोण", "होऊ", "शकतो", "शकते", "झाली",
+    "झाले", "असतो", "असते", "असतात", "घ्यावे", "मिळते", "मिळतो", "मला", "माझ्या", "माझा", "माझी", "माझे", "करायचा",
+    "करायची", "सांगा", "विसरलो", "येईल", "लागते", "लागतो", "करावे", "यांचा", "त्याचा", "ते", "हे", "ला", "चा", "ची", "चे",
 }
+# Marathi attaches these to the noun before them (रायडरमध्ये, प्रीमियमसाठी, रुग्णालयातील), so a whole-word list misses them.
+_MARATHI_SUFFIXES = ("मध्ये", "साठी", "ातील", "ाचा", "ाची", "ाचे", "ांचा", "ांची", "ांचे")
 _SPLIT = re.compile(r"[\s,.!?;:()\"'।|/-]+")
 
 # Too short to judge ("Sure." or a bare number); never retried.
@@ -65,7 +71,7 @@ def marker_counts(text: str) -> tuple[int, int]:
     for token in _SPLIT.split(text):
         if token in _HINDI_WORDS:
             hi += 1
-        if token in _MARATHI_WORDS:
+        if token in _MARATHI_WORDS or (len(token) > 5 and token.endswith(_MARATHI_SUFFIXES)):
             mr += 1
     return hi, mr
 
@@ -96,13 +102,14 @@ def check_reply(text: str, expected: str) -> tuple[bool, str]:
 def expected_reply_language(screen_lang: str, user_text: str) -> str | None:
     """Which Indian language the answer must be in, or None when no check applies.
 
-    The screen language decides (Hindi or Marathi). A customer whose Devanagari clearly is the other one (two or more
-    of its marker words, and more than the screen language's) gets the other one. Devanagari on an English screen is
-    answered in the language it is in (Hindi when unclear). English text on an English screen has no requirement."""
-    hi, mr = marker_counts(user_text)
+    On a Hindi or Marathi screen the screen language always decides: it is an explicit choice, it also steers the speech
+    recogniser, and the recogniser sometimes writes a Marathi sentence with Hindi words (measured), so the words heard
+    must not flip the language of the answer. A customer who wants the other language switches the language button.
+    Devanagari on an English screen is answered in the language it is in (Hindi when unclear). English text on an
+    English screen has no requirement."""
     if screen_lang in ("hi", "mr"):
-        other, own, other_n, own_n = ("mr", "hi", mr, hi) if screen_lang == "hi" else ("hi", "mr", hi, mr)
-        return other if other_n >= 2 and other_n > own_n else screen_lang
+        return screen_lang
     if _DEVANAGARI.search(user_text):
+        hi, mr = marker_counts(user_text)
         return "mr" if mr > hi else "hi"
     return None

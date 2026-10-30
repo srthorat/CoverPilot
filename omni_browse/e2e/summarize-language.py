@@ -8,11 +8,11 @@ for path in sys.argv[1:]:
     print(f"== {path}: {len(rows)} questions")
     groups = {}
     for r in rows:
-        groups.setdefault((r["agent"], r["lang"]), []).append(r)
-    for (agent, lang), rs in groups.items():
+        groups.setdefault((r.get("scenario", "screen"), r["agent"], r["lang"]), []).append(r)
+    for (scenario, agent, lang), rs in groups.items():
         ok = sum(1 for r in rs if r["replyOk"])
         ms = statistics.median(r["replyMs"] for r in rs)
-        print(f"{agent:9} {lang}: {ok}/{len(rs)} in the right language, median first-text {ms:.0f} ms, median length {statistics.median(len(r['reply']) for r in rs):.0f} chars")
+        print(f"{scenario:8} {agent:9} {lang}: {ok}/{len(rs)} in the right language, median first-text {ms:.0f} ms, median length {statistics.median(len(r['reply']) for r in rs):.0f} chars")
     for r in rows:
         if not r["replyOk"]:
-            print(f"  MISS {r['agent']} {r['lang']} [{r['replyWhy']}] len={len(r['reply'])}: {r['reply'][:160]}")
+            print(f"  MISS {r.get('scenario', 'screen')} {r['agent']} {r['lang']} [{r['replyWhy']}] len={len(r['reply'])}: {r['reply'][:160]}")

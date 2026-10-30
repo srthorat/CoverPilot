@@ -529,7 +529,7 @@ class AckProcessor(FrameProcessor):
                         "temperature": 0.3,
                         "reasoning_effort": "minimal",
                         "messages": [
-                            {"role": "system", "content": ACK_SYSTEM_PROMPT.format(language=language_label(self._session.lang, self._session.accent))},
+                            {"role": "system", "content": ACK_SYSTEM_PROMPT.format(language=language_label(self._session.reply_lang or self._session.lang, self._session.accent))},
                             {"role": "user", "content": user_text},
                         ],
                     },
@@ -540,7 +540,8 @@ class AckProcessor(FrameProcessor):
             text = ((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
             if not text or self._session.main_started:
                 return  # the real answer beat us: do not interject
-            if self._session.lang in ("hi", "mr") and not check_reply(text, self._session.lang)[0]:
+            ack_lang = self._session.reply_lang or self._session.lang
+            if ack_lang in ("hi", "mr") and not check_reply(text, ack_lang)[0]:
                 return  # an acknowledgement in the wrong language is worse than none
             target = self._downstream or self
             await target.push_frame(RTVIServerMessageFrame(data={"type": "agent_ack", "text": text, "ms": int((time.time() - t0) * 1000)}))
