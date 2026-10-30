@@ -1,0 +1,36 @@
+name: CI
+
+# Fast checks that need no API keys. The browser suite (omni_browse/e2e) talks to the live Meta models,
+# so it is run by hand against the Docker image: scripts/run-acceptance.sh
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: voice-agent-py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - run: uv run --with pytest python -m pytest -q tests/ --ignore=tests/harness_offline.py --ignore=tests/integration
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: omni_browse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@10.27.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: npx tsc --noEmit
+      - run: node --test --experimental-strip-types src/lib/*.test.ts

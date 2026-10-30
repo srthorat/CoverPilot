@@ -325,3 +325,21 @@ test('AC-15 A paused proposal resumes on another browser with its code and resum
   if (name && (await other.getByRole('heading', { name: /Step 1/ }).count())) await expect(other.locator('#field-full-name input')).toHaveValue(name);
   await fresh.close();
 });
+
+test('AC-17 A failing review model shows a clear error and no findings (bad-key instance)', async () => {
+  const bad = process.env.FAILURE_URL;
+  test.skip(!bad, 'set FAILURE_URL to an instance started with an invalid Meta key');
+  test.setTimeout(240_000);
+  const p = await page.context().newPage();
+  await p.goto(bad!);
+  await p.getByRole('button', { name: /Start a new policy/ }).click();
+  await p.getByRole('button', { name: /Integrity Guardian: review/ }).click();
+  await p.getByRole('button', { name: 'Sample proposed policy (with issues)' }).click();
+  await expect(p.getByText(/4 pages, read in your browser/)).toBeVisible({ timeout: 30_000 });
+  await p.getByRole('button', { name: 'Run Integrity Guardian' }).click();
+  await expect(p.getByText(/Review failed \(no fallback\)/)).toBeVisible({ timeout: 120_000 });
+  // No findings, no reviewer badge: nothing was invented in place of the model.
+  await expect(p.getByText('Checks against your application and the rules')).toHaveCount(0);
+  await expect(p.getByText(/Reviewed by /)).toHaveCount(0);
+  await p.close();
+});
