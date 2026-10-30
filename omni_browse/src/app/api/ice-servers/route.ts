@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { guard, LIMITS } from '@/lib/rate-limit';
 
 /**
  * ICE servers for the browser side of the WebRTC voice session.
@@ -25,11 +26,12 @@ export function buildIceServers(): RTCIceServer[] {
 }
 
 export async function GET(req: NextRequest) {
-  // Same-origin only: the credentials are for this app's own voice sessions.
-  const origin = req.headers.get('origin');
-  if (origin && new URL(origin).host !== req.nextUrl.host) {
-    return Response.json({ error: 'forbidden' }, { status: 403 });
-  }
+  // Meant for this app's own voice sessions: cross-site browser requests and a malformed Origin (such as the
+  // literal 'null', which used to throw and return a 500) get a 403, and callers are rate limited. A request
+  // with no browser headers at all, like the container healthcheck, is served. These TURN credentials are
+  // visible to anyone who opens the site, so the limits only slow abuse; use a relay account with its own quota.
+  const blocked = guard(req, LIMITS.iceServers);
+  if (blocked) return blocked;
   return Response.json(
     { iceServers: buildIceServers(), ttl: 3600 },
     { headers: { 'Cache-Control': 'no-store' } },

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 // Plain JS module shared with the custom server (server/google-tts.mjs)
 import { synthesizePcm, pcmToWav, PERSONAS, ACCENTS } from '../../../../server/google-tts.mjs';
 
@@ -8,7 +9,11 @@ import { synthesizePcm, pcmToWav, PERSONAS, ACCENTS } from '../../../../server/g
  * open, speech travels over the agent WebSocket as PCM frames instead.
  */
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const limited = guard(req, LIMITS.tts);
+  if (limited) return limited;
+  const read = await readJsonLimited(req, LIMITS.tts.maxBodyBytes, {});
+  if (!read.ok) return read.response;
+  const body = read.body ?? {};
   const text = String(body.text || '').trim().slice(0, 1200);
   const lang = ['en', 'hi', 'mr'].includes(body.lang) ? body.lang : 'en';
   const persona = PERSONAS.includes(body.persona) ? body.persona : 'veena';

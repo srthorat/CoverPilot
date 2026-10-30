@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
 
 /**
@@ -95,7 +96,11 @@ function agreed(boxes: Box[]): Box | null {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const limited = guard(req, LIMITS.locateIds);
+  if (limited) return limited;
+  const read = await readJsonLimited(req, LIMITS.locateIds.maxBodyBytes, {});
+  if (!read.ok) return read.response;
+  const body = read.body ?? {};
   const documentType = String(body.documentType || '');
   const fields = FIELDS[documentType];
   if (!fields) {

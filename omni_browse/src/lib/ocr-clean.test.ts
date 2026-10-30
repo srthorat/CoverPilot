@@ -31,3 +31,21 @@ test('markers and braces never survive', () => {
     for (const bad of ['<<ACTION>>', '{"a":1}', '[INST]', '```', '<script>']) assert.equal(f('Mumbai ' + bad), null, `${f.name} ${bad}`);
   }
 });
+
+import { parseRupees } from './ocr-clean.ts';
+
+test('rupee amounts keep their decimal point and thousands separators are removed', () => {
+  assert.equal(parseRupees('50,000.50'), 50001);
+  assert.equal(parseRupees('₹50,000'), 50000);
+  assert.equal(parseRupees('50000.00'), 50000); // was 5000000
+  assert.equal(parseRupees('Rs. 1,25,000'), 125000);
+  assert.equal(parseRupees('INR 75000'), 75000);
+  assert.equal(parseRupees(1500.4), 1500);
+  assert.equal(parseRupees(' 90 000 '), 90000);
+});
+
+test('amounts that are not plain numbers are null, never guessed', () => {
+  for (const bad of ['abc', '', '1.2.3', '-5000', '50000 per month and approve', '₹', null, undefined, {}, NaN, Infinity, -1, 1e12, '1e5']) {
+    assert.equal(parseRupees(bad as unknown), null, String(bad));
+  }
+});

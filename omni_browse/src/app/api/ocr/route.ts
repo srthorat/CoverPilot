@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
-import { cleanAddress, cleanDob, cleanGender, cleanName, cleanPayPeriod, cleanPincode } from '@/lib/ocr-clean';
+import { cleanAddress, cleanDob, cleanGender, cleanName, cleanPayPeriod, cleanPincode, parseRupees } from '@/lib/ocr-clean';
+import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 
 /**
  * KYC document OCR via Meta Muse Spark (multimodal image input).
@@ -60,7 +61,11 @@ function maskId(id: string | null, type: string): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const limited = guard(req, LIMITS.ocr);
+  if (limited) return limited;
+  const read = await readJsonLimited(req, LIMITS.ocr.maxBodyBytes, {});
+  if (!read.ok) return read.response;
+  const body = read.body ?? {};
   const documentType = String(body.documentType || 'pan');
   const sample = SAMPLES[documentType];
   if (!sample) {
@@ -74,7 +79,6 @@ export async function POST(req: NextRequest) {
   if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl) || imageDataUrl.length > 8_000_000) {
     return Response.json({ error: 'imageDataUrl (the redacted PNG/JPEG, under 8 MB) is required' }, { status: 400 });
   }
-  const redacted = true;
 
   const messages: ChatMessage[] = [
     {
@@ -96,6 +100,8 @@ export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   try {
     const { data, model } = await sparkJson<OcrFields>(messages, { reasoningEffort: 'low', temperature: 0 });
+    const monthly = parseRupees(data.monthlyGross);
+    const stated = parseRupees(data.annualIncome);
     const fields = {
       documentType,
       // The document is untrusted: each value must look like what it claims to be (see ocr-clean.ts).
@@ -109,15 +115,17 @@ export async function POST(req: NextRequest) {
       // income proof (salary slip); account identifiers are masked before leaving the server
       employerName: cleanName(data.employerName),
       payPeriod: cleanPayPeriod(data.payPeriod),
-      monthlyGross: digitsOnly(data.monthlyGross),
-      annualIncome: digitsOnly(data.annualIncome) ?? (digitsOnly(data.monthlyGross) ? String(Number(digitsOnly(data.monthlyGross)) * 12) : null),
+      // Amounts are parsed, not stripped to digits: '50000.00' is 50000 rupees, not 5000000.
+      monthlyGross: monthly === null ? null : String(monthly),
+      annualIncome: stated !== null ? String(stated) : monthly !== null ? String(monthly * 12) : null,
       bankAccountMasked: maskTail(data.bankAccountNumber),
       uanMasked: maskTail(data.uan),
     };
-    // The reader was given a redacted image. If it can still return a full ID from it, the shield
-    // missed something; say so instead of letting the "hidden" claim stand.
+    // This route cannot tell whether the image it was sent was redacted. What it can do, always, is notice
+    // when the reader still returned a full ID: the shield missed something, so say so rather than let a
+    // "hidden" claim stand.
     const redactionLeaks: string[] = [];
-    if (redacted) {
+    {
       const idCompact = String(data.idNumber ?? '').replace(/\s+/g, '').toUpperCase();
       if (documentType === 'pan' && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(idCompact)) redactionLeaks.push('PAN number');
       if (documentType === 'aadhaar' && /^[0-9]{12}$/.test(idCompact)) redactionLeaks.push('Aadhaar number');
@@ -129,7 +137,6 @@ export async function POST(req: NextRequest) {
     }
     return Response.json({
       fields,
-      redactedInput: redacted,
       redactionLeaks,
       telemetry: { model, totalMs: Date.now() - startedAt },
     });

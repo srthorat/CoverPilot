@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 import { metaEnv, MetaApiError } from '@/lib/meta';
 
 /**
@@ -16,7 +17,11 @@ const SYSTEM = `You are Muse Wonder acting as the independent compliance auditor
 Base every statement on the payload; do not invent facts or amounts. Do not give medical advice.`;
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const limited = guard(req, LIMITS.audit);
+  if (limited) return limited;
+  const read = await readJsonLimited(req, LIMITS.audit.maxBodyBytes, {});
+  if (!read.ok) return read.response;
+  const body = read.body ?? {};
   const certificate = body.certificate;
   if (!certificate || typeof certificate !== 'object') {
     return Response.json({ error: 'certificate payload is required' }, { status: 400 });

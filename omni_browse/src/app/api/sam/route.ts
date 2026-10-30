@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 import { parseImageStream, recordsOfKind, decodeMaskToSVGPath } from '@meta-sam/parser';
 import { metaEnv, MetaApiError } from '@/lib/meta';
 
@@ -143,7 +144,11 @@ function mergeBoxes(concept: string, items: Awaited<ReturnType<typeof segmentCon
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const limited = guard(req, LIMITS.sam);
+  if (limited) return limited;
+  const read = await readJsonLimited(req, LIMITS.sam.maxBodyBytes, {});
+  if (!read.ok) return read.response;
+  const body = read.body ?? {};
   const documentType = String(body.documentType || '');
   const concepts = CONCEPTS[documentType];
   if (!concepts) return Response.json({ error: 'documentType must be "pan" or "aadhaar"' }, { status: 400 });

@@ -27,3 +27,20 @@ export function cleanGender(v: unknown): 'Male' | 'Female' | null {
   const t = typeof v === 'string' ? v.trim().toLowerCase() : '';
   return t === 'male' ? 'Male' : t === 'female' ? 'Female' : null;
 }
+
+/**
+ * A rupee amount the model read from a document, as whole rupees. Thousands separators, the rupee sign,
+ * 'Rs.' and 'INR' are removed and one decimal point is kept, so '50,000.50' is 50001 and '50000.00' is
+ * 50000 (stripping every non-digit used to turn the latter into 5000000). Anything that is not a plain
+ * non-negative number after that is null, never a guess.
+ */
+export function parseRupees(v: unknown): number | null {
+  let n: number;
+  if (typeof v === 'number') n = v;
+  else if (typeof v === 'string') {
+    const t = v.replace(/₹|\brs\b\.?|\binr\b|\brupees?\b/gi, '').replace(/[,\s]/g, '');
+    if (!/^\d+(\.\d+)?$/.test(t)) return null;
+    n = Number(t);
+  } else return null;
+  return Number.isFinite(n) && n >= 0 && n <= 10_000_000_000 ? Math.round(n) : null;
+}

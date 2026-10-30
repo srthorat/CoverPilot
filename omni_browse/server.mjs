@@ -19,7 +19,12 @@ const handle = app.getRequestHandler();
 await app.prepare();
 const nextUpgrade = app.getUpgradeHandler();
 
-const server = createServer((req, res) => handle(req, res));
+const server = createServer((req, res) => {
+  // Stamp the caller's socket address for the API rate limiter (src/lib/rate-limit.ts). It always overwrites
+  // whatever the caller sent, so it cannot be spoofed; behind a proxy, TRUST_PROXY=true uses X-Forwarded-For instead.
+  req.headers['x-nexasure-client'] = req.socket.remoteAddress || '';
+  return handle(req, res);
+});
 server.on('upgrade', (req, socket, head) => nextUpgrade(req, socket, head)); // Next.js dev HMR
 
 server.listen(port, () => {

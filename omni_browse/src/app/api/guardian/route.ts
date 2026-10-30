@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 import { MetaApiError } from '@/lib/meta';
 import { GuardianConfigError, GuardianInputError, parseInput, reviewDocument } from '@/lib/guardian-review';
 
@@ -10,7 +11,11 @@ import { GuardianConfigError, GuardianInputError, parseInput, reviewDocument } f
  * uses Muse Spark Open on an OpenAI-compatible host. There is no silent fallback between them.
  */
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => null);
+  const limited = guard(req, LIMITS.guardian);
+  if (limited) return limited;
+  const read = await readJsonLimited(req, LIMITS.guardian.maxBodyBytes, null);
+  if (!read.ok) return read.response;
+  const body = read.body;
   try {
     return Response.json(await reviewDocument(parseInput(body)));
   } catch (err: any) {

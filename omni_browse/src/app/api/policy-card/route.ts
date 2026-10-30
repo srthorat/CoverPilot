@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createHash } from 'node:crypto';
 import { metaEnv, MetaApiError } from '@/lib/meta';
+import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 
 /**
  * Personalised policy summary card rendered by Meta Muse Image 1.0.
@@ -11,7 +12,22 @@ import { metaEnv, MetaApiError } from '@/lib/meta';
  */
 
 const MODEL = process.env.META_MODEL_IMAGE || 'muse-image-1.0';
+// Small LRU: each entry is a generated image of hundreds of KB, and the key comes from user-supplied text.
+const CACHE_MAX = 20;
 const cache = new Map<string, { dataUrl: string; ms: number }>();
+function cacheGet(key: string) {
+  const hit = cache.get(key);
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit); // most recently used goes last
+  }
+  return hit;
+}
+function cacheSet(key: string, value: { dataUrl: string; ms: number }) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
+}
 
 interface PolicyInput {
   policyholder: string;
@@ -43,7 +59,11 @@ function buildPrompt(p: PolicyInput): string {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const limited = guard(req, LIMITS.policyCard);
+  if (limited) return limited;
+  const read = await readJsonLimited(req, LIMITS.policyCard.maxBodyBytes, {});
+  if (!read.ok) return read.response;
+  const body = read.body ?? {};
   const p = body.policy as PolicyInput | undefined;
   if (!p || typeof p.policyholder !== 'string' || typeof p.sumAssured !== 'string') {
     return Response.json({ error: 'policy {policyholder, sumAssured, term, riders[], monthlyPremium} is required' }, { status: 400 });
@@ -59,7 +79,7 @@ export async function POST(req: NextRequest) {
   };
   const prompt = buildPrompt(input);
   const key = createHash('sha1').update(prompt).digest('hex');
-  const hit = cache.get(key);
+  const hit = cacheGet(key);
   if (hit) return Response.json({ ...hit, cached: true, model: MODEL });
 
   const t0 = Date.now();
@@ -78,7 +98,7 @@ export async function POST(req: NextRequest) {
     const format = String(json.output_format || 'webp').toLowerCase();
     const mime = format === 'png' ? 'image/png' : format === 'jpeg' || format === 'jpg' ? 'image/jpeg' : 'image/webp';
     const out = { dataUrl: `data:${mime};base64,${item.b64_json}`, ms: Date.now() - t0 };
-    cache.set(key, out);
+    cacheSet(key, out);
     return Response.json({ ...out, cached: false, model: MODEL });
   } catch (err: any) {
     const message = err instanceof MetaApiError ? err.message : `Policy card generation failed: ${err?.message || err}`;
