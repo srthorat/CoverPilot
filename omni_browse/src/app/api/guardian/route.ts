@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 import { MetaApiError } from '@/lib/meta';
-import { GuardianConfigError, GuardianInputError, parseInput, reviewDocument } from '@/lib/guardian-review';
+import { GuardianConfigError, GuardianInputError, GuardianModelOutputError, failureKind, parseInput, reviewDocument } from '@/lib/guardian-review';
 
 /**
  * Integrity Guardian: reads a proposed-policy document (text already extracted and masked in the
@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     if (err instanceof GuardianInputError) return Response.json({ error: err.message }, { status: 400 });
     if (err instanceof GuardianConfigError) return Response.json({ error: err.message }, { status: 503 });
-    const message = err instanceof MetaApiError ? err.message : `Guardian review failed: ${err?.message || err}`;
-    console.error('[guardian]', message);
-    return Response.json({ error: message }, { status: err instanceof MetaApiError ? 502 : 500 });
+    const message = err instanceof MetaApiError || err instanceof GuardianModelOutputError ? err.message : failureKind(err) === 'timeout' ? 'The review model did not answer in time' : `Guardian review failed (${failureKind(err)})`;
+    console.error('[guardian] review failed after retry:', failureKind(err));
+    return Response.json({ error: message }, { status: err instanceof MetaApiError || err instanceof GuardianModelOutputError || failureKind(err) === 'timeout' ? 502 : 500 });
   }
 }

@@ -75,7 +75,8 @@ Avoid: "no data reaches Meta" (name, date of birth, address and PIN on the redac
 |---|---|
 | Agent does not answer | Reload, start a new session, ask a throwaway question first |
 | Voice not heard | Check the OBS mic meter and the Chrome microphone lock icon; headphones on |
-| Review shows an error | Run `scripts/preflight.sh`; check Modal billing; or switch the provider to `spark` |
+| Review shows an error | Click **Try again** (the review is tried twice on the server first). If it repeats, run `scripts/preflight.sh`, check Modal billing, or switch the provider to `spark`. The server log (`docker logs coverpilot`) has one `[guardian] attempt` line per try with the failure kind (timeout, http-NNN, bad-output) and no document text |
+| Review says "Still working" | It appears after 30 s. Wait; a review is given up after about 4 minutes and then offers Try again. Normal time is 8 to 15 s |
 | Hindi reply is in English | Switch language, wait four seconds, ask again |
 | Layout overflows | Chrome zoom 80% (or a 1080p display) and reload |
 | Out of time in edit | Cut clip 4 (Hindi) first, then the document close-up in clip 3 |

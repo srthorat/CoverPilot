@@ -12,6 +12,7 @@ import type { GuardianResponse, ProposalFacts } from '@/lib/guardian-types';
 import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
 import { openIds, sealIds, type IdNumbers } from '@/lib/id-seal';
+import { CLIENT_REVIEW_TIMEOUT_MS, reviewFailureMessage } from '@/lib/guardian-timing';
 
 const IDLE_DISCONNECT_MS = 180_000; // the live voice session ends after 3 minutes without speech, a click or a key press
 import React, { useState, useEffect, useRef } from 'react';
@@ -435,6 +436,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [agentName, setAgentName] = useState('OmniCB co-browsing agent');
   const introducedModeRef = useRef<'cobrowse' | 'guardian' | null>(null);
   const [guardianReview, setGuardianReview] = useState<GuardianReviewState>({ status: 'idle', checks: [], history: [] });
+  // Bumped whenever the document changes or a run is cancelled, so a late answer for an earlier document is dropped.
+  const guardianRunRef = useRef(0);
+  const guardianAbortRef = useRef<AbortController | null>(null);
+  const resetGuardian = () => {
+    guardianRunRef.current += 1;
+    guardianAbortRef.current?.abort();
+    setGuardianReview((r) => ({ status: 'idle', checks: [], history: r.history }));
+  };
   const [guardianSection, setGuardianSection] = useState(0);
   const [reviewedSections, setReviewedSections] = useState<number[]>([]);
   const [askedQuestions, setAskedQuestions] = useState<string[]>([]);
@@ -1711,7 +1720,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         blob = await (await fetch(`/samples/${file}`)).blob();
         name = file;
       }
-      setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history });
+      resetGuardian();
       await loadPolicyFile(new File([blob], name, { type: 'application/pdf' }));
     } catch (e: any) {
       setPolicyDoc({ name: 'document', pages: [], masked: 0, status: 'error', error: e?.message || String(e) });
@@ -1729,7 +1738,16 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   const runGuardian = async () => {
     if (!policyDoc || !policyDoc.pages.length) return;
-    setGuardianReview((r) => ({ ...r, status: 'running', error: undefined }));
+    const runId = ++guardianRunRef.current;
+    guardianAbortRef.current?.abort();
+    const abort = new AbortController();
+    guardianAbortRef.current = abort;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      abort.abort();
+    }, CLIENT_REVIEW_TIMEOUT_MS);
+    setGuardianReview((r) => ({ ...r, status: 'running', error: undefined, startedAt: Date.now() }));
     try {
       const facts = proposalFacts();
       // The review model has a limited call budget: the same document with the same application numbers
@@ -1748,14 +1766,16 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         cached = null;
       }
       const res = cached
-        ? ({ ok: true, json: async () => cached } as unknown as Response)
+        ? ({ ok: true, status: 200, json: async () => cached } as unknown as Response)
         : await fetch('/api/guardian', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages: policyDoc.pages, proposal: facts }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.review) throw new Error(data.error || `Guardian HTTP ${res.status}`);
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pages: policyDoc.pages, proposal: facts }),
+            signal: abort.signal,
+          });
+      const data = await res.json().catch(() => ({}));
+      if (runId !== guardianRunRef.current) return; // the document changed or the run was cancelled meanwhile
+      if (!res.ok || !data.review) throw Object.assign(new Error(data.error || `Guardian HTTP ${res.status}`), { status: res.status, serverError: data.error });
       const response = data as GuardianResponse;
       if (!cached) {
         try {
@@ -1770,7 +1790,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       setReviewedSections([]);
       setGuardianReview((r) => ({ status: 'done', response, checks, history: [...r.history, { at: Date.now(), issues: countIssues(checks), model: response.model }] }));
     } catch (e: any) {
-      setGuardianReview((r) => ({ ...r, status: 'error', error: `Review failed (no fallback): ${e?.message || e}` }));
+      if (runId !== guardianRunRef.current) return;
+      const message = reviewFailureMessage({ status: e?.status, error: e?.serverError ?? (e?.status ? undefined : e?.message), timedOut });
+      setGuardianReview((r) => ({ ...r, status: 'error', error: `Review failed (no fallback): ${message}` }));
+    } finally {
+      clearTimeout(timer);
+      if (guardianAbortRef.current === abort) guardianAbortRef.current = null;
     }
   };
 
@@ -3611,9 +3636,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               comparing={draftHasContent}
               allowOwnFile={ALLOW_OWN_FILES}
               canUseDraft={maxReachableStep >= 5 || stepIssues[1].length === 0}
-              onFile={(f) => { setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history }); loadPolicyFile(f); }}
+              onFile={(f) => { resetGuardian(); loadPolicyFile(f); }}
               onSample={loadGuardianDoc}
-              onClear={() => { setPolicyDoc(null); agentRef.current?.clearPolicyDoc(); setGuardianReview({ status: 'idle', checks: [], history: guardianReview.history }); }}
+              onClear={() => { setPolicyDoc(null); agentRef.current?.clearPolicyDoc(); resetGuardian(); }}
               onRun={runGuardian}
               onSection={(i) => openGuardianSection(i, isListeningVoice)}
               onVoiceReview={() => openGuardianSection(0, true)}

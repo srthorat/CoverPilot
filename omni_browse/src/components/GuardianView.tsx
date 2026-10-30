@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import type { GuardianFinding, GuardianPage, GuardianResponse } from '@/lib/guardian-types';
+import { SLOW_NOTICE_MS, elapsedSeconds } from '@/lib/guardian-timing';
 
 export interface GuardianDoc {
   name: string;
@@ -14,6 +15,7 @@ export interface GuardianDoc {
 export interface GuardianReviewState {
   status: 'idle' | 'running' | 'done' | 'error';
   error?: string;
+  startedAt?: number; // when the current review began, for the "still working" notice
   response?: GuardianResponse;
   checks: GuardianFinding[];
   history: Array<{ at: number; issues: number; model: string }>;
@@ -37,6 +39,28 @@ interface Props {
   onAsk: (q: string) => void;
   onFix: (step: 1 | 2 | 3 | 4 | 5) => void;
   onDownloadReport: () => void;
+}
+
+// While a review runs: what it is doing, and after 30 s an honest note that it is slower than usual.
+function RunningNotice({ startedAt }: { startedAt?: number }) {
+  const [now, setNow] = React.useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [startedAt]);
+  const seconds = elapsedSeconds(startedAt, now);
+  const slow = seconds * 1000 >= SLOW_NOTICE_MS;
+  return (
+    <div data-testid="review-running" className="text-xs text-slate-500" role="status">
+      Reading every page and comparing it with your application. This usually takes 10 to 20 seconds{seconds > 0 ? ` (${seconds} s so far)` : ''}.
+      {slow && (
+        <span data-testid="review-slow" className="block mt-1 text-amber-800">
+          Still working. The review model can take a minute to wake up after a quiet spell. Nothing is lost; you can keep waiting.
+        </span>
+      )}
+    </div>
+  );
 }
 
 const MASK = /(\[(?:aadhaar|PAN|mobile|email|account or card) masked\])/g;
@@ -166,8 +190,15 @@ export function GuardianView(p: Props) {
                 </span>
               )}
             </div>
-            {p.review.status === 'error' && <div className="text-xs text-red-600">{p.review.error}</div>}
-            {p.review.status === 'running' && <div className="text-xs text-slate-500">Reading every page and comparing it with your application. This takes about half a minute.</div>}
+            {p.review.status === 'error' && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-red-600" role="alert">
+                <span>{p.review.error}</span>
+                <button data-testid="review-retry" onClick={p.onRun} className="px-3 py-1 rounded-lg bg-white border border-red-300 text-red-700 font-semibold">
+                  Try again
+                </button>
+              </div>
+            )}
+            {p.review.status === 'running' && <RunningNotice startedAt={p.review.startedAt} />}
 
             {res && (
               <div className="overflow-y-auto max-h-[52vh] flex flex-col gap-2 pr-1">

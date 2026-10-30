@@ -361,6 +361,53 @@ test('AC-21 The live session ends after inactivity, and Resume session brings th
   expect(reply).toMatch(/grace|premium|payment|days/i);
 });
 
+test('AC-22 A failed or slow review is explained and can be retried, and a late answer never lands on another document', async () => {
+  test.setTimeout(300_000);
+  // Reviews are cached per document and application in this tab; clear them so each step really calls the route.
+  const forgetReviews = () => page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith('nexasure.review.')).forEach((k) => sessionStorage.removeItem(k)));
+  await forgetReviews();
+  await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
+  await page.getByRole('button', { name: 'Sample proposed policy (with issues)' }).click();
+  await expect(page.getByText(/4 pages, read in your browser/)).toBeVisible({ timeout: 30_000 });
+
+  // 1. A failure is explained in plain words, shows nothing invented, and offers Try again.
+  await page.route('**/api/guardian', (r) => r.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'The review model did not answer in time' }) }));
+  await page.getByRole('button', { name: 'Run Integrity Guardian' }).click();
+  await expect(page.getByText(/Review failed \(no fallback\)/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('review-retry')).toBeVisible();
+  await expect(page.getByText(/Reviewed by /)).toHaveCount(0);
+  await page.unroute('**/api/guardian');
+  await forgetReviews();
+
+  // 2. A slow review says it is still working after 30 s, then completes (the real model answers after the delay).
+  await page.route('**/api/guardian', async (r) => {
+    await new Promise((res) => setTimeout(res, 33_000));
+    await r.continue();
+  });
+  await page.getByTestId('review-retry').click();
+  await expect(page.getByTestId('review-running')).toBeVisible();
+  await expect(page.getByTestId('review-slow')).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText(/Reviewed by /)).toBeVisible({ timeout: 90_000 });
+  await page.unroute('**/api/guardian');
+  await forgetReviews();
+
+  // 3. A review still running for one document must not show its answer after another document is chosen.
+  await page.getByRole('button', { name: 'Sample policy', exact: true }).click();
+  await expect(page.getByText(/sample-policy\.pdf: \d+ pages, read in your browser/)).toBeVisible({ timeout: 30_000 });
+  await page.route('**/api/guardian', async (r) => {
+    await new Promise((res) => setTimeout(res, 8_000));
+    await r.continue().catch(() => {});
+  });
+  await page.getByRole('button', { name: 'Run Integrity Guardian' }).click();
+  await expect(page.getByTestId('review-running')).toBeVisible();
+  await page.getByRole('button', { name: 'Sample proposed policy (with issues)' }).click();
+  await expect(page.getByText(/sample-policy-with-issues\.pdf: 4 pages, read in your browser/)).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(14_000); // long enough for the abandoned request's answer to have arrived
+  await expect(page.getByText(/Reviewed by /)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Run Integrity Guardian' })).toBeVisible();
+  await page.unroute('**/api/guardian');
+});
+
 test('AC-17 A failing review model shows a clear error and no findings (bad-key instance)', async () => {
   const bad = process.env.FAILURE_URL;
   test.skip(!bad, 'set FAILURE_URL to an instance started with an invalid Meta key');

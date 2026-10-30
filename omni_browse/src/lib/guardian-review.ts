@@ -7,6 +7,14 @@ import type { GuardianPage, GuardianResponse, ProposalFacts } from './guardian-t
 
 export class GuardianInputError extends Error {}
 export class GuardianConfigError extends Error {}
+/** The model answered, but not with a review we can read. `detail` holds sizes only, never the model's text. */
+export class GuardianModelOutputError extends Error {
+  detail: string;
+  constructor(detail: string) {
+    super('The review model returned an answer that could not be read');
+    this.detail = detail;
+  }
+}
 
 const LIMITS = { pages: 120, pageChars: 6000, totalChars: 250_000 };
 
@@ -79,25 +87,34 @@ export function parseModelJson(raw: string): unknown {
   const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
   const s = cleaned.indexOf('{');
   const e = cleaned.lastIndexOf('}');
-  if (s < 0 || e < s) throw new MetaApiError(502, `Model did not return JSON: ${raw.slice(0, 300)}`);
+  if (s < 0 || e < s) throw new GuardianModelOutputError(`no JSON object in ${raw.length} characters`);
   const body = cleaned.slice(s, e + 1);
   try {
     return JSON.parse(body);
   } catch {
     try {
       return JSON.parse(body.replace(/\}\]\s*,\s*"title"\s*:/g, '},{"title":'));
-    } catch {
-      throw new MetaApiError(502, `Model returned JSON that could not be parsed: ${raw.slice(0, 300)}`);
+    } catch (err: any) {
+      // The parser's message names a position, not text; the model's words (which can echo the document) stay out of logs.
+      throw new GuardianModelOutputError(`unparseable JSON, ${raw.length} characters, ${String(err?.message || '').replace(/["'][^"']*["']/g, '…').slice(0, 80)}`);
     }
   }
 }
 
-async function sparkReviewJson(messages: ChatMessage[]): Promise<{ data: unknown; model: string }> {
+/** Each attempt is bounded, so a hung or cold model is retried once and then reported instead of waited on.
+ *  Two attempts must fit inside the browser's own limit (guardian-timing.ts). Override with GUARDIAN_ATTEMPT_TIMEOUT_MS. */
+export function attemptTimeoutMs(which: 'spark' | 'spark-open'): number {
+  const fromEnv = Number(process.env.GUARDIAN_ATTEMPT_TIMEOUT_MS);
+  if (Number.isFinite(fromEnv) && fromEnv >= 1000) return fromEnv;
+  return which === 'spark-open' ? 130_000 : 120_000;
+}
+
+async function sparkReviewJson(messages: ChatMessage[], timeoutMs: number): Promise<{ data: unknown; model: string }> {
   const env = metaEnv();
   const res = await fetch(`${env.baseUrl}/chat/completions`, {
     method: 'POST',
     // A whole-document review is a long generation (30 s or more); the shared per-call timeout is for short answers.
-    signal: AbortSignal.timeout(Math.max(env.timeoutMs, 120_000)),
+    signal: AbortSignal.timeout(timeoutMs),
     headers: { Authorization: `Bearer ${env.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: env.sparkModel, temperature: 0, reasoning_effort: 'medium', messages }),
   });
@@ -106,7 +123,7 @@ async function sparkReviewJson(messages: ChatMessage[]): Promise<{ data: unknown
   return { data: parseModelJson(json.choices?.[0]?.message?.content ?? ''), model: json.model ?? env.sparkModel };
 }
 
-async function sparkOpenJson(messages: ChatMessage[]): Promise<{ data: unknown; model: string }> {
+async function sparkOpenJson(messages: ChatMessage[], timeoutMs: number): Promise<{ data: unknown; model: string }> {
   const base = process.env.GUARDIAN_OPEN_BASE_URL?.trim();
   const key = process.env.GUARDIAN_OPEN_API_KEY?.trim();
   const missing = [!base && 'GUARDIAN_OPEN_BASE_URL', !key && 'GUARDIAN_OPEN_API_KEY'].filter(Boolean);
@@ -115,13 +132,31 @@ async function sparkOpenJson(messages: ChatMessage[]): Promise<{ data: unknown; 
   const res = await fetch(`${base!.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     // An 816B model on a serverless GPU can need a minute to wake up before it generates.
-    signal: AbortSignal.timeout(240_000),
+    signal: AbortSignal.timeout(timeoutMs),
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, temperature: 0, max_tokens: 8000, reasoning_effort: 'medium', response_format: { type: 'json_object' }, messages }),
   });
   if (!res.ok) throw new MetaApiError(res.status, await res.text()); // body stays in the server log
   const json: any = await res.json();
   return { data: parseModelJson(json.choices?.[0]?.message?.content ?? ''), model: json.model ?? model };
+}
+
+/** One line per attempt, with sizes and a failure kind only: no document or model text. */
+export function failureKind(e: unknown): string {
+  const err = e as { name?: string; status?: number };
+  if (err?.name === 'TimeoutError' || err?.name === 'AbortError') return 'timeout';
+  if (e instanceof MetaApiError) return `http-${err.status}`;
+  if (e instanceof GuardianModelOutputError) return 'bad-output';
+  if (e instanceof GuardianConfigError) return 'config';
+  if (e instanceof TypeError) return 'network';
+  return 'error';
+}
+
+function logAttempt(a: { which: string; attempt: number; ms: number; pages: number; chars: number; error?: unknown }) {
+  const base = `[guardian] attempt ${a.attempt}/2 provider=${a.which} pages=${a.pages} chars=${a.chars} ms=${a.ms}`;
+  if (!a.error) return console.log(`${base} ok`);
+  const detail = a.error instanceof GuardianModelOutputError ? ` detail="${a.error.detail}"` : '';
+  console.error(`${base} FAILED kind=${failureKind(a.error)}${detail}`);
 }
 
 export async function reviewDocument(input: { pages: GuardianPage[]; proposal: ProposalFacts }): Promise<GuardianResponse> {
@@ -131,14 +166,25 @@ export async function reviewDocument(input: { pages: GuardianPage[]; proposal: P
     { role: 'system', content: SYSTEM },
     { role: 'user', content: userMessage(pages, proposal) },
   ];
+  const chars = pages.reduce((n, p) => n + p.text.length, 0);
   const t0 = Date.now();
-  const call = () => (which === 'spark' ? sparkReviewJson(messages) : sparkOpenJson(messages));
-  // The model occasionally returns JSON that cannot be parsed; one retry is enough in practice, and a
-  // second failure is reported rather than hidden. Configuration errors are never retried.
-  const { data, model } = await call().catch((e) => {
+  const timeoutMs = attemptTimeoutMs(which);
+  const attempt = async (n: number) => {
+    const started = Date.now();
+    try {
+      const out = await (which === 'spark' ? sparkReviewJson(messages, timeoutMs) : sparkOpenJson(messages, timeoutMs));
+      logAttempt({ which, attempt: n, ms: Date.now() - started, pages: pages.length, chars });
+      return out;
+    } catch (error) {
+      logAttempt({ which, attempt: n, ms: Date.now() - started, pages: pages.length, chars, error });
+      throw error;
+    }
+  };
+  // A model that times out, errors or returns unreadable JSON gets one more try (a cold start or a one-off slip);
+  // a second failure is reported, never hidden. Configuration errors are never retried.
+  const { data, model } = await attempt(1).catch((e) => {
     if (e instanceof GuardianConfigError) throw e;
-    console.error('[guardian] first attempt failed, retrying once:', String(e?.message || e).slice(0, 200));
-    return call();
+    return attempt(2);
   });
   return { provider: which, model, ms: Date.now() - t0, review: validateReview(data, pages.map((p) => p.page)) };
 }
