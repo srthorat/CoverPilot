@@ -5,7 +5,7 @@ In this demo product the base sum assured is one crore, one and a half crore or 
 Source: NexaSure demo product terms (not a regulation).
 
 ## Critical illness rider tiers
-Demo tiers: Silver pays ten lakh rupees for ten major illnesses at eighty-nine rupees a month. Gold pays twenty-five lakh for thirty-six illnesses at one hundred forty-nine a month and is the suggested tier. Platinum pays fifty lakh for sixty-four illnesses at two hundred sixty-nine a month. The payout is a lump sum on diagnosis, not linked to hospital bills. Illness lists vary by insurer, so read the policy wording.
+Demo tiers: Silver pays ten lakh rupees for ten major illnesses at eighty-nine rupees a month. Gold pays twenty-five lakh for thirty-six illnesses at one hundred forty-nine a month and is the suggested tier. Platinum pays fifty lakh for sixty-four illnesses at two hundred sixty-nine a month. The payout is a lump sum on diagnosis, not linked to hospital bills. The numbers of illnesses are NexaSure demo choices; no IRDAI rule found sets a minimum number of illnesses for a life rider. Illness lists vary by insurer, so read the policy wording, including how each illness is defined.
 Source: NexaSure demo product terms (not a regulation).
 
 ## Accidental total and permanent disability ladder

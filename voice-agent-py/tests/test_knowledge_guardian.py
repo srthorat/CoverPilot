@@ -41,6 +41,8 @@ CASES = [
     ("sum assured in document is different from what I applied for", "sum assured different"),
     ("premium on the document is higher than my quote", "premium different"),
     ("I chose critical illness but it is not listed", "rider you chose is not listed"),
+    ("do critical illness riders have to use the standard IRDAI definitions", "critical illness definitions in a rider"),
+    ("the cancer definition in my rider looks narrower than usual", "critical illness definition that looks different"),
     ("what happens if I miss a premium and my policy lapses", "what lapse means"),
     ("how do I bring back a lapsed policy", "reviving a lapsed policy"),
     ("does my term plan give a surrender value", "surrender value on a pure term plan"),

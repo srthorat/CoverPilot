@@ -12,6 +12,7 @@ from coverpilot.knowledge import KnowledgeBase
 KB = KnowledgeBase(exclude_prefix=("guardian-",))
 
 CASES = [
+    ("does the critical illness rider use the official IRDAI illness definitions", "Does the critical illness rider use the official illness definitions"),
     # field by field
     ("how should I write my name in the form", "Step one: how to write your full legal name in the form"),
     ("what date format does the date of birth use", "Step one: date of birth format and age limits"),

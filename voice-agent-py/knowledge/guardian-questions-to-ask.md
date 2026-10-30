@@ -13,7 +13,7 @@ Ask: Where in my policy are my nominees and their shares recorded? Ask: How do I
 Source: NexaSure Guardian suggested questions (not a regulation); IRDAI Master Circular on Protection of Policyholders' Interests 2024, section IV, para 3.
 
 ## Questions about riders
-Ask: Is the rider I chose included in my policy, and where is it listed? Ask: What is the waiting period and the survival period for the critical illness rider? Ask: Which illnesses and events are covered, and which are excluded? Ask: What happens to the riders if I stop paying the base premium?
+Ask: Is the rider I chose included in my policy, and where is it listed? Ask: What is the waiting period and the survival period for the critical illness rider? Ask: Which illnesses and events are covered, and which are excluded? Ask: Does the critical illness rider use the standard IRDAI wording for each illness, and if not, how does the wording differ? Ask: What happens to the riders if I stop paying the base premium?
 Source: NexaSure Guardian suggested questions (not a regulation).
 
 ## Questions about exclusions and limits
