@@ -114,9 +114,10 @@ async function sparkOpenJson(messages: ChatMessage[]): Promise<{ data: unknown; 
   const model = process.env.GUARDIAN_OPEN_MODEL?.trim() || 'meta-models/muse-spark-open-1026';
   const res = await fetch(`${base!.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
-    signal: AbortSignal.timeout(90_000),
+    // An 816B model on a serverless GPU can need a minute to wake up before it generates.
+    signal: AbortSignal.timeout(240_000),
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, temperature: 0, messages }),
+    body: JSON.stringify({ model, temperature: 0, max_tokens: 6000, reasoning_effort: 'medium', messages }),
   });
   if (!res.ok) throw new MetaApiError(res.status, await res.text()); // body stays in the server log
   const json: any = await res.json();
