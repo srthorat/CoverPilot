@@ -18,7 +18,6 @@ const testMatch = /voice\.spec|rehearsal\.spec|capacity\.spec|language\.spec|spe
   : /crossbrowser\.spec|mobile\.spec|a11y\.spec|shield\.spec/.test(named)
   ? /(crossbrowser|mobile|a11y|shield)\.spec\.ts/
   : /acceptance\.spec\.ts/;
-  : /acceptance\.spec\.ts/;
 
 export default defineConfig({
   testDir: './e2e',
