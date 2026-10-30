@@ -48,7 +48,7 @@ from coverpilot.memory import MemoryStore, MemoryWriter, customer_ref, valid_cus
 from coverpilot.meta_stt import MetaRealtimeSTTService
 from coverpilot.processors import AckProcessor, ActionMarkerFilter, ScreenStateInjector, WonderVerifier
 from coverpilot.prompt import build_system_prompt
-from coverpilot.session import ACCENTS, AGENT_NAMES, LANGS, LANGUAGE_BIAS, PERSONAS, SessionState, voice_for
+from coverpilot.session import ACCENTS, AGENT_NAMES, LANGS, LANGUAGE_BIAS, PERSONAS, SessionState, render_prior_turns, voice_for
 
 AUDIO_IN_RATE = 16000  # Silero + Smart Turn need 16 kHz
 AUDIO_OUT_RATE = 24000
@@ -194,9 +194,10 @@ def load_customer_memory(session: SessionState, customer_id: str | None) -> dict
     return memory
 
 
-async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None = None, *, lang: str = "en", persona: str = "veena", accent: str = "in", customer_id: str | None = None, auto_welcome: bool = True, tts_provider: str = "google"):
+async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None = None, *, lang: str = "en", persona: str = "veena", accent: str = "in", customer_id: str | None = None, auto_welcome: bool = True, tts_provider: str = "google", prior_turns=None):
     settings = Settings.load()
     session = SessionState(lang=lang, persona=persona, accent=accent)
+    session.prior_turns_text = render_prior_turns(prior_turns)
     memory = load_customer_memory(session, customer_id)
     stt, llm, tts, context, aggregators, injector, ack, actions, verifier = build_processors(settings, session, tts_provider=tts_provider)
     rtvi = RTVIProcessor()
@@ -395,6 +396,7 @@ async def bot(runner_args: RunnerArguments):
         accent=body.get("accent", "in"),
         customer_id=body.get("customerId"),
         auto_welcome=body.get("autoWelcome", True) is not False,
+        prior_turns=body.get("priorTurns"),
         # Google only unless the experimental MMS engine is switched on in the server environment (ENABLE_MMS_TTS=1).
         tts_provider="meta-mms" if body.get("ttsProvider") == "meta-mms" and os.getenv("ENABLE_MMS_TTS") == "1" else "google",
     )

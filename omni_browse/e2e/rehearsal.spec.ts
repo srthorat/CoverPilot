@@ -56,7 +56,7 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
     }
   };
   // Type a message and wait until the agent's reply has finished streaming.
-  const ask = async (text: string, timeout = 90_000): Promise<string> => {
+  const ask = async (text: string, ok: (reply: string) => boolean = () => true, timeout = 90_000): Promise<string> => {
     await closeDrawer();
     const before = (await agentLines()).length;
     await page.getByTestId('ask-input').fill(text);
@@ -64,7 +64,8 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
     let reply = '';
     await expect.poll(async () => { const l = await agentLines(); reply = l.length > before ? l[l.length - 1] : ''; return reply; }, { timeout, intervals: [1000] }).toBeTruthy();
     let stable = 0;
-    for (let i = 0; i < 40 && stable < 3; i++) {
+    // Stable for 3 s and accepted by `ok` (a short acknowledgement such as "Sure, checking..." arrives before the answer).
+    for (let i = 0; i < 60 && !(stable >= 3 && ok(reply)); i++) {
       await page.waitForTimeout(1000);
       const l = await agentLines();
       const now = l.length > before ? l[l.length - 1] : reply;
@@ -176,7 +177,7 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
       await expect(checks).toContainText(/10 days of grace for monthly premiums/);
       await expect(checks).toContainText(/24 months/);
       await expect(checks).toContainText(/no nomination section/i);
-      const reply = await ask('What happens if I miss a payment in month two?');
+      const reply = await ask('What happens if I miss a payment in month two?', (r) => /grace|fifteen|ten|page|days/i.test(r));
       expect(reply, `Guardian reply was: ${reply}`).toMatch(/grace|fifteen|ten|page/i);
     });
 

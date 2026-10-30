@@ -11,6 +11,9 @@ import { parseNomineeDob } from '@/lib/nominee-dob';
 import type { GuardianResponse, ProposalFacts } from '@/lib/guardian-types';
 import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
+import { openIds, sealIds, type IdNumbers } from '@/lib/id-seal';
+
+const IDLE_DISCONNECT_MS = 180_000; // the live voice session ends after 3 minutes without speech, a click or a key press
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent, type CaseRecord } from '@/lib/voice-client';
 import { MaskedIdField, maskAadhaar, maskPan, maskMobile } from '@/components/MaskedIdField';
@@ -379,6 +382,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const isSpeakingRef = useRef<boolean>(false);
   const isListeningRef = useRef<boolean>(false);
   const isCoBrowsingConnectedRef = useRef<boolean>(false);
+  const lastActivityRef = useRef<number>(0); // set in effects and handlers, never read the clock during prerender
+  const [idlePaused, setIdlePaused] = useState(false);
+  const chatRef = useRef<Array<{ sender: 'user' | 'agent'; text: string }>>([]);
   // Latest render's handlers, so long-lived agent callbacks never act on stale state.
   const latestRef = useRef<{
     applyAction: (a: AgentAction) => void;
@@ -692,8 +698,40 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     };
   };
 
+  // Clicks, key presses and touches count as activity; so does the customer speaking (see handleAgentEvent).
+  useEffect(() => {
+    const mark = () => {
+      lastActivityRef.current = Date.now();
+    };
+    const events = ['pointerdown', 'keydown', 'touchstart'] as const;
+    events.forEach((e) => window.addEventListener(e, mark, { passive: true }));
+    return () => events.forEach((e) => window.removeEventListener(e, mark));
+  }, []);
+
+  // End the live voice session after 3 minutes with no speech and no click, so it does not run on unattended.
+  // The conversation stays on screen and is handed to the next session when the customer clicks Resume session.
+  useEffect(() => {
+    if (!isCoBrowsingConnected) return;
+    lastActivityRef.current = Date.now();
+    const timer = setInterval(() => {
+      let limit = IDLE_DISCONNECT_MS;
+      try {
+        const o = Number(window.localStorage.getItem('nexasure.idleMs')); // lets the test suite shorten the wait
+        if (o >= 5000 && o < limit) limit = o;
+      } catch {
+        /* storage unavailable */
+      }
+      if (Date.now() - lastActivityRef.current >= limit && isCoBrowsingConnectedRef.current) disconnectCoBrowsingSession('idle');
+    }, 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCoBrowsingConnected]);
+
   // Establish the live WebRTC session with the voice agent
   const connectCoBrowsingSession = async () => {
+    const resuming = idlePaused;
+    setIdlePaused(false);
+    lastActivityRef.current = Date.now();
     setIsConnecting(true);
     playChime();
     try {
@@ -704,7 +742,13 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       setScreenControlStatus('granted');
 
       // Same lines the Python agent speaks on connect (voice-agent-py/bot.py WELCOME).
-      const welcomeMsg = selectedLanguage === 'hi'
+      const welcomeMsg = resuming
+        ? selectedLanguage === 'hi'
+          ? 'वापसी पर स्वागत है। हमारी अब तक की बातचीत मेरे पास है। जहाँ रुके थे, वहीं से आगे बढ़ते हैं।'
+          : selectedLanguage === 'mr'
+          ? 'पुन्हा स्वागत! आतापर्यंतचे आपले संभाषण माझ्याकडे आहे. जिथे थांबलो होतो तिथून पुढे जाऊया.'
+          : 'Welcome back. I have our conversation so far, so we can carry on where we stopped.'
+        : selectedLanguage === 'hi'
         ? 'नमस्ते! सुरक्षित लाइव सत्र जुड़ गया है। मैं आपका फॉर्म देख रहा हूँ। कृपया अपना पूरा नाम बताएं, या कोई भी प्रश्न पूछें।'
         : selectedLanguage === 'mr'
         ? 'नमस्कार! सुरक्षित लाइव्ह सत्र सुरू झाले आहे. मी तुमचा अर्ज पाहत आहे. कृपया तुमचे पूर्ण नाव सांगा किंवा कोणताही प्रश्न विचारा.'
@@ -734,8 +778,20 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     }
   };
 
+  chatRef.current = chatMessages;
+
+  // Last few turns of the conversation (only once the customer has said something), handed to a new voice session
+  // so a resume after an idle pause or a dropped connection keeps its context.
+  const recentTurns = () => {
+    const turns = chatRef.current
+      .filter((m) => m.text && !/^(Live session|Welcome to NexaSure|Meta API error|Voice agent)/.test(m.text))
+      .slice(-12)
+      .map((m) => ({ role: m.sender, text: m.text.slice(0, 400) }));
+    return turns.some((t) => t.role === 'user') ? turns : [];
+  };
+
   // Disconnect the WebRTC session
-  const disconnectCoBrowsingSession = () => {
+  const disconnectCoBrowsingSession = (reason?: 'idle') => {
     setIsCoBrowsingConnected(false);
     setIsScreenSharing(false);
     setScreenControlStatus('revoked');
@@ -743,12 +799,13 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     isCoBrowsingConnectedRef.current = false;
     localAudioRef.current?.pause();
     stopVoiceListening();
+    setIdlePaused(reason === 'idle');
     playChime();
     setChatMessages((prev) => [
       ...prev,
       {
         sender: 'agent',
-        text: 'Live session ended. Nothing further is shared with the agent.',
+        text: reason === 'idle' ? 'Session paused after 3 minutes of inactivity. Nothing is shared with the agent. Click Resume session to continue where you left off.' : 'Live session ended. Nothing further is shared with the agent.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -1064,6 +1121,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     patchLastTurn((last) => (last.marks?.[key] != null ? {} : { marks: { ...last.marks, [key]: Date.now() } }));
 
   const handleAgentEvent = (ev: AgentEvent) => {
+    if (ev.type === 'user_transcript' || ev.type === 'user_turn' || ev.type === 'interrupt') lastActivityRef.current = Date.now();
     switch (ev.type) {
       case 'hello':
         setVoiceTelemetry((t) => ({
@@ -2117,6 +2175,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       voice: voicePersonaRef.current,
       accent: accentRef.current,
       ttsProvider: ttsProviderRef.current,
+      priorTurns: recentTurns(),
       customerId: getCustomerId(),
       autoWelcome: false,
       onEvent: handleAgentEvent,
@@ -2206,7 +2265,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const annualTaxSavings = Math.round(Math.min(subtotalMonthly * 12, 150000) * 0.312);
 
   // ---- Pause and resume ----
-  // Identity numbers, the e-signature and the payment are never saved (see proposal-draft.ts).
+  // The e-signature and the payment are never saved. Identity numbers are kept out of the plain draft: the local
+  // copy seals them (id-seal.ts) and the copy for other devices carries them inside its resume-key encryption.
+  const idNumbers = (): IdNumbers => ({ aadhaarNumber: profile.aadhaarNumber, panNumber: profile.panNumber, mobileNumber: profile.mobileNumber, fromSample: idFromSample });
   const draftSnapshot = () => ({
     v: 1,
     profile: { ...profile, aadhaarNumber: '', panNumber: '', mobileNumber: '' },
@@ -2241,16 +2302,25 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   useEffect(() => {
     if (!draftId || !draftReady || policyIssued || !draftHasContent) return;
-    const t = setTimeout(() => saveDraft(draftId, draftSnapshot(), activeStep), 700);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const idsSealed = await sealIds(idNumbers());
+      if (!cancelled) saveDraft(draftId, { ...draftSnapshot(), idsSealed }, activeStep);
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftId, draftReady, policyIssued, profile, baseSumAssured, selectedRiders, noRiders, ciTier, atpdOption, lifeStageEscalator, nomination, underwriting, activeStep]);
+  }, [draftId, draftReady, policyIssued, profile, idFromSample, baseSumAssured, selectedRiders, noRiders, ciTier, atpdOption, lifeStageEscalator, nomination, underwriting, activeStep]);
 
-  const applyDraft = (id: string): boolean => {
+  const applyDraft = async (id: string): Promise<boolean> => {
     const d = loadDraft<any>(id);
     if (!d || d.v !== 1) return false;
-    setProfile((p) => ({ ...p, ...d.profile, aadhaarNumber: '', panNumber: '', mobileNumber: '' }));
-    setIdFromSample({ aadhaar: false, pan: false });
+    // Identity numbers are sealed in this browser's copy (a cross-device copy is sealed on arrival, see resumeRemote).
+    const ids = await openIds(d.idsSealed);
+    setProfile((p) => ({ ...p, ...d.profile, aadhaarNumber: ids?.aadhaarNumber || '', panNumber: ids?.panNumber || '', mobileNumber: ids?.mobileNumber || '' }));
+    setIdFromSample({ aadhaar: Boolean(ids?.fromSample?.aadhaar), pan: Boolean(ids?.fromSample?.pan) });
     if (d.baseSumAssured) setBaseSumAssured(d.baseSumAssured);
     if (d.selectedRiders) setSelectedRiders(d.selectedRiders);
     setNoRiders(Boolean(d.noRiders));
@@ -2284,7 +2354,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   const pauseProposal = async () => {
     if (!draftId) return;
-    const saved = draftHasContent ? saveDraft(draftId, draftSnapshot(), activeStep) : true;
+    const saved = draftHasContent ? saveDraft(draftId, { ...draftSnapshot(), idsSealed: await sealIds(idNumbers()) }, activeStep) : true;
     setDraftReady(true);
     setSavedProposals(readIndex());
     if (isCoBrowsingConnectedRef.current) disconnectCoBrowsingSession();
@@ -2297,7 +2367,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     try {
       // The draft is encrypted here, in the browser, with a key made now; the server only ever holds ciphertext.
       const key = generateResumeKey();
-      const { blob, authToken } = await encryptDraft(draftSnapshot(), key, draftId, activeStep);
+      const { blob, authToken } = await encryptDraft({ ...draftSnapshot(), ids: idNumbers() }, key, draftId, activeStep);
       const old = storedAuth(draftId);
       const res = await fetch('/api/vault', {
         method: 'PUT',
@@ -2310,7 +2380,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       }
       storeAuth(draftId, authToken);
       setPausedKey(key);
-      setPausedNote(`Proposal ${draftId} is paused. It is saved in this browser, and an encrypted copy can be opened on any device with this code and the resume key below. Your Aadhaar, PAN, mobile number, signature and payment are not saved, so you will enter them again.`);
+      setPausedNote(`Proposal ${draftId} is paused. It is saved in this browser, and an encrypted copy can be opened on any device with this code and the resume key below. Your signature and payment are never saved, so you will sign and pay again. Your Aadhaar, PAN and mobile number travel inside the encrypted copy and come back when you resume.`);
     } catch (e: any) {
       setPausedNote(`Proposal ${draftId} is saved in this browser only. The encrypted copy for other devices could not be uploaded (${e?.message || e}), so it cannot be resumed on another device yet. Your copy in this browser is safe.`);
     }
@@ -2329,9 +2399,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       if (!res.ok) return setRemoteError(res.status === 429 ? 'Too many tries. Wait a minute and try again.' : 'Could not reach the vault. Try again.');
       const { draft, authToken } = await decryptDraft<any>(await res.json(), key, id);
       if (!draft || draft.v !== 1) return setRemoteError('That saved copy could not be read.');
-      saveDraft(id, draft, Number(draft.activeStep) || 1); // a local copy, so resuming in this browser needs no key next time
+      // A local copy, so resuming in this browser needs no key next time. The identity numbers are sealed for this
+      // browser before they touch localStorage (sealIds returns null if that is unavailable, and they are retyped).
+      const { ids: arrivedIds, ...rest } = draft;
+      saveDraft(id, { ...rest, idsSealed: arrivedIds ? await sealIds(arrivedIds as IdNumbers) : null }, Number(draft.activeStep) || 1);
       storeAuth(id, authToken);
-      if (applyDraft(id)) {
+      if (await applyDraft(id)) {
         setRemoteId('');
         setRemoteKey('');
       }
@@ -2342,10 +2415,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     }
   };
 
-  const resumeByCode = () => {
+  const resumeByCode = async () => {
     const id = normalizeCode(resumeCode);
     if (!id) return;
-    if (!applyDraft(id)) setResumeError('No saved proposal with that code in this browser.');
+    if (!(await applyDraft(id))) setResumeError('No saved proposal with that code in this browser.');
     else setResumeError('');
   };
 
@@ -2909,8 +2982,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   You have a saved proposal <strong className="font-mono">{pendingResume.id}</strong> (step {pendingResume.step}).
                 </span>
                 <button
-                  onClick={() => {
-                    if (applyDraft(pendingResume.id)) {
+                  onClick={async () => {
+                    if (await applyDraft(pendingResume.id)) {
                       setMode('cobrowse');
                       setEntry('done');
                     }
@@ -3070,6 +3143,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         </div>
       </header>
 
+      {idlePaused && !isCoBrowsingConnected && (
+        <div role="status" data-testid="idle-paused" className="shrink-0 mx-4 lg:mx-6 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+          <span>Session paused after 3 minutes of inactivity. Your conversation and form are kept.</span>
+          <button data-testid="idle-resume" onClick={() => void connectCoBrowsingSession()} className="px-3 py-1 rounded-lg bg-[#582be8] text-white font-semibold">
+            Resume session
+          </button>
+        </div>
+      )}
+
       {pendingResume && (
         <div role="alert" className="shrink-0 mx-4 lg:mx-6 mt-2 rounded-xl border border-purple-300 bg-purple-50 px-3 py-2 text-xs text-purple-900 flex flex-wrap items-center gap-2">
           <span>
@@ -3128,7 +3210,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             ) : (
               <>
                 <h3 className="font-bold text-base mb-1">Resume a proposal</h3>
-                <p className="text-xs text-slate-600 mb-2">Proposals paused in this browser. Aadhaar, PAN, mobile, signature and payment are not saved.</p>
+                <p className="text-xs text-slate-600 mb-2">Proposals paused in this browser. Your ID numbers are kept sealed in this browser; signature and payment are never saved.</p>
                 <ul className="mb-3 max-h-40 overflow-y-auto divide-y divide-slate-100">
                   {savedProposals.length === 0 && <li className="py-2 text-xs text-slate-500">Nothing saved yet.</li>}
                   {savedProposals.map((m) => (
@@ -3307,7 +3389,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
               {/* Disconnect Button */}
               <button
-                onClick={disconnectCoBrowsingSession}
+                onClick={() => disconnectCoBrowsingSession()}
                 className="px-3 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white text-[11px] font-bold border border-red-500 transition-all flex items-center gap-1"
               >
                 <span></span>
@@ -5373,7 +5455,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               {/* Connect / Disconnect Action Button */}
               {isCoBrowsingConnected ? (
                 <button
-                  onClick={disconnectCoBrowsingSession}
+                  onClick={() => disconnectCoBrowsingSession()}
                   className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs border border-red-200 transition-all flex items-center gap-1.5"
                 >
                   <span></span>

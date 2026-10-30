@@ -103,6 +103,8 @@ export interface VoiceAgentClientOptions {
   accent: EnglishAccent;
   /** Spoken-output engine for this session: Google Cloud TTS (default) or Meta MMS (experimental, local server). */
   ttsProvider?: 'google' | 'meta-mms';
+  /** The last few turns of this conversation, so a session started after an idle pause or a drop keeps its context. */
+  priorTurns?: Array<{ role: 'user' | 'agent'; text: string }>;
   /** Stable id for cross-session memory; omit for a session with no memory. */
   customerId?: string | null;
   /** Let the agent speak its welcome as soon as it is ready (default true). */
@@ -294,6 +296,7 @@ export class VoiceAgentClient {
                   accent: this.opts.accent,
                   ttsProvider: this.opts.ttsProvider === 'meta-mms' ? 'meta-mms' : 'google',
                   customerId: this.opts.customerId || null,
+                  priorTurns: this.opts.priorTurns || [],
                   autoWelcome: this.opts.autoWelcome !== false,
                 },
               },

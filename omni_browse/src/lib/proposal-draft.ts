@@ -1,8 +1,9 @@
 // Saving a proposal in progress so the customer can pause it and resume it later.
 //
-// Drafts live in this browser's localStorage only; nothing about a draft is sent to a server. They
-// never contain identity numbers (Aadhaar, PAN, mobile), the e-signature or the payment: the
-// customer types the numbers again and signs again after resuming.
+// Drafts live in this browser's localStorage; the plain draft is never sent to a server (the copy for other
+// devices is encrypted in the browser first, see vault.ts). They never contain the e-signature or the payment:
+// the customer signs and pays again after resuming. Identity numbers (Aadhaar, PAN, mobile) are stored only
+// as `idsSealed`, encrypted with a per-browser key (see id-seal.ts), never as plain text.
 
 export const CURRENT_KEY = 'nexasure.currentProposal';
 const INDEX_KEY = 'nexasure.proposals';

@@ -288,6 +288,10 @@ test('AC-15 A paused proposal resumes on another browser with its code and resum
   // Make sure there is something to save, then pause in the main browser context.
   await page.getByRole('button', { name: /1\. Co-browse/ }).click();
   if (!(await input('field-full-name').inputValue())) await input('field-full-name').fill('Priya Sharma');
+  await page.getByPlaceholder('12 digits').fill('234123412346');
+  await page.getByPlaceholder('ABCDE1234F').fill('ABCDE1234F');
+  await page.getByPlaceholder('10 digits').fill('9876543210');
+  await page.waitForTimeout(1500); // the local copy is saved a moment after the last change
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   const keyBox = page.getByTestId('vault-key');
   await expect(keyBox).toBeVisible({ timeout: 60_000 }); // PBKDF2 and the upload take a moment
@@ -297,6 +301,12 @@ test('AC-15 A paused proposal resumes on another browser with its code and resum
   expect(key).toMatch(/^[A-HJKMNP-Z2-9]{5}-[A-HJKMNP-Z2-9]{5}$/);
   await expect(page.getByText(/Saved encrypted: we cannot read it/)).toBeVisible();
   const name = await input('field-full-name').inputValue();
+  // The ID numbers are never in this browser's stored draft as plain text.
+  const stored = await page.evaluate(() => Object.entries(localStorage).filter(([k]) => k.startsWith('nexasure.draft.')).map(([, v]) => v).join('|'));
+  expect(stored).not.toContain('234123412346');
+  expect(stored).not.toContain('ABCDE1234F');
+  expect(stored).not.toContain('9876543210');
+  expect(stored).toContain('idsSealed');
   await page.getByRole('button', { name: 'I have saved the key' }).click();
 
   // A brand new browser context has empty storage: only the code and the key can bring the draft back.
@@ -323,7 +333,32 @@ test('AC-15 A paused proposal resumes on another browser with its code and resum
   await expect(other.getByRole('heading', { name: /Step [1-5]/ }).first()).toBeVisible({ timeout: 60_000 });
   // The same step comes back, and on Step 1 the typed name is restored too.
   if (name && (await other.getByRole('heading', { name: /Step 1/ }).count())) await expect(other.locator('#field-full-name input')).toHaveValue(name);
+  // The ID numbers travelled inside the encrypted copy and are back.
+  if (await other.getByRole('heading', { name: /Step 1/ }).count()) {
+    // The fields show a masked form when not focused, so check the last four characters.
+    await expect(other.getByPlaceholder('12 digits')).toHaveValue(/2346$/);
+    await expect(other.getByPlaceholder('ABCDE1234F')).toHaveValue(/^ABC.*4F$/);
+    await expect(other.getByPlaceholder('10 digits')).toHaveValue(/210$/);
+  }
   await fresh.close();
+});
+
+test('AC-21 The live session ends after inactivity, and Resume session brings the conversation back', async () => {
+  test.setTimeout(240_000);
+  await page.getByRole('button', { name: /1\. Co-browse/ }).click();
+  const first = await ask('What is the grace period for monthly premiums?', (r) => /grace|days/i.test(r));
+  expect(first).toMatch(/grace|days/i);
+  // The real wait is 3 minutes; the page reads a shorter test value from storage.
+  await page.evaluate(() => localStorage.setItem('nexasure.idleMs', '15000'));
+  await expect(page.getByTestId('idle-paused')).toBeVisible({ timeout: 60_000 });
+  await page.evaluate(() => localStorage.removeItem('nexasure.idleMs'));
+  await expect(page.getByText(/Session paused after 3 minutes of inactivity/).first()).toBeVisible();
+  await closeTermsDrawer(); // the grace-period answer opens the terms drawer, which would cover the banner
+  await page.getByTestId('idle-resume').click();
+  await expect(page.getByText(/Welcome back/).first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(4000);
+  const reply = await ask('What did I ask you just before the pause?', (r) => /grace|premium|payment|days/i.test(r));
+  expect(reply).toMatch(/grace|premium|payment|days/i);
 });
 
 test('AC-17 A failing review model shows a clear error and no findings (bad-key instance)', async () => {
