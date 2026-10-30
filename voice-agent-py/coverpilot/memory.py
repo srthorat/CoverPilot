@@ -9,6 +9,7 @@ spoken path never waits on it. Nothing is stored unless a customer id is given.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import sqlite3
@@ -18,6 +19,21 @@ from typing import Any
 
 import aiohttp
 from loguru import logger
+
+# A customer id is the only thing that proves whose memory a session may read or delete, so it has to
+# be an unguessable secret: a UUID or at least 32 hex characters (128 bits). Anything shorter, such as
+# 'X' or a short random string, is refused instead of loading someone else's memory.
+_CUSTOMER_ID = re.compile(r"^(?:[0-9a-fA-F]{32,64}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")
+
+
+def valid_customer_id(customer_id: object) -> bool:
+    return isinstance(customer_id, str) and bool(_CUSTOMER_ID.match(customer_id))
+
+
+def customer_ref(customer_id: str | None) -> str:
+    """A short hash for logs; the id itself is a secret and is never logged."""
+    return hashlib.sha256((customer_id or "").encode()).hexdigest()[:8]
+
 
 _DB_PATH = Path(__file__).resolve().parent.parent / "data" / "memory.sqlite"
 
@@ -78,42 +94,61 @@ class MemoryWriter:
         self._api_key = api_key
         self._base_url = base_url
         self._model = model
-        self._tasks: set[asyncio.Task] = set()
+        self._tasks: dict[str, set[asyncio.Task]] = {}
+        # Bumped by forget(): an extraction that started before a delete must not save after it.
+        self._generation: dict[str, int] = {}
 
     def schedule(self, customer_id: str | None, user_text: str, assistant_text: str, on_saved=None) -> None:
         if not customer_id or not user_text.strip():
             return
-        task = asyncio.create_task(self._extract(customer_id, user_text, assistant_text, on_saved))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        generation = self._generation.get(customer_id, 0)
+        task = asyncio.create_task(self._extract(customer_id, user_text, assistant_text, on_saved, generation))
+        bucket = self._tasks.setdefault(customer_id, set())
+        bucket.add(task)
+        task.add_done_callback(lambda t, b=bucket: b.discard(t))
 
-    async def _extract(self, customer_id: str, user_text: str, assistant_text: str, on_saved) -> None:
+    def forget(self, customer_id: str) -> None:
+        """Delete the customer's memory and make sure nothing in flight can bring it back."""
+        self._generation[customer_id] = self._generation.get(customer_id, 0) + 1
+        for task in list(self._tasks.get(customer_id, ())):
+            task.cancel()
+        self._store.forget(customer_id)
+
+    async def _extract(self, customer_id: str, user_text: str, assistant_text: str, on_saved, generation: int = 0) -> None:
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as http:
-                async with http.post(
-                    f"{self._base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
-                    json={
-                        "model": self._model,
-                        "temperature": 0,
-                        "reasoning_effort": "low",
-                        "messages": [
-                            {"role": "system", "content": _EXTRACT_PROMPT},
-                            {"role": "user", "content": f"CUSTOMER SAID: {user_text}\nADVISOR REPLIED: {assistant_text}"},
-                        ],
-                    },
-                ) as res:
-                    if res.status != 200:
-                        logger.warning(f"[memory] HTTP {res.status}: {(await res.text())[:200]}")
-                        return
-                    data = await res.json()
-            raw = (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
-            cleaned = re.sub(r"```(?:json)?", "", raw, flags=re.I).replace("```", "").strip()
-            s, e = cleaned.find("{"), cleaned.rfind("}")
-            parsed = json.loads(cleaned[s : e + 1]) if s >= 0 and e > s else {}
+            parsed = await self._call_model(user_text, assistant_text)
+            if parsed is None:
+                return
+            if self._generation.get(customer_id, 0) != generation:
+                return  # the customer pressed Forget me while this was running
             facts = [str(f) for f in parsed.get("facts") or [] if isinstance(f, str)]
             added = self._store.save(customer_id, facts, parsed.get("summary") if isinstance(parsed.get("summary"), str) else None)
             if on_saved:
                 await on_saved(added, facts, parsed.get("summary"))
         except Exception as e:
             logger.warning(f"[memory] extraction failed: {e}")
+
+    async def _call_model(self, user_text: str, assistant_text: str) -> dict | None:
+        """One Muse Spark call; the parsed {"facts", "summary"} object, or None when the call failed."""
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as http:
+            async with http.post(
+                f"{self._base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": self._model,
+                    "temperature": 0,
+                    "reasoning_effort": "low",
+                    "messages": [
+                        {"role": "system", "content": _EXTRACT_PROMPT},
+                        {"role": "user", "content": f"CUSTOMER SAID: {user_text}\nADVISOR REPLIED: {assistant_text}"},
+                    ],
+                },
+            ) as res:
+                if res.status != 200:
+                    logger.warning(f"[memory] HTTP {res.status}: {(await res.text())[:200]}")
+                    return None
+                data = await res.json()
+        raw = (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
+        cleaned = re.sub(r"```(?:json)?", "", raw, flags=re.I).replace("```", "").strip()
+        s, e = cleaned.find("{"), cleaned.rfind("}")
+        return json.loads(cleaned[s : e + 1]) if s >= 0 and e > s else {}

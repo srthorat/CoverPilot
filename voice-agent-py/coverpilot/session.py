@@ -55,6 +55,7 @@ class SessionState:
     last_kb_chunks: list[dict] = field(default_factory=list)  # [{label, score}] for current turn
     policy_doc: Any = None  # KnowledgeBase over the customer's uploaded policy pages (in memory only)
     policy_name: str = ""
+    memory_writer: Any = None  # the session's MemoryWriter, so Forget me can cancel its in-flight work
     role: str = "cobrowse"  # which agent answers: "cobrowse" (fills the application) or "guardian" (reviews the document)
     policy_chunks: dict[str, Any] = field(default_factory=dict)  # id -> {total, parts} while a document arrives
 

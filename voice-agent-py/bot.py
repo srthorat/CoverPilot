@@ -42,7 +42,7 @@ from coverpilot import cases
 from coverpilot.config import Settings
 from coverpilot.google_tts import GoogleRestTTSService
 from coverpilot.knowledge import Chunk, KnowledgeBase
-from coverpilot.memory import MemoryStore, MemoryWriter
+from coverpilot.memory import MemoryStore, MemoryWriter, customer_ref, valid_customer_id
 from coverpilot.meta_stt import MetaRealtimeSTTService
 from coverpilot.processors import AckProcessor, ActionMarkerFilter, ScreenStateInjector, WonderVerifier
 from coverpilot.prompt import build_system_prompt
@@ -113,6 +113,7 @@ def build_processors(settings: Settings, session: SessionState, *, sample_rate_i
     )
     verifier = WonderVerifier(session, settings)
     memory_writer = MemoryWriter(MEMORY, api_key=settings.meta_api_key, base_url=settings.meta_base_url, model=settings.spark_model)
+    session.memory_writer = memory_writer
 
     async def on_turn_complete(spoken: str):
         async def on_saved(added, facts, summary):
@@ -174,6 +175,13 @@ def load_policy_document(session: SessionState, raw: str) -> dict:
 
 
 def load_customer_memory(session: SessionState, customer_id: str | None) -> dict:
+    """Load a returning customer's memory. The id is the only proof of ownership, so it must be an
+    unguessable secret (a UUID or 32 or more hex characters); anything else loads nothing and is refused."""
+    if customer_id and not valid_customer_id(customer_id):
+        logger.warning(f"[memory] refused a customer id that is not a 128-bit secret (ref {customer_ref(customer_id)})")
+        session.customer_id = None
+        session.memory_text = ""
+        return {"facts": [], "summary": "", "rejected": True}
     session.customer_id = customer_id or None
     memory = MEMORY.load(customer_id) if customer_id else {"facts": [], "summary": ""}
     session.memory_text = MemoryStore.render(memory)
@@ -318,10 +326,17 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
                     await rtvi_proc.send_server_message({"type": "agent_role", "role": mode, "name": AGENT_NAMES[mode]})
             elif kind == "set_customer":
                 mem = load_customer_memory(session, str(data.get("customerId") or "").strip()[:64] or None)
-                await rtvi_proc.send_server_message({"type": "memory", **mem})
+                payload = {"type": "memory", **mem}
+                if mem.get("rejected"):
+                    payload["error"] = "Memory needs a long random customer id (a UUID); this one was not accepted, so nothing was loaded."
+                await rtvi_proc.send_server_message(payload)
             elif kind == "forget_me":
+                # Only the session's own validated id can be forgotten; in-flight extraction is cancelled first.
                 if session.customer_id:
-                    MEMORY.forget(session.customer_id)
+                    if session.memory_writer is not None:
+                        session.memory_writer.forget(session.customer_id)
+                    else:
+                        MEMORY.forget(session.customer_id)
                     session.memory_text = ""
                 await rtvi_proc.send_server_message({"type": "memory", "facts": [], "summary": ""})
             elif kind == "set_language":
@@ -362,7 +377,7 @@ async def bot(runner_args: RunnerArguments):
     }
     transport = await create_transport(runner_args, transport_params)
     body = getattr(runner_args, "body", None) or {}
-    logger.info(f"[session] body: {body}")
+    logger.info(f"[session] body: { {k: v for k, v in body.items() if k != 'customerId'} } customer ref: {customer_ref(body.get('customerId')) if body.get('customerId') else None}")
     await run_bot(
         transport,
         runner_args,

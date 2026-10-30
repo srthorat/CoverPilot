@@ -75,6 +75,11 @@ class MetaRealtimeSTTService(WebsocketSTTService):
         self._sent_seconds = 0.0  # audio seconds sent in the current Meta session
         self._keepalive_logged = False
         self._last_transcript = 0.0  # monotonic time of the last transcript event from Meta
+        # One lock guards every open, close and replace of the socket, and the generation says which
+        # socket is current: a receive loop that is still reading an OLD socket must never clear or
+        # replace a newer one (that is how a second session used to leak after a rotation).
+        self._ws_lock = asyncio.Lock()
+        self._ws_generation = 0
 
     def can_generate_metrics(self) -> bool:
         return True
@@ -97,8 +102,7 @@ class MetaRealtimeSTTService(WebsocketSTTService):
         if bias == self._language_bias:
             return
         self._language_bias = bias
-        await self._disconnect_websocket()
-        await self._connect_websocket()
+        await self._replace_websocket()
 
     # ------------------------------------------------------------ audio in
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
@@ -148,8 +152,7 @@ class MetaRealtimeSTTService(WebsocketSTTService):
             if should_rotate(now - self._session_started, now - self._last_transcript):
                 logger.info(f"{self}: reopening the Meta ASR session before its time limit")
                 self._pending.clear()
-                await self._disconnect_websocket()
-                await self._connect_websocket()
+                await self._replace_websocket()
                 continue
             if now - self._last_send < tick * 1.5:
                 continue  # real audio is flowing
@@ -168,12 +171,24 @@ class MetaRealtimeSTTService(WebsocketSTTService):
                 pass
 
     async def _connect_websocket(self):
+        async with self._ws_lock:
+            await self._connect_websocket_locked()
+
+    async def _replace_websocket(self):
+        """Close the current session and open a fresh one as one step, so no other task can see the
+        gap between them or open a second socket in it."""
+        async with self._ws_lock:
+            await self._disconnect_websocket_locked()
+            await self._connect_websocket_locked()
+
+    async def _connect_websocket_locked(self):
         try:
             if self._websocket and self._websocket.state is State.OPEN:
                 return
             self._ready = False
             encoding = "PCM_16KHZ" if self.sample_rate == 16000 else "PCM_24KHZ"
             self._websocket = await self._websocket_connect(self._url)
+            self._ws_generation += 1
             await self._websocket.send(
                 json.dumps(
                     {
@@ -191,8 +206,13 @@ class MetaRealtimeSTTService(WebsocketSTTService):
         except Exception as e:
             await self.push_error(error_msg=f"Error connecting to Meta ASR: {e}", exception=e)
             self._websocket = None
+            self._ws_generation += 1
 
     async def _disconnect_websocket(self):
+        async with self._ws_lock:
+            await self._disconnect_websocket_locked()
+
+    async def _disconnect_websocket_locked(self):
         try:
             ws = self._websocket
             if ws and ws.state is State.OPEN:
@@ -206,6 +226,7 @@ class MetaRealtimeSTTService(WebsocketSTTService):
         finally:
             self._websocket = None
             self._ready = False
+            self._ws_generation += 1
             await self._call_event_handler("on_disconnected")
 
     def _get_websocket(self):
@@ -221,6 +242,7 @@ class MetaRealtimeSTTService(WebsocketSTTService):
                 ws = self._websocket
                 if not ws:
                     raise Exception("Meta ASR websocket unavailable")
+            generation = self._ws_generation
             try:
                 async for message in ws:
                     if isinstance(message, bytes):
@@ -232,14 +254,20 @@ class MetaRealtimeSTTService(WebsocketSTTService):
                     await self._handle_meta_event(msg)
             except ConnectionClosed:
                 pass  # a close with an error code is handled below, the same as a clean one
-            # Meta closed the session (max duration or policy). Reopen unless we are stopping.
-            close_code = getattr(ws, "close_code", None)
-            self._websocket = None
-            self._ready = False
+            # The socket we were reading has ended. If it was replaced on purpose (a rotation or a language
+            # change) the newer socket is already current: leave it alone and read that one next.
             if self._disconnecting:
                 break
-            logger.info(f"Meta ASR session closed ({close_code}); reconnecting")
-            await self._connect_websocket()
+            async with self._ws_lock:
+                if self._websocket is not ws or self._ws_generation != generation:
+                    continue
+                # Meta closed the session (max duration or policy). Reopen it.
+                close_code = getattr(ws, "close_code", None)
+                self._websocket = None
+                self._ready = False
+                self._ws_generation += 1
+                logger.info(f"Meta ASR session closed ({close_code}); reconnecting")
+                await self._connect_websocket_locked()
 
     async def _handle_meta_event(self, msg: dict):
         if not self._ready and msg.get("sessionId") and not msg.get("type"):

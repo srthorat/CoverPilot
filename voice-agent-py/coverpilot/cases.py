@@ -4,13 +4,18 @@ When the customer asks something the advisor must not answer (a health question
 beyond the form, or a request to bypass a statutory rule), the model emits an
 ``escalate`` action. A case records the question, the reply, the product choices
 on screen, the knowledge retrieved and a three-line factual note for an
-underwriter. It never contains a name, date of birth, pincode, identity or
-mobile number, or any health declaration; those stay in the form.
+underwriter. The form's own values (name, date of birth, pincode, nominee names)
+are never copied in. Identity numbers (Aadhaar, PAN), mobile numbers, emails and
+account or card numbers are masked inside the stored question and reply, and
+each is cut to 300 characters. The question itself is kept because the
+underwriter has to see what was asked, so it can still describe a health matter
+the customer raised; the case never carries a health declaration from the form.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from pathlib import Path
@@ -48,6 +53,27 @@ Output exactly three short lines in English, no markdown:
 Do not assess any health condition, symptom, risk, medical seriousness or acceptance. Do not give advice. Do not add facts that are not in the input."""
 
 
+# Masking is by pattern, never by a model. Order matters: a 16-digit card (4-4-4-4) goes first so its first
+# twelve digits are not taken for an Aadhaar, then Aadhaar, before the looser mobile and account patterns
+# can match part of one.
+_MASKS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"(?<!\d)\d{4}(?:[ -]\d{4}){3}(?!\d)"), "[account or card masked]"),
+    (re.compile(r"(?<!\d)\d{4}[ -]?\d{4}[ -]?\d{4}(?![ -]?\d)"), "[aadhaar masked]"),
+    (re.compile(r"\b[A-Za-z]{5}\d{4}[A-Za-z]\b"), "[PAN masked]"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "[email masked]"),
+    (re.compile(r"(?<!\d)(?:\+91[ -]?)?[6-9]\d{4}[ -]?\d{5}(?!\d)"), "[mobile masked]"),
+    (re.compile(r"(?<!\d)\d{9,18}(?!\d)"), "[account or card masked]"),
+]
+
+
+def mask_text(text: str | None, limit: int = 300) -> str:
+    """Mask identity, phone, email and account numbers, then cut to `limit` characters."""
+    out = text or ""
+    for pattern, label in _MASKS:
+        out = pattern.sub(label, out)
+    return out[:limit]
+
+
 def sanitize_screen(screen: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(screen, dict):
         return {}
@@ -77,8 +103,8 @@ def build_case(
         "reason": reason if reason in REASONS else "other",
         "reasonLabel": REASONS.get(reason, REASONS["other"]),
         "language": language,
-        "question": question,
-        "advisorReply": reply,
+        "question": mask_text(question),
+        "advisorReply": mask_text(reply),
         "screen": sanitize_screen(screen),
         "knowledge": [{"label": c.get("label"), "score": c.get("score")} for c in kb_chunks],
         "underwriterNote": summary,
@@ -100,7 +126,7 @@ async def summarize(question: str, reply: str, *, api_key: str, base_url: str, m
                     "reasoning_effort": "minimal",
                     "messages": [
                         {"role": "system", "content": _SUMMARY_PROMPT},
-                        {"role": "user", "content": f"CUSTOMER QUESTION: {question}\nADVISOR REPLY: {reply}"},
+                        {"role": "user", "content": f"CUSTOMER QUESTION: {mask_text(question)}\nADVISOR REPLY: {mask_text(reply)}"},
                     ],
                 },
             ) as res:

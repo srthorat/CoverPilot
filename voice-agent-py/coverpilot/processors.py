@@ -237,6 +237,10 @@ class ActionMarkerFilter(FrameProcessor):
                 return
             self._pending += frame.text
             await self._drain(final=False)
+        elif isinstance(frame, LLMTextFrame):
+            # Text that was already queued when the customer barged in. Nothing may reach the voice or the
+            # assistant context from an answer that was cut off, least of all the '<<ACTION>>' JSON tail.
+            return
         elif isinstance(frame, LLMFullResponseEndFrame):
             await self._drain(final=True)
             # The form as it was before this reply's action reaches the browser, so a reject can undo it.
