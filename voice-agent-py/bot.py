@@ -41,6 +41,7 @@ from pipecat.transports.base_transport import BaseTransport, TransportParams
 from coverpilot import cases
 from coverpilot.config import Settings
 from coverpilot.google_tts import GoogleRestTTSService
+from coverpilot.mms_tts import MetaMmsTTSService
 from coverpilot.knowledge import Chunk, KnowledgeBase
 from coverpilot.logsafe import debug_transcripts, install_log_patcher, safe_keys
 from coverpilot.memory import MemoryStore, MemoryWriter, customer_ref, valid_customer_id
@@ -76,7 +77,7 @@ WELCOME = {
 }
 
 
-def build_processors(settings: Settings, session: SessionState, *, sample_rate_in: int = AUDIO_IN_RATE, sample_rate_out: int = AUDIO_OUT_RATE):
+def build_processors(settings: Settings, session: SessionState, *, sample_rate_in: int = AUDIO_IN_RATE, sample_rate_out: int = AUDIO_OUT_RATE, tts_provider: str = "google"):
     """Create the services and processors shared by the runner bot and the offline harness."""
     stt = MetaRealtimeSTTService(
         api_key=settings.meta_api_key,
@@ -95,7 +96,10 @@ def build_processors(settings: Settings, session: SessionState, *, sample_rate_i
         ),
     )
     lang_code, voice = voice_for(session.active_persona(), session.lang, session.accent)
-    tts = GoogleRestTTSService(api_key=settings.google_tts_api_key, voice=voice, language_code=lang_code, sample_rate=sample_rate_out)
+    if tts_provider == "meta-mms":  # experimental, chosen by the customer in the app; Google is the default
+        tts = MetaMmsTTSService(language_code=lang_code, sample_rate=sample_rate_out)
+    else:
+        tts = GoogleRestTTSService(api_key=settings.google_tts_api_key, voice=voice, language_code=lang_code, sample_rate=sample_rate_out)
 
     context = LLMContext([{"role": "system", "content": build_system_prompt(session.lang, session.accent, settings.spark_model)}])
     aggregators = LLMContextAggregatorPair(
@@ -190,11 +194,11 @@ def load_customer_memory(session: SessionState, customer_id: str | None) -> dict
     return memory
 
 
-async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None = None, *, lang: str = "en", persona: str = "veena", accent: str = "in", customer_id: str | None = None, auto_welcome: bool = True):
+async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None = None, *, lang: str = "en", persona: str = "veena", accent: str = "in", customer_id: str | None = None, auto_welcome: bool = True, tts_provider: str = "google"):
     settings = Settings.load()
     session = SessionState(lang=lang, persona=persona, accent=accent)
     memory = load_customer_memory(session, customer_id)
-    stt, llm, tts, context, aggregators, injector, ack, actions, verifier = build_processors(settings, session)
+    stt, llm, tts, context, aggregators, injector, ack, actions, verifier = build_processors(settings, session, tts_provider=tts_provider)
     rtvi = RTVIProcessor()
 
     pipeline = Pipeline(
@@ -391,6 +395,7 @@ async def bot(runner_args: RunnerArguments):
         accent=body.get("accent", "in"),
         customer_id=body.get("customerId"),
         auto_welcome=body.get("autoWelcome", True) is not False,
+        tts_provider="meta-mms" if body.get("ttsProvider") == "meta-mms" else "google",
     )
 
 

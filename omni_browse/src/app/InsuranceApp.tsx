@@ -370,6 +370,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const localAudioRef = useRef<HTMLAudioElement | null>(null); // pre-session speech via /api/tts
   const voicePersonaRef = useRef<VoicePersona>('veena');
   const accentRef = useRef<EnglishAccent>('in');
+  const [ttsProvider, setTtsProvider] = useState<'google' | 'meta-mms'>('google'); // applies to the next voice session
+  const ttsProviderRef = useRef<'google' | 'meta-mms'>('google');
+  const [sessionTts, setSessionTts] = useState<'google' | 'meta-mms'>('google'); // engine of the live session
   const currentAgentMsgIdRef = useRef<number | null>(null);
   const agentTextRef = useRef<string>('');
   const [agentState, setAgentState] = useState<'listening' | 'thinking' | 'speaking'>('listening');
@@ -2108,10 +2111,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     if (typeof window === 'undefined' || isListeningRef.current) return;
     setMicPermissionError(null);
     setVoiceTranscriptLive('');
+    setSessionTts(ttsProviderRef.current);
     const client = new VoiceAgentClient({
       lang: langOverride || latestRef.current.lang,
       voice: voicePersonaRef.current,
       accent: accentRef.current,
+      ttsProvider: ttsProviderRef.current,
       customerId: getCustomerId(),
       autoWelcome: false,
       onEvent: handleAgentEvent,
@@ -3221,7 +3226,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               <span className="text-purple-400 hidden md:inline">|</span>
               <span className="text-[11px] tabular-nums text-purple-200 hidden md:inline">
                 {showDevPanel
-                  ? `Agent ${agentState.toUpperCase()} • ${voiceTelemetry.asrModel || 'muse-voice-transcribe-1.0'} realtime ASR • ${voiceTelemetry.sparkModel || 'muse-spark-1.3'} streaming • Google Cloud TTS ${voiceTelemetry.ttsVoice ? `(${voiceTelemetry.ttsVoice})` : ''}`
+                  ? `Agent ${agentState.toUpperCase()} • ${voiceTelemetry.asrModel || 'muse-voice-transcribe-1.0'} realtime ASR • ${voiceTelemetry.sparkModel || 'muse-spark-1.3'} streaming • ${sessionTts === 'meta-mms' ? 'Meta MMS TTS (experimental)' : 'Google Cloud TTS'} ${voiceTelemetry.ttsVoice ? `(${voiceTelemetry.ttsVoice})` : ''}`
                   : `Agent ${agentState === 'listening' ? 'listening' : agentState === 'thinking' ? 'thinking' : 'speaking'} • ${isSharingPaused ? 'sharing paused' : 'sharing this form'}`}</span>
             </div>
 
@@ -5490,6 +5495,32 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     }`}
                   >
                     {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Spoken-output engine. Google is the default; Meta MMS is experimental (local server, slower, one voice per language). */}
+            <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px]">
+              <span className="text-slate-600 font-medium">TTS:</span>
+              <div className="flex gap-1">
+                {([
+                  ['google', 'Google'],
+                  ['meta-mms', 'Meta MMS (Experimental)'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    title="Takes effect the next time you start a voice session"
+                    onClick={() => {
+                      setTtsProvider(id);
+                      ttsProviderRef.current = id;
+                    }}
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                      ttsProvider === id ? 'bg-[#582be8] text-white' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    {label}
                   </button>
                 ))}
               </div>

@@ -101,6 +101,8 @@ export interface VoiceAgentClientOptions {
   voice: VoicePersona;
   /** Indian or American English; ignored for Hindi/Marathi. */
   accent: EnglishAccent;
+  /** Spoken-output engine for this session: Google Cloud TTS (default) or Meta MMS (experimental, local server). */
+  ttsProvider?: 'google' | 'meta-mms';
   /** Stable id for cross-session memory; omit for a session with no memory. */
   customerId?: string | null;
   /** Let the agent speak its welcome as soon as it is ready (default true). */
@@ -290,6 +292,7 @@ export class VoiceAgentClient {
                   lang: this.lang,
                   persona: this.opts.voice,
                   accent: this.opts.accent,
+                  ttsProvider: this.opts.ttsProvider === 'meta-mms' ? 'meta-mms' : 'google',
                   customerId: this.opts.customerId || null,
                   autoWelcome: this.opts.autoWelcome !== false,
                 },

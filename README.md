@@ -126,10 +126,14 @@ cp omni_browse/.env.example omni_browse/.env.local      # then fill in META_MODE
 
 docker build -t coverpilot:local .
 docker run -d --name coverpilot --restart unless-stopped -p 3000:3000 \
+  --add-host host.docker.internal:host-gateway \
   -v "$PWD/omni_browse/.env.local:/app/omni_browse/.env.local:ro" \
   -v coverpilot-data:/app/voice-agent-py/data \
   coverpilot:local
 # open http://localhost:3000   (presenter view: http://localhost:3000/presenter)
+# Optional, experimental: Meta MMS text-to-speech. Run an MMS server on host port 8003 (POST /v1/audio/speech, voices
+# mms_eng / mms_hin / mms_mar, raw 16 kHz PCM), then pick "TTS: Meta MMS (Experimental)" in the session controls before
+# starting a voice session. Google Cloud TTS stays the default; MMS is slower (about 1.5 s before the first sound).
 ```
 
 - Keys are never baked into the image: mount the env file as above (or pass plain `-e` variables). Do not use `--env-file` with quoted values, because Docker keeps the quotes.

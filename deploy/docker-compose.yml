@@ -11,6 +11,8 @@
 services:
   coverpilot:
     image: ${COVERPILOT_IMAGE:-coverpilot:amd64}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # only used by the optional Meta MMS TTS (MMS_TTS_URL)
     restart: unless-stopped
     expose:
       - "3000"
