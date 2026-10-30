@@ -6,7 +6,7 @@ from coverpilot.knowledge import KnowledgeBase
 
 @pytest.fixture(scope="module")
 def kb() -> KnowledgeBase:
-    return KnowledgeBase()
+    return KnowledgeBase(exclude_prefix=("guardian-",))
 
 
 # (question, substring that must appear in a top-3 heading, case-insensitive)
