@@ -10,6 +10,9 @@ services:
     restart: unless-stopped
     expose:
       - "3000"
+    environment:
+      # Caddy sets X-Forwarded-For, so the per-visitor rate limits can tell visitors apart.
+      TRUST_PROXY: "true"
     volumes:
       - ./secrets/.env.local:/app/omni_browse/.env.local:ro
       - coverpilot-data:/app/voice-agent-py/data

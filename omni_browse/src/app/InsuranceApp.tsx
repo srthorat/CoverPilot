@@ -354,9 +354,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Stable per-browser id so the agent can remember a returning customer (demo only).
   const getCustomerId = () => {
     try {
+      // The id is the only proof of whose memory this is, so it is a random 128-bit UUID, never a guessable value.
+      // An older short id is replaced (the server refuses anything that is not a UUID or 32+ hex characters).
       let id = localStorage.getItem('coverpilot-customer-id');
-      if (!id) {
-        id = `cust-${Math.random().toString(36).slice(2, 10)}`;
+      if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        id = crypto.randomUUID();
         localStorage.setItem('coverpilot-customer-id', id);
       }
       return id;
