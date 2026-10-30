@@ -157,7 +157,7 @@ export function GuardianView(p: Props) {
               <span>The document as the reviewer sees it</span>
               <span className="font-normal text-slate-400">black bars = hidden in your browser</span>
             </div>
-            <div ref={viewer} className="overflow-y-auto max-h-[52vh] p-3 space-y-3 text-[12px] leading-relaxed text-slate-800">
+            <div ref={viewer} tabIndex={0} role="region" aria-label="The document as the reviewer sees it" className="overflow-y-auto max-h-[52vh] p-3 space-y-3 text-[12px] leading-relaxed text-slate-800">
               {p.doc.pages.map((pg) => (
                 <div key={pg.page} data-page={pg.page} className="bg-white rounded-lg border border-slate-200 p-3">
                   <div className="text-[10px] font-bold text-slate-400 mb-1">PAGE {pg.page}</div>
@@ -201,7 +201,7 @@ export function GuardianView(p: Props) {
             {p.review.status === 'running' && <RunningNotice startedAt={p.review.startedAt} />}
 
             {res && (
-              <div className="overflow-y-auto max-h-[52vh] flex flex-col gap-2 pr-1">
+              <div tabIndex={0} role="region" aria-label="Review findings" className="overflow-y-auto max-h-[52vh] flex flex-col gap-2 pr-1">
                 <div className="rounded-xl bg-purple-50 border border-purple-200 p-2.5 text-xs text-purple-950">
                   <strong>Overall:</strong> {res.overall}
                   <div className="mt-1 text-[11px] text-purple-800">

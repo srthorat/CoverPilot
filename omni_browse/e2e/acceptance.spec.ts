@@ -67,6 +67,14 @@ async function closeTermsDrawer() {
 
 const input = (id: string) => page.locator(`#${id} input, input#${id}`).first();
 
+// WebKit (the Safari engine) in Playwright has no fake microphone, so a live voice session cannot start there.
+// Checks that need the agent are skipped on it and say so in the report; everything that runs in the page and
+// the review route (document reading, privacy shield, step gate, pause and resume, the Guardian review) still runs.
+const NEEDS_VOICE_SESSION = /^(AC-0[1-9]|AC-1[0-4]|AC-21|EX-01|EX-03)\b/;
+test.beforeEach(async ({}, testInfo) => {
+  test.skip(testInfo.project.use.browserName === 'webkit' && NEEDS_VOICE_SESSION.test(testInfo.title), 'needs a live voice session; WebKit has no fake microphone');
+});
+
 test.beforeAll(async ({ browser }) => {
   const ctx = await browser.newContext({
     viewport: { width: 1512, height: 860 },

@@ -2208,11 +2208,16 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     });
     agentRef.current = client;
     isListeningRef.current = true;
+    // If the browser is still waiting for the customer to answer its microphone prompt, say so.
+    const micHint = setTimeout(() => setMicPermissionError('Waiting for microphone permission. Choose Allow when your browser asks.'), 6000);
     try {
       await client.start();
+      clearTimeout(micHint);
+      setMicPermissionError(null);
       setIsListeningVoice(true);
       playChime();
     } catch (err: any) {
+      clearTimeout(micHint);
       isListeningRef.current = false;
       agentRef.current = null;
       client.stop();
@@ -2990,7 +2995,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   };
 
   const pageContent = (
-    <div className="h-screen overflow-hidden bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
+    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
       
       {entry === 'choose' && (
         <div className="fixed inset-0 z-[60] bg-[#f8fafc] overflow-y-auto" id="entry-chooser">
@@ -3072,12 +3077,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
       {/* 2. Main NexaSure Header */}
       <header className="shrink-0 bg-white border-b border-slate-200 z-30">
-        <div className="w-full px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="w-full px-4 lg:px-6 py-1.5 flex flex-col items-start lg:flex-row lg:items-center justify-between gap-2 lg:gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/nexasure-mark.png" alt="NexaSure logo" width={54} height={44} className="h-11 w-auto rounded-lg shadow-sm" />
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2">
                 <span className="text-lg font-bold tracking-tight text-[#111827]">NexaSure</span>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-[#582be8] border border-purple-200">
                   Life Flexi Shield</span>
@@ -3086,7 +3091,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-2 flex-wrap lg:justify-end">
             {/* Language switcher */}
             <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
               {([['en', 'English'], ['hi', 'हिंदी'], ['mr', 'मराठी']] as const).map(([l, label]) => (
@@ -3546,12 +3551,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       </nav>
 
       {/* 4. Main Page Layout */}
-      <main className="flex-1 min-h-0 w-full px-4 lg:px-6 py-2 flex flex-col gap-2 relative overflow-hidden">
+      <main className="flex-1 lg:min-h-0 w-full px-4 lg:px-6 py-2 flex flex-col gap-2 relative lg:overflow-hidden">
 
         {/* Co-Browsing Assist Invitation Banner */}
         {!isCoBrowsingConnected && !dismissOffer && (
-          <div className="shrink-0 px-3 py-2 rounded-xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex items-center justify-between gap-3 shadow-sm border border-purple-400/40 animate-fade-in">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="shrink-0 px-3 py-2 rounded-xl bg-gradient-to-r from-[#180d40] via-[#2d1b70] to-[#180d40] text-white flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2 lg:gap-3 shadow-sm border border-purple-400/40 animate-fade-in">
+            <div className="flex flex-wrap items-center gap-2 lg:gap-3 min-w-0">
               <div className="size-8 rounded-lg bg-white/10 flex items-center justify-center text-[11px] font-bold border border-white/15 shrink-0">
                 OB
               </div>
@@ -3565,7 +3570,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 Talk to the assistant while you fill in the form. It explains riders, income tiers and clauses, and can fill fields for you with your consent.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
               <button
                 onClick={connectCoBrowsingSession}
                 disabled={isConnecting}
@@ -3583,9 +3588,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           </div>
         )}
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_clamp(340px,30%,440px)] gap-3">
+        <div className="flex-1 lg:min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_clamp(340px,30%,440px)] gap-3">
         {/* Form Body (8 Columns): scrolls on its own */}
-        <div ref={formBodyRef} className="@container min-h-0 overflow-y-auto pr-2 flex flex-col gap-4">
+        <div ref={formBodyRef} className="@container lg:min-h-0 lg:overflow-y-auto lg:pr-2 flex flex-col gap-4">
 
           {stepNotice && stepNotice.step === activeStep && stepIssues[activeStep]?.length > 0 && (
             <div role="alert" className="shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -3992,6 +3997,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   </div>
                   <select
                     id="select-annual-income"
+                    aria-label="Annual income (gross)"
                     value={profile.annualIncome}
                     onFocus={() => handleFieldClickOrFocus('field-annual-income')}
                     onChange={(e) => {
@@ -4356,7 +4362,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
                       If you suffer permanent disability, all future premiums for the next 30 years are 100% waived; policy stays active.
                     </p>
-                    <div className="flex items-center justify-between text-[11px] font-medium text-emerald-600 tabular-nums">
+                    <div className="flex items-center justify-between text-[11px] font-medium text-emerald-700 tabular-nums">
                       <span>Policy Continuity Guarantee</span>
                       <span className="text-[#582be8] font-bold"> Click for Advice</span>
                     </div>
@@ -4679,6 +4685,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <div>
                     <label className="text-[11px] font-semibold text-slate-700 block mb-1">Relationship</label>
                     <select
+                      aria-label="Primary nominee relationship"
                       value={nomination.primaryRelation}
                       onChange={(e) => setNomination(prev => ({ ...prev, primaryRelation: e.target.value }))}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8]"
@@ -4708,6 +4715,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     <label className="text-[11px] font-semibold text-slate-700 block mb-1">Share Allocation %</label>
                     <input
                       type="number"
+                      aria-label="Primary nominee share allocation percent"
                       min={10}
                       max={100}
                       value={nomination.primaryShare}
@@ -4751,6 +4759,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       <div>
                         <label className="text-[11px] font-semibold text-slate-700 block mb-1">Relationship</label>
                         <select
+                          aria-label="Second nominee relationship"
                           value={nomination.secondaryRelation}
                           onChange={(e) => setNomination(prev => ({ ...prev, secondaryRelation: e.target.value }))}
                           className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium"
@@ -4822,6 +4831,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       <div>
                         <label className="text-[11px] font-semibold text-slate-700 block mb-1">Relationship</label>
                         <select
+                          aria-label={`Nominee ${i + 3} relationship`}
                           value={n.relation}
                           onChange={(e) => setNomination((prev) => ({ ...prev, additionalNominees: prev.additionalNominees.map((x, k) => (k === i ? { ...x, relation: e.target.value } : x)) }))}
                           className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium"
@@ -5323,7 +5333,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         </div>
 
         {/* Right Sticky Sidebar: Premium Breakdown & Docked OmniCB Advisor */}
-        <div className="min-h-0 overflow-y-auto flex flex-col gap-3">
+        <div className="lg:min-h-0 lg:overflow-y-auto flex flex-col gap-3">
           
           {/* Premium Breakdown Card */}
           <div className="nx-card p-3 shrink-0">
@@ -5481,7 +5491,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               {isCoBrowsingConnected ? (
                 <button
                   onClick={() => disconnectCoBrowsingSession()}
-                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs border border-red-200 transition-all flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs border border-red-200 transition-all flex items-center gap-1.5"
                 >
                   <span></span>
                   <span>Disconnect</span>
@@ -5735,9 +5745,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   !isCoBrowsingConnected
                     ? 'bg-slate-100 hover:bg-purple-50 text-slate-700 border border-purple-200'
                     : isListeningVoice
-                    ? 'bg-red-600 hover:bg-red-700 text-white ring-4 ring-red-400/40 animate-pulse'
+                    ? 'bg-red-700 hover:bg-red-800 text-white ring-4 ring-red-400/40'
                     : voiceThinking
-                    ? 'bg-amber-600 text-white animate-pulse'
+                    ? 'bg-amber-700 text-white ring-2 ring-amber-300'
                     : isSpeaking
                     ? 'bg-purple-700 text-white ring-2 ring-purple-300'
                     : 'bg-[#582be8] hover:bg-[#481dd4] text-white'
@@ -5834,7 +5844,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 <span className="text-[11px] font-normal text-slate-400">{chatMessages.length} entries</span>
               </div>
               
-              <div ref={chatBottomRef} className="flex-1 min-h-0 overflow-y-auto space-y-2 py-2 pr-1 text-xs">
+              <div ref={chatBottomRef} tabIndex={0} role="log" aria-label="Conversation with the agent" className="flex-1 min-h-0 overflow-y-auto space-y-2 py-2 pr-1 text-xs">
                 {chatMessages.map((msg, i) => (
                   <div
                     key={i}
@@ -6386,7 +6396,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 Statutory Compliance: Insurance Regulatory & Development Authority of India (IRDAI)</span>
               <button
                 onClick={() => setShowTermsDrawer(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-900 text-white text-xs font-bold transition-all"
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-all"
               >
                 Close Drawer
               </button>
