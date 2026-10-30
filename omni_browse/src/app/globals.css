@@ -183,3 +183,15 @@ body {
 .eq-bar-4 { animation: eq-wave-4 0.9s infinite ease-in-out; }
 .eq-bar-5 { animation: eq-wave-5 0.75s infinite ease-in-out; }
 
+
+/* Contrast (WCAG AA, 4.5:1 for small text). The slate-400 and slate-500 text colours used for captions and tabs
+   fell short on white and light grey backgrounds; these darker values meet the ratio and keep the same look. */
+.text-slate-400 {
+  color: #56657d;
+}
+.bg-slate-100.text-slate-500 {
+  color: #475569;
+}
+.text-emerald-600 {
+  color: #047857; /* emerald-700: 5.5:1 on white, emerald-600 is 3.8:1 */
+}

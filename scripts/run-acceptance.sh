@@ -2,6 +2,8 @@
 # Runs the end-to-end acceptance checks against the Docker image on :3000, and AC-12 (a failing
 # model call changes no data) against a second instance that has an invalid Meta key.
 #   scripts/run-acceptance.sh            Chromium      BROWSER=firefox scripts/run-acceptance.sh
+#   BROWSER=webkit scripts/run-acceptance.sh        WebKit (Safari engine): checks that need a microphone are skipped
+#   BASE_URL / IMAGE select another instance and image (defaults http://localhost:3000, coverpilot:local)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 IMAGE="${IMAGE:-coverpilot:local}"

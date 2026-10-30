@@ -273,12 +273,24 @@ export class VoiceAgentClient {
     // connection almost always succeeds, so try twice before reporting an error.
     const MAX_ATTEMPTS = 2;
     const CONNECT_TIMEOUT_MS = 20_000;
+    const MIC_TIMEOUT_MS = 45_000;
     for (let attempt = 1; ; attempt++) {
       const client = build();
       this.client = client;
       this.connecting = true;
       try {
-        await client.initDevices();
+        // The microphone prompt can sit unanswered (Safari asks every time); do not wait for it forever.
+        let micTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            client.initDevices(),
+            new Promise<never>((_, reject) => {
+              micTimer = setTimeout(() => reject(new Error('The browser did not give microphone access in time. Choose Allow in its prompt, then start again.')), MIC_TIMEOUT_MS);
+            }),
+          ]);
+        } finally {
+          clearTimeout(micTimer);
+        }
         // Direct SmallWebRTC offer (no /start step): the body is {sdp, type, requestData},
         // and the runner hands requestData to the bot as its session body.
         let timer: ReturnType<typeof setTimeout> | undefined;
