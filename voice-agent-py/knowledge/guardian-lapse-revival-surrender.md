@@ -9,8 +9,8 @@ A lapsed policy can be revived during the period the policy document specifies. 
 Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, section III, para 3.
 
 ## How long the revival period is
-For a term policy the revival period is the one written in the policy document, so read the page that states it. IRDAI's circular gives a three-year revival window for discontinued unit-linked policies, which is a different kind of plan. If your document gives a different period, ask the insurer to confirm how long you have.
-Source: IRDAI Master Circular on Life Insurance Products 2024, para 40 (unit-linked discontinuance); IRDAI Master Circular on Protection of Policyholders' Interests 2024, section III, para 3.
+IRDAI's Insurance Products Regulations 2024 define the revival period for non-linked products, which include a term plan, as five consecutive complete years from the date of the first unpaid premium. For unit-linked products it is three years. The policy document states the terms of revival, such as the interest or late fee and any health declaration. A term policy that gives much less than five years, or does not state a revival period, is worth asking the insurer about, because the regulation defines the period but the document sets how revival works.
+Source: IRDAI (Insurance Products) Regulations 2024, Schedule I, clause 1.39 (non-linked, five years) and clause 1.28 (linked, three years); IRDAI Master Circular on Protection of Policyholders' Interests 2024, section III, para 3.
 
 ## Revival and the three-year Section 45 clock
 A revival date restarts the three-year clock that Section 45 uses, along with the issue date, the start of risk and any rider date. So after a revival the insurer may again question statements made for the revived policy within three years, and the suicide protection window of twelve months also runs again from the revival date.
@@ -21,9 +21,9 @@ Pure risk products do not acquire a surrender value, so a pure term plan normall
 Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, section V, para 3.
 
 ## Policy loans and paid-up values
-Policy loans are not available on pure risk policies. Whether a pure term plan has a reduced paid-up option varies by product, so look for it in the document and, if it is not stated, confirm with the insurer. Do not assume it exists.
-Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, section IV, para 4; paid-up terms vary by product, confirm with the insurer.
+A loan against the policy is not available on a pure risk policy, so you cannot take a policy loan on a term plan. The paid-up rule applies only to products that acquire a surrender value, which regular premium pure risk products do not, so a term plan has no required paid-up option. For limited or single pay pure risk products the circular asks only for a reasonable and fair non-forfeiture benefit, so read the document.
+Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, section IV, para 4; IRDAI (Insurance Products) Regulations 2024, Schedule I, clause 4(A)(a) and 4(A)(a)(6) and (7); IRDAI Master Circular on Life Insurance Products 2024, para 7.12, all read in the texts.
 
 ## What happens to riders if the base policy lapses
-Riders are attached to the base policy, and the usual position is that they end when the base policy ends or lapses. This depends on the rider's terms and the circulars do not set a single rule, so confirm with the insurer what happens to each rider on lapse and whether it can be revived with the policy.
-Source: Rider terms vary; confirm with the insurer.
+Riders are attached to the base policy. IRDAI has no general rule on riders of a term plan when it lapses, so it depends on the policy terms. Revival restores the policy with or without the rider benefits if any. For unit-linked policies rider cover ceases on discontinuance and the rider may be revived at the policyholder's option. Ask the insurer what happens to each rider on lapse.
+Source: IRDAI (Insurance Products) Regulations 2024, Schedule I, clause 1.10 (revival); IRDAI Master Circular on Life Insurance Products 2024, paras 40.1.1 and 40.1.7.2.1 (unit-linked); no rule found for riders on non-linked plans.

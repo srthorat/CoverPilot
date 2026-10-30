@@ -41,8 +41,8 @@ An exclusion is something the policy does not pay for, or pays for only under li
 Source: IRDAI Master Circular on Life Insurance Products 2024, paras 2 and 21.
 
 ## Plain meaning of waiting period and survival period
-A waiting period is a time after the policy starts during which a benefit, usually a rider, is not payable. A survival period is the time a person must live after a diagnosis before a rider pays. Both are set by the product, so read the numbers in the document and ask if they are unclear.
-Source: Product terms; not set by one IRDAI rule; confirm with the insurer.
+A waiting period is a time after the policy starts during which a benefit, usually a rider, is not payable. A survival period is the time a person must live after a diagnosis before a rider pays. IRDAI does not prescribe the number of days for life riders; the insurer states them in the product, so read the numbers in the document and ask if they are unclear. IRDAI does standardise the medical definition of each critical illness, so a covered illness has to meet that standard definition, and some definitions carry their own conditions, such as a stroke needing a lasting deficit assessed at least thirty days after the event.
+Source: IRDAI Master Circular on Life Insurance Products 2024, rider filing format item 6.2(m); IRDAI Guidelines on Standardization in Health Insurance 2016, chapter II (22 critical illnesses, definitions to be used without exception; stroke definition), read in the guidelines; IRDAI later modified some definitions in 2022, which was not read.
 
 ## Plain meaning of nominee, beneficiary and assignee
 A nominee is the person you name to receive the money on your death. A beneficiary nominee keeps it for themselves, and that is true of your parents, spouse and children. Other nominees receive it as collectors for your legal heirs. An assignee is someone, such as a lender, to whom you transfer rights in the policy by endorsement.

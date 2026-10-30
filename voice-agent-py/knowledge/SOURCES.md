@@ -14,3 +14,4 @@
 # Controller of Certifying Authorities, eSign: https://cca.gov.in/eSign.html
 # IRDAI Insurance Ombudsman Rules FAQ: https://irdai.gov.in
 # NexaSure figures (premiums, tiers, waiting periods, response targets) are demo product terms, not audited facts.
+# Verified in primary text on 30 Oct 2026 (see SOURCES-guardian.md): Insurance Act 1938 section 45 in the Gazette copy of the Insurance Laws (Amendment) Act 2015 (https://prsindia.org/files/bills_acts/acts_parliament/2015/the-insurance-laws-(amendment)-act,-2015.pdf); Insurance Ombudsman (Amendment) Rules 2023, G.S.R. 828(E) (https://www.cioins.co.in/notification/Insurance%20Ombudsman(Amendment)%20Rules,%202023.pdf); IRDAI (Insurance Products) Regulations 2024 (https://irdai.gov.in/web/guest/document-detail?documentId=4590475).

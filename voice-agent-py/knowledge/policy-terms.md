@@ -29,5 +29,5 @@ NexaSure registers claims digitally with a two-hour response target and no physi
 Source: NexaSure demo product terms; IRDAI Master Circular on Protection of Policyholders' Interests 2024, life section, claim timelines.
 
 ## Clause 8: Policy revival
-If the policy lapses after the grace period, you can revive it during the period stated in your policy document by paying the unpaid premiums with interest or a late fee. You may need to give a health declaration or take a medical examination. In this demo product the revival period is five years. IRDAI leaves the revival period to the policy document for non-linked products.
-Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, life section, "Lapse and revival"; five years is a NexaSure demo term.
+If the policy lapses after the grace period, you can revive it during the period stated in your policy document by paying the unpaid premiums with interest or a late fee. You may need to give a health declaration or take a medical examination. In this demo product the revival period is five years, which matches the IRDAI definition of the revival period for non-linked products: five consecutive complete years from the first unpaid premium.
+Source: IRDAI (Insurance Products) Regulations 2024, Schedule I, clause 1.39; IRDAI Master Circular on Protection of Policyholders' Interests 2024, life section, "Lapse and revival".

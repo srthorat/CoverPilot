@@ -41,8 +41,8 @@ If you chose a rider such as critical illness but the document does not list it,
 Source: NexaSure Guardian check (document against application); IRDAI Master Circular on Life Insurance Products 2024, para 1(B) (customers choose riders to suit their needs).
 
 ## Red flag: premium not stated as fixed for the term
-A level term premium is usually fixed for the whole term, but this depends on the product. If the document does not say whether the premium is guaranteed or can be revised, ask the insurer. Confirm with the insurer, because the circulars do not set one rule for every plan.
-Source: Not set by one IRDAI rule; confirm with the insurer.
+For an individual policy, IRDAI's circular says the premium you choose at the outset must be level or uniform and must not vary over the premium paying term. Group products are the exception. A pure term plan may offer an option to lower the premium by up to fifty percent after three completed policy years, and once lowered it cannot be raised again. A document that says an individual term premium can be revised or will rise is worth querying.
+Source: IRDAI Master Circular on Life Insurance Products 2024, section IV part A, para 12 (page 11), read in the circular itself.
 
 ## Red flag: exclusions wider than the summary
 Compare the exclusions in the policy wording with those in the Customer Information Sheet and the product summary. If the wording lists exclusions the summary did not mention, flag it as a possible difference and ask which prevails. The sheet is required to list the exclusions in simple words.
@@ -53,8 +53,8 @@ The insurer must state in the policy document which documents are needed to make
 Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, section V, paras 1 and 3.
 
 ## Red flag: long waiting or survival periods on a rider
-Riders such as critical illness often have a waiting period before cover starts and a survival period after diagnosis. These come from the product and are not set by one IRDAI rule, so very long periods are worth asking about. Quote the numbers and the page, and ask what happens during the wait.
-Source: Product terms; not set by one IRDAI rule; confirm with the insurer.
+Riders such as critical illness often have a waiting period before cover starts and a survival period after diagnosis. IRDAI does not set a number for these on life riders: the insurer files them with the product, and the circular's product filing format lists waiting period and survival period as rider parameters the insurer states. So very long periods are worth asking about. Quote the numbers and the page, and ask what happens during the wait.
+Source: IRDAI Master Circular on Life Insurance Products 2024, filing format for riders, item 6.2(m) (waiting period, survival period); no IRDAI-prescribed period found in the circular or in the critical illness standardisation guidelines.
 
 ## Red flag: surrender or paid-up value promised on a pure term plan
 Pure risk products do not acquire a surrender value, and policy loans are not available on them. If a pure term document promises a surrender value or a loan, ask the insurer to explain, because it is unusual for that kind of plan.
@@ -63,3 +63,7 @@ Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, se
 ## Red flag: Customer Information Sheet or illustration missing
 The Customer Information Sheet and the benefit illustration must be given with the policy. If either is missing from the pack, or the sheet has no Insurance Ombudsman contact details, ask the insurer to supply it.
 Source: IRDAI Master Circular on Life Insurance Products 2024, paras 2 and 3.
+
+## Red flag: rider premium or benefit above IRDAI's limits
+IRDAI limits riders. Critical illness or health rider premium cannot exceed one hundred percent of the base premium, and all other life riders together cannot exceed thirty percent. Each rider benefit cannot exceed the base sum assured, except an accidental death rider, up to three times. If the schedule shows riders above these limits, ask the insurer to explain.
+Source: IRDAI Master Circular on Life Insurance Products 2024, para 7.17.2 to 7.17.4 (pages 9 and 10), read in the circular itself.
