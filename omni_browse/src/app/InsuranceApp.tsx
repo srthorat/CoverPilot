@@ -5511,13 +5511,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <button
                     key={id}
                     type="button"
-                    title="Takes effect the next time you start a voice session"
+                    disabled={id === 'meta-mms'}
+                    aria-disabled={id === 'meta-mms'}
+                    title={id === 'meta-mms' ? 'Experimental and not enabled in this demo: voice is Google Cloud TTS' : 'Google Cloud TTS'}
                     onClick={() => {
+                      if (id === 'meta-mms') return;
                       setTtsProvider(id);
                       ttsProviderRef.current = id;
                     }}
                     className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                      ttsProvider === id ? 'bg-[#582be8] text-white' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                      id === 'meta-mms'
+                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                        : ttsProvider === id ? 'bg-[#582be8] text-white' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
                     {label}

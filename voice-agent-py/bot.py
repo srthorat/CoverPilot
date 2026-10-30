@@ -395,7 +395,8 @@ async def bot(runner_args: RunnerArguments):
         accent=body.get("accent", "in"),
         customer_id=body.get("customerId"),
         auto_welcome=body.get("autoWelcome", True) is not False,
-        tts_provider="meta-mms" if body.get("ttsProvider") == "meta-mms" else "google",
+        # Google only unless the experimental MMS engine is switched on in the server environment (ENABLE_MMS_TTS=1).
+        tts_provider="meta-mms" if body.get("ttsProvider") == "meta-mms" and os.getenv("ENABLE_MMS_TTS") == "1" else "google",
     )
 
 

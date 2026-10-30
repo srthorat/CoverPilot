@@ -132,8 +132,8 @@ docker run -d --name coverpilot --restart unless-stopped -p 3000:3000 \
   coverpilot:local
 # open http://localhost:3000   (presenter view: http://localhost:3000/presenter)
 # Optional, experimental: Meta MMS text-to-speech. Run an MMS server on host port 8003 (POST /v1/audio/speech, voices
-# mms_eng / mms_hin / mms_mar, raw 16 kHz PCM), then pick "TTS: Meta MMS (Experimental)" in the session controls before
-# starting a voice session. Google Cloud TTS stays the default; MMS is slower (about 1.5 s before the first sound).
+# mms_eng / mms_hin / mms_mar, raw 16 kHz PCM), set ENABLE_MMS_TTS=1 for the agent and remove `disabled` from the MMS button in
+# InsuranceApp.tsx. Off by default (the button is greyed out and the agent ignores the request); Google Cloud TTS is used; MMS is slower (about 1.5 s before the first sound).
 ```
 
 - Keys are never baked into the image: mount the env file as above (or pass plain `-e` variables). Do not use `--env-file` with quoted values, because Docker keeps the quotes.
