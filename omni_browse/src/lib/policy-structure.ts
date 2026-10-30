@@ -30,7 +30,7 @@ export const TERMS_1: Array<[string, string]> = [
   ],
   [
     "4. Lapse and revival",
-    "If a premium is not paid by the end of the grace period the policy lapses and cover stops. A lapsed policy may be revived within the period stated here, which in this demo product is five years from the first unpaid premium, by paying the unpaid premiums with interest. A health declaration or medical examination may be required. IRDAI leaves the revival period to the policy document."
+    "If a premium is not paid by the end of the grace period the policy lapses and cover stops. A lapsed policy may be revived within five years from the first unpaid premium, as IRDAI's Regulations 2024 define the revival period for non-linked policies, by paying the unpaid premiums with interest. A health declaration or medical examination may be required."
   ],
   [
     "5. Nomination",

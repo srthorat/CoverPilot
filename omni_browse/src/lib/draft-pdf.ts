@@ -183,7 +183,7 @@ export function buildPolicyBlocks(d: DraftSummary): Block[] {
         ['What it is', 'Pure term life cover, no maturity benefit'],
         ['Sum assured / term', `${d.sumAssuredLabel} / ${d.termYears} years`],
         ['Premium', `${money(d.monthlyPremium)} a month, fixed, no GST`],
-        ['If you miss a payment', '15 days of grace (monthly), then the policy lapses; revival within five years (demo term)'],
+        ['If you miss a payment', '15 days of grace (monthly), then the policy lapses; revival within five years of the first unpaid premium'],
         ['Cancelling', 'Thirty days free-look, refund net of risk premium, medical cost and stamp duty'],
         ['Suicide', 'First twelve months: at least 80 percent of premiums or surrender value'],
         ['Contestability', 'Three years under section 45'],

@@ -1386,8 +1386,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       title: 'Policy Revival',
       category: 'Policy Continuity',
       irdaiRef: 'IRDAI Protection of Policyholders Interests 2024, lapse and revival',
-      summary: 'If your policy ever lapses due to missed payments, you can revive it within the period in your policy document by paying unpaid premiums with interest. In this demo the period is five years; a health declaration may be needed.',
-      fullText: 'A lapsed policy may be revived within the period stated in the policy document, on paying the unpaid premiums with interest or a late fee, and possibly a health declaration or medical examination. In this demo product the revival period is five years from the first unpaid premium; IRDAI leaves the period to the policy document.',
+      summary: 'If your policy ever lapses due to missed payments, you can revive it within five years from the first unpaid premium, as IRDAI\'s Regulations 2024 define the revival period for non-linked policies, by paying unpaid premiums with interest. A health declaration may be needed.',
+      fullText: 'A lapsed policy may be revived within five years from the first unpaid premium, as IRDAI\'s Regulations 2024 define the revival period for non-linked policies, on paying the unpaid premiums with interest or a late fee, and possibly a health declaration or medical examination.',
     },
   ];
 
