@@ -21,6 +21,9 @@ import { metaEnv, MetaApiError } from '@/lib/meta';
 const CONCEPTS: Record<string, string[]> = {
   aadhaar: ['QR code', 'photo'],
   pan: ['photo', 'signature'],
+  // Where the card is in a photo of it (a phone picture on a desk), so the picture can be cropped to the card before
+  // the other regions are located. Not a private region: it is only used to crop.
+  'card-bounds': ['flat rectangular card'], // measured: "ID card" and "card" find nothing on a blurred copy; this finds the card at 60, 80 and 100 px
 };
 
 const MIN_CONFIDENCE = 0.4;
@@ -151,7 +154,7 @@ export async function POST(req: NextRequest) {
   const body = read.body ?? {};
   const documentType = String(body.documentType || '');
   const concepts = CONCEPTS[documentType];
-  if (!concepts) return Response.json({ error: 'documentType must be "pan" or "aadhaar"' }, { status: 400 });
+  if (!concepts) return Response.json({ error: 'documentType must be "pan", "aadhaar" or "card-bounds"' }, { status: 400 });
   const variants: string[] = Array.isArray(body.blurredDataUrls) ? body.blurredDataUrls : [];
   if (
     variants.length < 1 ||

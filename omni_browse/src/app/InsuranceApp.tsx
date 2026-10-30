@@ -12,6 +12,8 @@ import type { GuardianResponse, ProposalFacts } from '@/lib/guardian-types';
 import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
 import { openIds, sealIds, type IdNumbers } from '@/lib/id-seal';
+import { ID_PDF_MESSAGES, rasterizeIdPdf } from '@/lib/id-raster';
+import { assessShield, cardCrop, leakMessage, pixelBlock, RETAKE_HINT, ShieldRefusal, snapBoxToInk } from '@/lib/shield-safeguards';
 import { CLIENT_REVIEW_TIMEOUT_MS, reviewFailureMessage } from '@/lib/guardian-timing';
 
 const IDLE_DISCONNECT_MS = 180_000; // the live voice session ends after 3 minutes without speech, a click or a key press
@@ -1538,7 +1540,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const w = Math.min(canvas.width - x, Math.ceil(r.box.right - r.box.left + pad * 2));
       const h = Math.min(canvas.height - y, Math.ceil(r.box.bottom - r.box.top + pad * 2));
       if (w <= 0 || h <= 0) continue;
-      const factor = 16;
+      const factor = pixelBlock(w, h); // about three blocks across the region at most, so a big number stays unreadable
       const small = document.createElement('canvas');
       small.width = Math.max(1, Math.round(w / factor));
       small.height = Math.max(1, Math.round(h / factor));
@@ -1582,6 +1584,52 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // it is the same in every browser (Firefox's canvas downscale left a sharp, aliased picture).
   const blurForLocating = blurCopy;
 
+  // Brightness of every pixel, so a located number's box can be grown to cover its whole text line.
+  const lumaOf = (img: HTMLImageElement): Uint8ClampedArray => {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const out = new Uint8ClampedArray(c.width * c.height);
+    for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 299 + d[i * 4 + 1] * 587 + d[i * 4 + 2] * 114) / 1000;
+    return out;
+  };
+
+  // A photo of a card (a phone picture on a desk) is cropped to the card first, because the blur widths were measured for
+  // a card that fills the frame. SAM finds the card on blurred copies; if it cannot, the picture is used as it is.
+  const cropToCard = async (img: HTMLImageElement): Promise<{ img: HTMLImageElement; url: string } | null> => {
+    try {
+      const res = await fetch('/api/sam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentType: 'card-bounds', blurredDataUrls: [60, 80, 100].map((width) => blurForLocating(img, width)) }),
+      });
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data.regions) || !data.regions.length) return null;
+      recordModel(data.telemetry?.model, 'card position', data.telemetry?.totalMs ?? 0);
+      const box = (data.regions as KycRegion[]).map((r) => r.box).sort((a, b) => (b.right - b.left) * (b.bottom - b.top) - (a.right - a.left) * (a.bottom - a.top))[0];
+      const crop = cardCrop(box, img.naturalWidth, img.naturalHeight);
+      if (!crop) return null;
+      const scale = Math.min(2.5, Math.max(1, 1000 / crop.w)); // a small card is enlarged to the size the blur widths were measured on
+      const c = document.createElement('canvas');
+      c.width = Math.round(crop.w * scale);
+      c.height = Math.round(crop.h * scale);
+      const ctx = c.getContext('2d')!;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/png');
+      return { img: await loadSampleImage(url), url };
+    } catch {
+      return null;
+    }
+  };
+
   const locateTextIds = async (type: 'pan' | 'aadhaar' | 'salary-slip', img: HTMLImageElement): Promise<{ regions: KycRegion[]; ms: number }> => {
     const res = await fetch('/api/locate-ids', {
       method: 'POST',
@@ -1597,12 +1645,16 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       }),
     });
     const data = await res.json();
+    // The locator refuses when its answers disagree: say so plainly and ask for a retake (nothing was read).
+    if (!res.ok && typeof data.error === 'string' && /^Could not confirm/.test(data.error)) throw new ShieldRefusal(`${data.error.replace(/; nothing was sent$/, '')}, so nothing was read. ${RETAKE_HINT}`);
     if (!res.ok || !Array.isArray(data.regions)) throw new Error(data.error || `Locate HTTP ${res.status}`);
     const W = img.naturalWidth;
     const H = img.naturalHeight;
+    const luma = lumaOf(img);
     const regions: KycRegion[] = data.regions.map((r: { concept: string; box: { left: number; top: number; right: number; bottom: number } }) => ({
       concept: r.concept,
-      box: { left: r.box.left * W, top: r.box.top * H, right: r.box.right * W, bottom: r.box.bottom * H },
+      // The model's box can sit a few pixels high or low: grow it to cover the whole line of digits it touches.
+      box: snapBoxToInk(luma, W, H, { left: r.box.left * W, top: r.box.top * H, right: r.box.right * W, bottom: r.box.bottom * H }),
       confidence: null,
       masks: [],
       members: 1,
@@ -1923,17 +1975,23 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       setKycRedaction({ type: 'salary-slip', imageUrl: slipUrl, width: 1000, height: 630, regions: [], redactedDataUrl: null, samMs: null, samCached: false, locateMs: null, ocrMs: null, status: 'Locating ID numbers on a blurred copy…' });
       const slipImg = await loadSampleImage(slipUrl);
       const located = await locateTextIds('salary-slip', slipImg);
+      const slipCheck = assessShield('salary-slip', located.regions, slipImg.naturalWidth, slipImg.naturalHeight);
+      if (!slipCheck.ok) throw new ShieldRefusal(slipCheck.message);
       const slipRedacted = pixelateRegions(slipImg, located.regions);
       setKycRedaction((prev) => prev && { ...prev, regions: located.regions, redactedDataUrl: slipRedacted, locateMs: located.ms, status: 'Pixelated in your browser. Sending redacted image to Muse Spark…' });
       setChatMessages((prev) => [...prev, { sender: 'agent', text: devRef.current ? `Muse Spark located ${located.regions.length} identifiers on a blurred copy (${located.ms} ms): ${located.regions.map((r) => r.concept).join(', ')}.` : `Hidden in your browser before the reader model: ${located.regions.map((r) => r.concept).join(', ')}.`, time: stampNow() }]);
       const t0 = performance.now();
-      const res = await fetch('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentType: 'salary-slip', imageDataUrl: slipRedacted }) });
+      const res = await fetch('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentType: 'salary-slip', imageDataUrl: slipRedacted, leakProbe: Boolean(uploadUrl) }) });
       const data = await res.json();
       if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
       recordModel(data.telemetry?.model, 'document reader', data.telemetry?.totalMs ?? 0);
       const slipLeaks: string[] = Array.isArray(data.redactionLeaks) ? data.redactionLeaks : [];
       setKycRedaction((prev) => prev && { ...prev, ocrMs: Math.round(performance.now() - t0), status: slipLeaks.length ? `Warning: ${slipLeaks.join(', ')} still readable after redaction` : 'Done' });
-      if (slipLeaks.length) setChatMessages((prev) => [...prev, { sender: 'agent', text: `Warning: the shield missed the ${slipLeaks.join(', ')}; it was still readable in the redacted image.`, time: stampNow() }]);
+      if (slipLeaks.length) {
+        // Fail closed: a scan whose numbers could still be read is not used at all.
+        setChatMessages((prev) => [...prev, { sender: 'agent', text: leakMessage(slipLeaks), time: stampNow() }]);
+        return;
+      }
       const f = data.fields as { fullName: string | null; employerName: string | null; monthlyGross: string | null; annualIncome: string | null; payPeriod: string | null; bankAccountMasked: string | null };
       const ms = Math.round(performance.now() - t0);
       setChatMessages((prev) => [
@@ -1952,7 +2010,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       }
     } catch (e: any) {
       setKycRedaction((prev) => prev && { ...prev, status: `Failed: ${e?.message || e}` });
-      setChatMessages((prev) => [...prev, { sender: 'agent', text: `Income proof OCR failed (Meta API, no fallback): ${e?.message || e}`, time: stampNow() }]);
+      setChatMessages((prev) => [...prev, { sender: 'agent', text: e instanceof ShieldRefusal ? e.message : `Income proof OCR failed (Meta API, no fallback): ${e?.message || e}`, time: stampNow() }]);
     }
   };
 
@@ -1983,8 +2041,17 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     ]);
     try {
       // Only blurred copies leave the browser: SAM sees layout (photo, signature, QR code), never text.
-      const img = await loadSampleImage(imageUrl);
-      setKycRedaction((prev) => prev && { ...prev, width: img.naturalWidth, height: img.naturalHeight, status: 'SAM 3.1 locating the photo, signature and QR code on a blurred copy…' });
+      let img = await loadSampleImage(imageUrl);
+      let shownUrl = imageUrl;
+      if (uploadUrl) {
+        setKycRedaction((prev) => prev && { ...prev, status: 'Finding the card in your picture on a blurred copy…' });
+        const cropped = await cropToCard(img);
+        if (cropped) {
+          img = cropped.img;
+          shownUrl = cropped.url;
+        }
+      }
+      setKycRedaction((prev) => prev && { ...prev, imageUrl: shownUrl, width: img.naturalWidth, height: img.naturalHeight, status: 'SAM 3.1 locating the photo, signature and QR code on a blurred copy…' });
       const samRes = await fetch('/api/sam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2002,13 +2069,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         regions.push(...located.regions);
         locateMs = located.ms;
       }
+      const shieldCheck = assessShield(type, regions, img.naturalWidth, img.naturalHeight);
+      if (!shieldCheck.ok) {
+        // Box positions only, no document text: lets a refusal be explained from the console.
+        console.warn('[shield] refused', JSON.stringify({ type, size: [img.naturalWidth, img.naturalHeight], missing: shieldCheck.missing, implausible: shieldCheck.implausible, boxes: regions.map((r) => ({ c: r.concept, b: [r.box.left, r.box.top, r.box.right, r.box.bottom].map(Math.round) })) }));
+        throw new ShieldRefusal(shieldCheck.message);
+      }
       const redactedDataUrl = pixelateRegions(img, regions);
       const samMs = sam.telemetry?.totalMs ?? null;
       const samCached = false;
       setKycRedaction((prev) =>
         prev && {
           ...prev,
-          imageUrl,
+          imageUrl: shownUrl,
           width: img.naturalWidth,
           height: img.naturalHeight,
           regions,
@@ -2035,7 +2108,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const res = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentType: type, imageDataUrl: redactedDataUrl }),
+        body: JSON.stringify({ documentType: type, imageDataUrl: redactedDataUrl, leakProbe: Boolean(uploadUrl) }),
       });
       const data = await res.json();
       if (!res.ok || !data.fields) throw new Error(data.error || `OCR HTTP ${res.status}`);
@@ -2043,7 +2116,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const ocrMs = Math.round(performance.now() - t0);
       const leaks: string[] = Array.isArray(data.redactionLeaks) ? data.redactionLeaks : [];
       setKycRedaction((prev) => prev && { ...prev, ocrMs, status: leaks.length ? `Warning: ${leaks.join(', ')} still readable after redaction` : 'Done' });
-      if (leaks.length) setChatMessages((prev) => [...prev, { sender: 'agent', text: `Warning: the shield missed the ${leaks.join(', ')}; it was still readable in the redacted image.`, time: stampNow() }]);
+      if (leaks.length) {
+        // Fail closed: a scan whose number could still be read is not used at all (nothing is filled in).
+        setChatMessages((prev) => [...prev, { sender: 'agent', text: leakMessage(leaks), time: stampNow() }]);
+        return;
+      }
       const f = data.fields as {
         fullName: string | null;
         dob: string | null;
@@ -2086,7 +2163,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       setKycRedaction((prev) => prev && { ...prev, status: `Failed: ${e?.message || e}` });
       setChatMessages((prev) => [
         ...prev,
-        { sender: 'agent', text: `KYC pipeline failed (Meta API, no fallback): ${e?.message || e}`, time: stampNow() },
+        { sender: 'agent', text: e instanceof ShieldRefusal ? e.message : `KYC pipeline failed (Meta API, no fallback): ${e?.message || e}`, time: stampNow() },
       ]);
     }
   };
@@ -3726,25 +3803,35 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   onClick={() => uploadInputRef.current?.click()}
                   className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-[11px]"
                 >
-                  Choose a PNG or JPEG
+                  Choose a PNG, JPEG or one-page PDF
                 </button>
                 <input
                   ref={uploadInputRef}
                   type="file"
-                  accept="image/png,image/jpeg"
+                  accept="image/png,image/jpeg,application/pdf"
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     e.target.value = '';
                     if (!file) return;
+                    if (file.type === 'application/pdf') {
+                      // One-page PDFs (e-Aadhaar, e-PAN, payslips) are drawn to an image in the browser, then follow the same path.
+                      rasterizeIdPdf(file).then(
+                        (png) => handleRunSampleKycOcr(uploadDocType, URL.createObjectURL(png)),
+                        (err) => setChatMessages((prev) => [...prev, { sender: 'agent', text: err?.message || ID_PDF_MESSAGES.unreadable, time: stampNow() }]),
+                      );
+                      return;
+                    }
                     if (!/^image\/(png|jpeg)$/.test(file.type) || file.size > 15 * 1024 * 1024) {
-                      setChatMessages((prev) => [...prev, { sender: 'agent', text: 'Please choose a PNG or JPEG image under 15 MB.', time: stampNow() }]);
+                      setChatMessages((prev) => [...prev, { sender: 'agent', text: 'Please choose a PNG or JPEG image, or a one-page PDF, under 15 MB.', time: stampNow() }]);
                       return;
                     }
                     handleRunSampleKycOcr(uploadDocType, URL.createObjectURL(file));
                   }}
                 />
-                <span className="text-slate-500">Your original is never uploaded.</span>
+                <span className="text-slate-500">
+                  Your original is never uploaded: only blurred copies and the hidden-parts version leave the page. This is checked, not guaranteed. On an unusual layout or a poor photo it may stop and ask you to retake it, and nothing is filled in until it is sure.
+                </span>
               </div>
               )}
 

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
+import { agreed, type Box } from '@/lib/box-agreement';
 import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
 
 /**
@@ -28,9 +29,9 @@ const FIELDS: Record<string, Array<{ key: string; label: string }>> = {
 const DOCUMENT: Record<string, string> = {
   aadhaar:
     'an Indian Aadhaar card. A photo is on the left, a QR code on the top right, and the 12-digit Aadhaar number is printed in large digits in one row near the bottom of the card, below the name and date of birth. Locate that row of digits (not its label)',
-  pan: 'an Indian PAN card with a photo on the left. The permanent account number is the 10-character value on the line directly below the label "Permanent Account Number", to the right of the photo. Locate that value (not its label)',
+  pan: 'an Indian PAN card. The permanent account number is the 10-character value (five letters, four digits, one letter) printed with the label "Permanent Account Number", normally directly below that label; the photo can be on the left or the right and the card may be tilted. Locate that value (not its label, not the name or the date of birth below it)',
   'salary-slip':
-    'a salary slip. Its header is two columns of label and value rows. The LEFT column holds, top to bottom: Employee Name, Employee ID, Designation and Bank A/c (the bank account number is the value in the left column, in the fourth and last row). The RIGHT column holds, top to bottom: PAN, UAN and Pay Period. Locate the PAN value, the UAN value and the bank account number value (not their labels)',
+    'a salary slip or pay slip. The PAN (ten characters: five letters, four digits, one letter), the UAN (twelve digits) and the bank account number (a long digit string) can be anywhere on the page: in a header block of label and value rows, in a bordered table, or in a footer line at the bottom. Each sits right next to or under a label such as PAN, UAN, A/c or Bank account. In a two-column header the left column usually holds the employee name, id, designation and the bank account and the right column holds the PAN, UAN and pay period. Locate the PAN value, the UAN value and the bank account number value (not their labels, and not salary amounts)',
 };
 
 // Measured over 30 runs on the sample cards: the model's raw box can miss the real text by up to
@@ -44,13 +45,6 @@ const PAD = { left: 0.05, top: 0.02, right: 0.09, bottom: 0.035 };
 const PAD_AADHAAR = { left: 0.07, top: 0.06, right: 0.04, bottom: 0.04 };
 const MAX_WIDTH = 0.6;
 const MAX_HEIGHT = 0.12;
-
-interface Box {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
 
 function validBox(b: unknown): b is Box {
   if (!b || typeof b !== 'object') return false;
@@ -68,31 +62,6 @@ function pad(b: Box, p = PAD): Box {
     right: Math.min(1, b.right + p.right),
     bottom: Math.min(1, b.bottom + p.bottom),
   };
-}
-
-function iou(a: Box, b: Box): number {
-  const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-  const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-  if (w <= 0 || h <= 0) return 0;
-  const inter = w * h;
-  const total = (a.right - a.left) * (a.bottom - a.top) + (b.right - b.left) * (b.bottom - b.top) - inter;
-  return inter / total;
-}
-
-function union(boxes: Box[]): Box {
-  return {
-    left: Math.min(...boxes.map((b) => b.left)),
-    top: Math.min(...boxes.map((b) => b.top)),
-    right: Math.max(...boxes.map((b) => b.right)),
-    bottom: Math.max(...boxes.map((b) => b.bottom)),
-  };
-}
-
-// Keep the boxes that overlap at least one other answer's box, and merge them. Fewer than two
-// agreeing answers means the position is unconfirmed.
-function agreed(boxes: Box[]): Box | null {
-  const keep = boxes.filter((b, i) => boxes.some((o, j) => j !== i && iou(b, o) >= 0.3));
-  return keep.length >= 2 ? union(keep) : null;
 }
 
 export async function POST(req: NextRequest) {
@@ -140,7 +109,7 @@ export async function POST(req: NextRequest) {
       regions = [];
       unconfirmed = null;
       for (const f of fields) {
-        const confirmed = agreed(answers.map((a) => a.data[f.key]).filter(validBox));
+        const confirmed = agreed(answers.map((a) => a.data[f.key]).filter(validBox), { neighbours: documentType === 'salary-slip' });
         if (!confirmed) {
           unconfirmed = f.label;
           break;
