@@ -6,10 +6,9 @@ export interface NomineeDob {
   error: string | null;
 }
 
-// `now` is a Date for tests; the default is the current time as a number. A bare `new Date()` evaluated while a
-// client component renders is refused by the production build, so the default is Date.now() like the applicant's age.
-export function parseNomineeDob(text: string, nowInput: Date | number = Date.now()): NomineeDob {
-  const now = new Date(nowInput);
+// `now` is given by tests. In the app the current time is read only AFTER the text has the right shape, because
+// the production build refuses to read the clock while it prerenders a client component, and the field is empty then.
+export function parseNomineeDob(text: string, nowInput?: Date | number): NomineeDob {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text.trim());
   const ask = "Enter the primary nominee's date of birth as DD/MM/YYYY.";
   if (!m) return { age: null, error: ask };
@@ -20,6 +19,7 @@ export function parseNomineeDob(text: string, nowInput: Date | number = Date.now
   if (year < 1900 || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
     return { age: null, error: "The primary nominee's date of birth is not a real date. Use DD/MM/YYYY." };
   }
+  const now = new Date(nowInput ?? Date.now());
   if (date.getTime() > now.getTime()) return { age: null, error: "The primary nominee's date of birth cannot be in the future." };
   let age = now.getFullYear() - year;
   if (now.getMonth() < month - 1 || (now.getMonth() === month - 1 && now.getDate() < day)) age -= 1;
