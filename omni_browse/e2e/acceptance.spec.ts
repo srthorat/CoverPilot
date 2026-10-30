@@ -282,3 +282,46 @@ test('AC-14 Two distinct agents: Guardian reviews and never changes the applicat
   expect(cobrowser).toMatch(/omnicb|co-?brows|application|form/i);
   expect(cobrowser).not.toMatch(/i am (the )?integrity guardian/i);
 });
+
+test('AC-15 A paused proposal resumes on another browser with its code and resume key, and a wrong key is refused', async ({ browser }) => {
+  test.setTimeout(180_000);
+  // Make sure there is something to save, then pause in the main browser context.
+  await page.getByRole('button', { name: /1\. Co-browse/ }).click();
+  if (!(await input('field-full-name').inputValue())) await input('field-full-name').fill('Priya Sharma');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  const keyBox = page.getByTestId('vault-key');
+  await expect(keyBox).toBeVisible({ timeout: 60_000 }); // PBKDF2 and the upload take a moment
+  const id = ((await page.getByTestId('vault-id').innerText()) || '').trim();
+  const key = ((await keyBox.innerText()) || '').trim();
+  expect(id).toMatch(/^NXP-[A-HJKMNP-Z2-9]{8}$/);
+  expect(key).toMatch(/^[A-HJKMNP-Z2-9]{5}-[A-HJKMNP-Z2-9]{5}$/);
+  await expect(page.getByText(/Saved encrypted: we cannot read it/)).toBeVisible();
+  const name = await input('field-full-name').inputValue();
+  await page.getByRole('button', { name: 'I have saved the key' }).click();
+
+  // A brand new browser context has empty storage: only the code and the key can bring the draft back.
+  const fresh = await browser.newContext({ viewport: { width: 1512, height: 860 } });
+  const other = await fresh.newPage();
+  await other.goto('/');
+  expect(await other.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('nexasure.draft.')).length)).toBe(0);
+
+  // A wrong key is refused cleanly and nothing is restored.
+  await other.locator('#entry-resume-other').click();
+  await other.getByTestId('vault-resume-id').fill(id);
+  await other.getByTestId('vault-resume-key').fill('AAAAA-AAAAA');
+  await other.getByTestId('vault-resume-button').click();
+  await expect(other.getByTestId('vault-error')).toContainText(/That key does not match this proposal/, { timeout: 60_000 });
+  // An unknown code says so, without claiming anything about keys.
+  await other.getByTestId('vault-resume-id').fill('NXP-AAAAAAAA');
+  await other.getByTestId('vault-resume-button').click();
+  await expect(other.getByTestId('vault-error')).toContainText(/No saved proposal with that code/, { timeout: 30_000 });
+
+  // The right code and key restore the draft.
+  await other.getByTestId('vault-resume-id').fill(id);
+  await other.getByTestId('vault-resume-key').fill(key.toLowerCase());
+  await other.getByTestId('vault-resume-button').click();
+  await expect(other.getByRole('heading', { name: /Step [1-5]/ }).first()).toBeVisible({ timeout: 60_000 });
+  // The same step comes back, and on Step 1 the typed name is restored too.
+  if (name && (await other.getByRole('heading', { name: /Step 1/ }).count())) await expect(other.locator('#field-full-name input')).toHaveValue(name);
+  await fresh.close();
+});

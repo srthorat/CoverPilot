@@ -2,6 +2,7 @@
 
 import { blurCopy } from '@/lib/kyc-blur';
 import { ALLOW_OWN_FILES } from '@/lib/flags';
+import { decryptDraft, encryptDraft, generateResumeKey, normalizeResumeKey, storedAuth, storeAuth, VaultKeyError } from '@/lib/vault';
 import { extractPolicyPages, type PolicyPage } from '@/lib/pdf-text';
 import { GuardianView, type GuardianReviewState } from '@/components/GuardianView';
 import { runChecks, countIssues } from '@/lib/guardian-checks';
@@ -435,6 +436,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [resumeCode, setResumeCode] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [pausedNote, setPausedNote] = useState<string | null>(null);
+  // Resuming on another device: the proposal code names the draft, the resume key (shown once at Pause) proves it is yours.
+  const [pausedKey, setPausedKey] = useState<string | null>(null);
+  const [remoteId, setRemoteId] = useState('');
+  const [remoteKey, setRemoteKey] = useState('');
+  const [remoteError, setRemoteError] = useState('');
+  const [remoteBusy, setRemoteBusy] = useState(false);
   const [stepNotice, setStepNotice] = useState<{ step: number; issues: string[] } | null>(null);
   const stepGateRef = useRef<{ issues: Record<number, Array<{ id: string; msg: string }>>; maxReachable: number }>({
     issues: {},
@@ -2231,7 +2238,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     setPendingResume(null);
     setShowResumePanel(false);
     setPausedNote(null);
+    setPausedKey(null);
     setStepNotice(null);
+    setMode('cobrowse');
+    setEntry('done');
     return true;
   };
 
@@ -2242,17 +2252,64 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     window.location.reload();
   };
 
-  const pauseProposal = () => {
+  const pauseProposal = async () => {
     if (!draftId) return;
     const saved = draftHasContent ? saveDraft(draftId, draftSnapshot(), activeStep) : true;
     setDraftReady(true);
     setSavedProposals(readIndex());
     if (isCoBrowsingConnectedRef.current) disconnectCoBrowsingSession();
-    setPausedNote(
-      saved
-        ? `Proposal ${draftId} is paused and saved in this browser. Use Resume and this code to continue. Your Aadhaar, PAN, mobile number, signature and payment are not saved, so you will enter them again.`
-        : `Could not save in this browser (storage is blocked). Proposal ${draftId} was not saved.`
-    );
+    setPausedKey(null);
+    if (!draftHasContent) {
+      setPausedNote(`Proposal ${draftId} has nothing to save yet.`);
+      return;
+    }
+    setPausedNote(saved ? `Proposal ${draftId} is saved in this browser. Saving an encrypted copy for other devices…` : `Could not save in this browser (storage is blocked). Proposal ${draftId} was not saved here.`);
+    try {
+      // The draft is encrypted here, in the browser, with a key made now; the server only ever holds ciphertext.
+      const key = generateResumeKey();
+      const { blob, authToken } = await encryptDraft(draftSnapshot(), key, draftId, activeStep);
+      const old = storedAuth(draftId);
+      const res = await fetch('/api/vault', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(old ? { 'X-Vault-Auth': old } : {}) },
+        body: JSON.stringify(blob),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(res.status === 403 ? 'a copy with this code was saved from another browser; open it there or resume it here with its key first' : d.error || `HTTP ${res.status}`);
+      }
+      storeAuth(draftId, authToken);
+      setPausedKey(key);
+      setPausedNote(`Proposal ${draftId} is paused. It is saved in this browser, and an encrypted copy can be opened on any device with this code and the resume key below. Your Aadhaar, PAN, mobile number, signature and payment are not saved, so you will enter them again.`);
+    } catch (e: any) {
+      setPausedNote(`Proposal ${draftId} is saved in this browser only. The encrypted copy for other devices could not be uploaded (${e?.message || e}), so it cannot be resumed on another device yet. Your copy in this browser is safe.`);
+    }
+  };
+
+  const resumeRemote = async () => {
+    const id = normalizeCode(remoteId);
+    const key = normalizeResumeKey(remoteKey);
+    if (!/^NXP-[A-HJKMNP-Z2-9]{8}$/.test(id)) return setRemoteError('Enter the proposal code, like NXP-7KQ2M9XD.');
+    if (!key) return setRemoteError('Enter the 10-character resume key, like 7KQ2M-9XDPA.');
+    setRemoteBusy(true);
+    setRemoteError('');
+    try {
+      const res = await fetch(`/api/vault?id=${encodeURIComponent(id)}`);
+      if (res.status === 404) return setRemoteError('No saved proposal with that code.');
+      if (!res.ok) return setRemoteError(res.status === 429 ? 'Too many tries. Wait a minute and try again.' : 'Could not reach the vault. Try again.');
+      const { draft, authToken } = await decryptDraft<any>(await res.json(), key, id);
+      if (!draft || draft.v !== 1) return setRemoteError('That saved copy could not be read.');
+      saveDraft(id, draft, Number(draft.activeStep) || 1); // a local copy, so resuming in this browser needs no key next time
+      storeAuth(id, authToken);
+      if (applyDraft(id)) {
+        setRemoteId('');
+        setRemoteKey('');
+      }
+    } catch (e) {
+      setRemoteError(e instanceof VaultKeyError ? 'That key does not match this proposal.' : 'Something went wrong resuming this proposal.');
+    } finally {
+      setRemoteBusy(false);
+    }
   };
 
   const resumeByCode = () => {
@@ -2831,6 +2888,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 </button>
               </div>
             )}
+            <button
+              id="entry-resume-other"
+              onClick={() => {
+                setResumeError('');
+                setRemoteError('');
+                setSavedProposals(readIndex());
+                setShowResumePanel(true);
+              }}
+              className="text-xs font-semibold text-[#582be8] underline"
+            >
+              Resume a saved proposal (on this or another device)
+            </button>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-3xl">
               <button
                 id="entry-new-policy"
@@ -2979,14 +3048,14 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       )}
 
       {(showResumePanel || pausedNote) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { setShowResumePanel(false); setPausedNote(null); }}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={() => { if (pausedKey) return; setShowResumePanel(false); setPausedNote(null); }}>
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl text-sm text-slate-800" onClick={(e) => e.stopPropagation()}>
             {pausedNote ? (
               <>
                 <h3 className="font-bold text-base mb-1">Proposal paused</h3>
                 <p className="text-xs text-slate-600 mb-3">{pausedNote}</p>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-base font-bold tracking-wider">{draftId}</span>
+                  <span data-testid="vault-id" className="font-mono text-base font-bold tracking-wider">{draftId}</span>
                   <button
                     onClick={() => navigator.clipboard?.writeText(draftId).catch(() => {})}
                     className="px-3 py-1 rounded-lg border border-slate-300 text-xs font-semibold"
@@ -2994,8 +3063,33 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     Copy code
                   </button>
                 </div>
+                {pausedKey && (
+                  <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-2.5">
+                    <div className="text-xs font-semibold text-amber-900">Resume key (shown once)</div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span data-testid="vault-key" className="font-mono text-base font-bold tracking-wider text-amber-950">{pausedKey}</span>
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(pausedKey).catch(() => {})}
+                        className="px-3 py-1 rounded-lg border border-amber-400 bg-white text-xs font-semibold"
+                      >
+                        Copy key
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-amber-900">
+                      Saved encrypted: we cannot read it. This key cannot be recovered. Anyone with both the code and the key can open this draft, so keep the key private.
+                    </p>
+                  </div>
+                )}
                 <div className="mt-4 text-right">
-                  <button onClick={() => setPausedNote(null)} className="px-4 py-1.5 rounded-lg bg-[#582be8] text-white text-xs font-semibold">Close</button>
+                  <button
+                    onClick={() => {
+                      setPausedNote(null);
+                      setPausedKey(null);
+                    }}
+                    className="px-4 py-1.5 rounded-lg bg-[#582be8] text-white text-xs font-semibold"
+                  >
+                    {pausedKey ? 'I have saved the key' : 'Close'}
+                  </button>
                 </div>
               </>
             ) : (
@@ -3036,6 +3130,37 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <button onClick={resumeByCode} className="px-3 py-1.5 rounded-lg bg-[#582be8] text-white text-xs font-semibold">Resume</button>
                 </div>
                 {resumeError && <p className="mt-1 text-xs text-red-600">{resumeError}</p>}
+                <div className="mt-4 border-t border-slate-200 pt-3">
+                  <h4 className="text-sm font-bold">Resume on another device</h4>
+                  <p className="text-xs text-slate-600 mb-2">Enter the proposal code and the resume key you were shown when you paused. The draft is decrypted in this browser; the server cannot read it.</p>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      data-testid="vault-resume-id"
+                      value={remoteId}
+                      onChange={(e) => setRemoteId(e.target.value)}
+                      placeholder="Proposal code, e.g. NXP-7KQ2M9XD"
+                      className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-mono"
+                    />
+                    <input
+                      data-testid="vault-resume-key"
+                      value={remoteKey}
+                      onChange={(e) => setRemoteKey(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && resumeRemote()}
+                      placeholder="Resume key, e.g. 7KQ2M-9XDPA"
+                      autoComplete="off"
+                      className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-mono"
+                    />
+                    <button
+                      data-testid="vault-resume-button"
+                      onClick={resumeRemote}
+                      disabled={remoteBusy}
+                      className="px-3 py-1.5 rounded-lg bg-[#582be8] disabled:opacity-60 text-white text-xs font-semibold"
+                    >
+                      {remoteBusy ? 'Opening…' : 'Resume on another device'}
+                    </button>
+                    {remoteError && <p data-testid="vault-error" className="text-xs text-red-600">{remoteError}</p>}
+                  </div>
+                </div>
                 <div className="mt-3 text-right">
                   <button onClick={() => setShowResumePanel(false)} className="px-3 py-1 rounded-lg border border-slate-300 text-xs">Close</button>
                 </div>
