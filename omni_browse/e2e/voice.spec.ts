@@ -15,7 +15,7 @@ const WAV = path.resolve(__dirname, 'assets/priya-sharma.wav');
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 
 test('VOICE-01 Spoken words reach the agent and fill the form with nobody typing', async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(100_000); // takes about 30 s
   const browser = await chromium.launch({
     args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-audio-capture=${WAV}`],
   });

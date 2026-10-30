@@ -34,7 +34,7 @@ async function beat(name: string, planned: string, fn: () => Promise<void>) {
 }
 
 test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', async () => {
-  test.setTimeout(1_200_000);
+  test.setTimeout(420_000); // takes about 2.5 minutes; stop a stalled run early
   fs.rmSync(VIDEO_DIR, { recursive: true, force: true });
   const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   const ctx = await browser.newContext({

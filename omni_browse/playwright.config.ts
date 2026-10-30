@@ -23,6 +23,10 @@ export default defineConfig({
   testDir: './e2e',
   testMatch,
   timeout: 100_000,
+  // Hard caps so a stalled run cannot keep spending live model calls: stop after 3 failures, and after 15 minutes overall
+  // (a full acceptance run takes about 5; the dress rehearsal and voice runs are shorter). Named measuring specs raise it.
+  maxFailures: 3,
+  globalTimeout: /language\.spec|speech-hi-mr\.spec|shield\.spec|guardian-rehearsal/.test(named) ? 0 : 15 * 60_000,
   workers: 1,
   retries: 0,
   reporter: [['list'], ['./e2e/report.ts']],

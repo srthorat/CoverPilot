@@ -8,7 +8,7 @@ import { fillStep1, finishApplication, startNewPolicy } from './helpers';
 test.describe.configure({ mode: 'serial' });
 
 test('CB-01 A sample card is scanned: the blurred copy is drawn and the name read from the card fills the empty name field', async ({ page }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(90_000);
   await startNewPolicy(page);
   await page.getByRole('button', { name: /Masked Aadhaar/ }).click();
   await expect(page.getByText(/Done/).first()).toBeVisible({ timeout: 90_000 });
@@ -20,7 +20,7 @@ test('CB-01 A sample card is scanned: the blurred copy is drawn and the name rea
 });
 
 test('CB-02 The whole application by typing reaches Step 5, the draft PDF downloads and is read back in the browser', async ({ page }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(90_000);
   await startNewPolicy(page);
   await fillStep1(page);
   await finishApplication(page);

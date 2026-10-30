@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 // The 13-item MVP acceptance scenario from features.md, run against the live app and the live Meta
@@ -71,7 +73,15 @@ const input = (id: string) => page.locator(`#${id} input, input#${id}`).first();
 // Checks that need the agent are skipped on it and say so in the report; everything that runs in the page and
 // the review route (document reading, privacy shield, step gate, pause and resume, the Guardian review) still runs.
 const NEEDS_VOICE_SESSION = /^(AC-0[1-9]|AC-1[0-4]|AC-21|EX-01|EX-03)\b/;
+// Every check gets a time limit from how long it took on the last good run (e2e/budgets.json), so a stalled
+// check fails fast instead of waiting out a generic limit while live model calls keep running.
+const BUDGETS: { previous: Record<string, number> } = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'budgets.json'), 'utf8'));
+const budgetMs = (title: string) => {
+  const prev = BUDGETS.previous[/^(AC|EX)-\d+/.exec(title)?.[0] ?? ''];
+  return prev === undefined ? 100_000 : Math.min(240_000, Math.max(30_000, (20 + 3 * prev) * 1000));
+};
 test.beforeEach(async ({}, testInfo) => {
+  testInfo.setTimeout(budgetMs(testInfo.title));
   test.skip(testInfo.project.use.browserName === 'webkit' && NEEDS_VOICE_SESSION.test(testInfo.title), 'needs a live voice session; WebKit has no fake microphone');
 });
 
@@ -238,7 +248,6 @@ test('EX-01 Hostile text inside a document does not steer the agent or the form'
 });
 
 test('EX-02 Integrity Guardian finds the planted problems in a proposed policy, with pages', async () => {
-  test.setTimeout(240_000);
   // The review compares the document with the application, so some application must exist (default cover 1.5 crore, 1,050 a month).
   if (!(await input('field-full-name').inputValue())) await input('field-full-name').fill('Priya Sharma');
   await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
@@ -274,7 +283,6 @@ test('EX-04 A finding sends the customer back to the application', async () => {
 // Depends on the two-agent split (a separate Integrity Guardian agent selected by set_mode). On the
 // older single-agent build this is expected to fail.
 test('AC-14 Two distinct agents: Guardian reviews and never changes the application', async () => {
-  test.setTimeout(240_000);
   await page.getByRole('button', { name: /Integrity Guardian: review/ }).click();
   await page.waitForTimeout(6000); // the agent switch and its introduction
   const who = await ask('Who are you and what do you do?', (r) => /guardian/i.test(r));
@@ -292,7 +300,6 @@ test('AC-14 Two distinct agents: Guardian reviews and never changes the applicat
 });
 
 test('AC-15 A paused proposal resumes on another browser with its code and resume key, and a wrong key is refused', async ({ browser }) => {
-  test.setTimeout(180_000);
   // Make sure there is something to save, then pause in the main browser context.
   await page.getByRole('button', { name: /1\. Co-browse/ }).click();
   if (!(await input('field-full-name').inputValue())) await input('field-full-name').fill('Priya Sharma');
@@ -352,7 +359,6 @@ test('AC-15 A paused proposal resumes on another browser with its code and resum
 });
 
 test('AC-21 The live session ends after inactivity, and Resume session brings the conversation back', async () => {
-  test.setTimeout(240_000);
   await page.getByRole('button', { name: /1\. Co-browse/ }).click();
   const first = await ask('What is the grace period for monthly premiums?', (r) => /grace|days/i.test(r));
   expect(first).toMatch(/grace|days/i);
@@ -370,7 +376,6 @@ test('AC-21 The live session ends after inactivity, and Resume session brings th
 });
 
 test('AC-22 A failed or slow review is explained and can be retried, and a late answer never lands on another document', async () => {
-  test.setTimeout(300_000);
   // Reviews are cached per document and application in this tab; clear them so each step really calls the route.
   const forgetReviews = () => page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith('nexasure.review.')).forEach((k) => sessionStorage.removeItem(k)));
   await forgetReviews();
@@ -419,7 +424,6 @@ test('AC-22 A failed or slow review is explained and can be retried, and a late 
 test('AC-17 A failing review model shows a clear error and no findings (bad-key instance)', async () => {
   const bad = process.env.FAILURE_URL;
   test.skip(!bad, 'set FAILURE_URL to an instance started with an invalid Meta key');
-  test.setTimeout(240_000);
   const p = await page.context().newPage();
   await p.goto(bad!);
   await p.getByRole('button', { name: /Start a new policy/ }).click();

@@ -38,7 +38,7 @@ const findings: string[] = [];
 
 for (const phone of PHONES) {
   test(`MB ${phone.name}: choice screen, Step 1, step gate, Step 2 and the Guardian tab fit the screen`, async () => {
-    test.setTimeout(240_000);
+    test.setTimeout(100_000); // both phones take about 22 s
     const browser: Browser = await phone.engine.launch();
     const ctx = await browser.newContext({ ...phone.device, baseURL: BASE, permissions: [] });
     const page = await ctx.newPage();
