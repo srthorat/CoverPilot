@@ -4244,10 +4244,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       <span className="text-xs tabular-nums font-bold text-[#582be8] whitespace-nowrap shrink-0">+₹55/mo</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
-                      Fixed ₹5,000 cash allowance per 24 hours of hospitalization to cover incidental expenses and loss of daily income.
+                      Pays ₹2,000 for each day of hospitalisation, to cover incidental expenses and loss of daily income.
                     </p>
                     <div className="text-[11px] font-medium text-slate-500 tabular-nums">
-                      <span>Up to 60 Days Annually</span>
+                      <span>Demo rider terms</span>
                     </div>
                   </div>
 
