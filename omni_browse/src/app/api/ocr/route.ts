@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
 import { cleanAddress, cleanDob, cleanGender, cleanName, cleanPayPeriod, cleanPincode, parseRupees } from '@/lib/ocr-clean';
 import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
+import { leakProbeMessages, partialLeaks } from '@/lib/leak-probe';
 
 /**
  * KYC document OCR via Meta Muse Spark (multimodal image input).
@@ -130,8 +131,20 @@ export async function POST(req: NextRequest) {
       if (documentType === 'pan' && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(idCompact)) redactionLeaks.push('PAN number');
       if (documentType === 'aadhaar' && /^[0-9]{12}$/.test(idCompact)) redactionLeaks.push('Aadhaar number');
       if (documentType === 'salary-slip') {
+        if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(idCompact)) redactionLeaks.push('PAN number');
         if ((digitsOnly(data.uan)?.length ?? 0) >= 10) redactionLeaks.push('UAN');
         if ((digitsOnly(data.bankAccountNumber)?.length ?? 0) >= 9) redactionLeaks.push('Bank account number');
+      }
+      // Files the customer uploaded themselves get a second, stricter look for partly readable numbers.
+      if (body.leakProbe === true) {
+        try {
+          const probe = await sparkJson<Record<string, unknown>>(leakProbeMessages(documentType as 'pan' | 'aadhaar' | 'salary-slip', imageDataUrl), { reasoningEffort: 'low', temperature: 0 });
+          for (const leak of partialLeaks(documentType as 'pan' | 'aadhaar' | 'salary-slip', probe.data)) if (!redactionLeaks.includes(leak)) redactionLeaks.push(leak);
+        } catch (e: any) {
+          // No fallback: if the extra check cannot run, the scan is not trusted.
+          redactionLeaks.push('numbers (the extra privacy check could not run)');
+          console.error('[ocr] leak probe failed:', e?.message || e);
+        }
       }
       if (redactionLeaks.length) console.error(`[ocr] redaction leak in ${documentType}: ${redactionLeaks.join(', ')}`);
     }

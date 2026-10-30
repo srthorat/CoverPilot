@@ -11,11 +11,13 @@ const browser = (process.env.BROWSER || 'chromium') as 'chromium' | 'firefox' | 
 // named: `npx playwright test e2e/voice.spec.ts` or `e2e/rehearsal.spec.ts` (they launch their own Chromium).
 // The engine, phone and accessibility checks run the same way: `e2e/crossbrowser.spec.ts` (any BROWSER), `e2e/mobile.spec.ts`
 // (launches its own WebKit and Chromium with phone descriptors) and `e2e/a11y.spec.ts` (axe, Chromium).
+// `e2e/shield.spec.ts` measures the ID privacy shield on the synthetic cards (needs the own-file image; see the spec).
 const named = process.argv.join(' ');
 const testMatch = /voice\.spec|rehearsal\.spec|capacity\.spec|language\.spec|speech-hi-mr\.spec/.test(named)
   ? /(voice|rehearsal|capacity|language|speech-hi-mr)\.spec\.ts/
-  : /crossbrowser\.spec|mobile\.spec|a11y\.spec/.test(named)
-  ? /(crossbrowser|mobile|a11y)\.spec\.ts/
+  : /crossbrowser\.spec|mobile\.spec|a11y\.spec|shield\.spec/.test(named)
+  ? /(crossbrowser|mobile|a11y|shield)\.spec\.ts/
+  : /acceptance\.spec\.ts/;
   : /acceptance\.spec\.ts/;
 
 export default defineConfig({
