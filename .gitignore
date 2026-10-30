@@ -38,3 +38,4 @@ pnpm-debug.log*
 # Superpowers / system generated
 .superpowers/
 .gstack/
+En-Notified-*.pdf
