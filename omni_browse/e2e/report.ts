@@ -13,6 +13,7 @@ export default class AcceptanceReport implements Reporter {
   }
 
   onEnd(_result: FullResult) {
+    if (this.rows.length === 0) return; // the voice and rehearsal specs have their own reports
     const browser = process.env.BROWSER || 'chromium';
     const pass = this.rows.filter((r) => r.status === 'pass').length;
     const lines = [

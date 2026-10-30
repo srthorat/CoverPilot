@@ -39,3 +39,5 @@ pnpm-debug.log*
 .superpowers/
 .gstack/
 En-Notified-*.pdf
+docs/rehearsal/
+omni_browse/test-results/
