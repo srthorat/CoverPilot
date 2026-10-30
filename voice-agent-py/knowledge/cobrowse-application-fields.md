@@ -21,8 +21,8 @@ The insurer may ask you to prove your income and salary with documents. Salaried
 Source: insurer guidance, for example HDFC Life and Axis Max Life term insurance document pages (practice varies by insurer, not an IRDAI list); sample slip: NexaSure app behaviour.
 
 ## Step one: the tobacco question and what counts
-Answer yes if you have used tobacco or nicotine, such as cigarettes, bidis, gutkha, cigars or nicotine gum, in the last twelve months, however often. In this demo the twenty percent non-smoker discount applies only when the answer is no. Other insurers may look back twelve to twenty-four months, so the period can differ elsewhere. Answer truthfully, because a wrong answer can cause trouble at claim time.
-Source: twelve months is the NexaSure demo term; other insurers vary (Aditya Birla Sun Life Insurance and HDFC Life term insurance pages); no single IRDAI definition was found.
+Answer yes if you have used tobacco or nicotine, such as cigarettes, bidis, gutkha, cigars or nicotine gum, in the last twelve months, however often. In this demo the twenty percent non-smoker discount applies only when the answer is no. IRDAI does not define a smoker or a non-smoker: each insurer sets its own meaning in its proposal form and underwriting rules, so the look-back period and what counts differ between insurers, commonly twelve months and sometimes up to twenty-four. Some insurers also test blood or urine for cotinine, which shows recent nicotine use. Answer truthfully, because a wrong answer can cause trouble at claim time.
+Source: IRDAI Master Circular on Life Insurance Products, 12 Jun 2024, Form IRDAI Life Non-Linked item 6.1(b) and item 11(b), where smokers and non-smokers appear only as a product tick box and an underwriting class, with no definition; twelve months is the NexaSure demo term; other insurers vary (Aditya Birla Sun Life Insurance and HDFC Life term insurance pages, insurer practice).
 
 ## Step one: city and PIN code
 Enter the city you live in and the six-digit PIN code of your address. The PIN has to be exactly six digits. The assistant can fill both from what you say; say the PIN digit by digit, for example four one one zero three eight.
@@ -33,8 +33,8 @@ The identity records box at the bottom of step one needs your twelve-digit Aadha
 Source: NexaSure app behaviour (not a regulation); the need for identity checks: IRDAI Master Guidelines on AML/CFT, 1 Aug 2022.
 
 ## Why PAN is asked and when it is compulsory
-PAN has to be quoted when you pay more than fifty thousand rupees in life insurance premium in a financial year, otherwise a Form 60 declaration is used. This demo asks for PAN in every case so the form is complete. The income-tax rules were renumbered from 1 April 2026, so confirm the current rule with the insurer.
-Source: Income-tax Rule 114B list of transactions requiring PAN, https://www.incometaxindia.gov.in; the 2026 renumbering was seen in one source only, check with the insurer.
+Insurers ask for your PAN, or a Form 60 declaration if you do not have one, alongside your identity documents. Under the old income-tax rule PAN had to be quoted when life insurance premium was more than fifty thousand rupees in a financial year. The income-tax rules changed on 1 April 2026 and the PAN rule now sits in rule 159 of the Income-tax Rules 2026, so the exact premium test that applies today should be confirmed with the insurer. This demo asks for PAN in every case so the form is complete.
+Source: IRDAI Master Guidelines on AML/CFT, 1 Aug 2022, para 8.1.7.7 (PAN or Form 60 wherever applicable) and para 8.2.2 (50,000 rupee aggregate premium for existing customers); Income-tax Rules 2026 (notified 20 March 2026, in force 1 April 2026): rule 159 and the official Form No. 97 'See rules 159 and 160' which lists starting an account based relationship with an insurer. The official rule text could not be downloaded, so the current threshold is not confirmed here.
 
 ## Sample documents versus typing it yourself
 The sample card and salary slip buttons read a fictional document and fill your name, date of birth, PIN and income only where the box is empty. They never replace something you already typed: if the document disagrees you see a card asking whether to keep yours or use the document's. A sample's ID number is filled in for you, but only for the sample.
