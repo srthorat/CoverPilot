@@ -13,6 +13,8 @@ from collections.abc import AsyncGenerator
 
 import aiohttp
 from loguru import logger
+
+from .logsafe import safe_text
 from pipecat.frames.frames import (
     CancelFrame,
     EndFrame,
@@ -120,7 +122,7 @@ class GoogleRestTTSService(TTSService):
         return pcm
 
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
-        logger.debug(f"[google-tts] synthesize ({self.voice} @ {self.sample_rate} Hz): {text!r}")
+        logger.debug(f"[google-tts] synthesize ({self.voice} @ {self.sample_rate} Hz): {safe_text(text)}")
         try:
             await self.start_ttfb_metrics()
             pcm = await self._synthesize(text)

@@ -42,6 +42,7 @@ from coverpilot import cases
 from coverpilot.config import Settings
 from coverpilot.google_tts import GoogleRestTTSService
 from coverpilot.knowledge import Chunk, KnowledgeBase
+from coverpilot.logsafe import debug_transcripts, install_log_patcher, safe_keys
 from coverpilot.memory import MemoryStore, MemoryWriter, customer_ref, valid_customer_id
 from coverpilot.meta_stt import MetaRealtimeSTTService
 from coverpilot.processors import AckProcessor, ActionMarkerFilter, ScreenStateInjector, WonderVerifier
@@ -51,6 +52,7 @@ from coverpilot.session import ACCENTS, AGENT_NAMES, LANGS, LANGUAGE_BIAS, PERSO
 AUDIO_IN_RATE = 16000  # Silero + Smart Turn need 16 kHz
 AUDIO_OUT_RATE = 24000
 
+install_log_patcher()  # mask numbers and cut Pipecat's payload-printing debug lines (see coverpilot/logsafe.py)
 KNOWLEDGE = KnowledgeBase(exclude_prefix=("guardian-",))  # the co-browsing agent's: every shared file and its own cobrowse-* files, loaded once per process
 # Integrity Guardian's own knowledge base: the rules and terms needed to read a policy document, without
 # the files about using the application (faq, process-and-payment).
@@ -170,7 +172,7 @@ def load_policy_document(session: SessionState, raw: str) -> dict:
         return {"ok": False, "error": "the document had no readable text"}
     session.policy_doc = KnowledgeBase.from_chunks(chunks)
     session.policy_name = name
-    logger.info(f"[policy] loaded {name}: {len(pages)} pages, {len(chunks)} passages (kept in memory only)")
+    logger.info(f"[policy] loaded a document: {len(pages)} pages, {len(chunks)} passages (kept in memory only)")
     return {"ok": True, "name": name, "pages": len(pages), "passages": len(chunks)}
 
 
@@ -254,7 +256,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
         kind = msg.type
         data = msg.data if isinstance(msg.data, dict) else {}
         if kind not in ("screen_state", "screenshot_chunk"):
-            logger.debug(f"[client] {kind}: {str(data)[:120]}")
+            logger.debug(f"[client] {kind}: {safe_keys(data)}")
         try:
             if kind == "screen_state":
                 state = data.get("state")
@@ -353,7 +355,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
                         context.messages.insert(0, {"role": "system", "content": new_system})
             await rtvi_proc.send_server_response(msg, {"ok": True})
         except Exception as e:  # keep the session alive on bad client messages
-            logger.exception("client message failed")
+            if debug_transcripts():
+                logger.exception("client message failed")
+            else:  # a full traceback prints local variables, which can hold what the customer said
+                logger.error(f"client message failed: {type(e).__name__}")
             await rtvi_proc.send_error_response(msg, str(e))
 
     @transport.event_handler("on_client_disconnected")
@@ -377,7 +382,7 @@ async def bot(runner_args: RunnerArguments):
     }
     transport = await create_transport(runner_args, transport_params)
     body = getattr(runner_args, "body", None) or {}
-    logger.info(f"[session] body: { {k: v for k, v in body.items() if k != 'customerId'} } customer ref: {customer_ref(body.get('customerId')) if body.get('customerId') else None}")
+    logger.info(f"[session] body {safe_keys({k: v for k, v in body.items() if k != 'customerId'})} customer ref: {customer_ref(body.get('customerId')) if body.get('customerId') else None}")
     await run_bot(
         transport,
         runner_args,

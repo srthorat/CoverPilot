@@ -39,6 +39,7 @@ from pipecat.processors.frameworks.rtvi.frames import RTVIServerMessageFrame
 from .asr_corrections import correct as asr_correct
 from .config import Settings
 from .knowledge import KnowledgeBase
+from .logsafe import safe_action, safe_reason, safe_text
 from .prompt import ACTION_MARKER, VERIFIER_SYSTEM_PROMPT, build_system_prompt, parse_action
 from .revert import inverse_actions
 from .session import SessionState
@@ -119,7 +120,7 @@ class ScreenStateInjector(FrameProcessor):
         s.user_turns = (s.user_turns + [text])[-3:]
         s.main_started = False
         s.turn_started_at = time.time()
-        logger.info(f"[turn] user ({s.turn_source}, {role}): {text!r}")
+        logger.info(f"[turn] user ({s.turn_source}, {role}): {safe_text(text)}")
         self._decorated[id(last)] = text
         # Knowledge retrieved for this turn only.
         kb = self._kbs.get(role) or self._kbs.get("cobrowse")
@@ -148,7 +149,7 @@ class ScreenStateInjector(FrameProcessor):
         note = gate_note(text, s.screen_state) if role == "cobrowse" else ""
         if note:
             decorated = f"{decorated}\n\n{note}"
-            logger.info(f"[gate] {note[:160]}")
+            logger.info(f"[gate] note of {len(note)} chars")
         shot = s.fresh_screenshot() if role == "cobrowse" else None
         if shot:
             last["content"] = [
@@ -267,7 +268,7 @@ class ActionMarkerFilter(FrameProcessor):
             )
             has_screen_action = bool(action and (action.get("fieldActions") or action.get("fieldAction")))
             if action and (has_screen_action or not action.get("escalate")):
-                logger.info(f"[action] {json.dumps(action, ensure_ascii=False)[:400]}")
+                logger.info(f"[action] {safe_action(action)}")
                 await self.push_frame(RTVIServerMessageFrame(data={"type": "action", **action}))
                 if self._on_action and has_screen_action:
                     await self._on_action(action, before)
@@ -372,10 +373,10 @@ class WonderVerifier(FrameProcessor):
             if status == "amend":
                 settled, settled_amended = settle_verdict(status, amended, [a for a in actions if isinstance(a, dict)])
                 if settled != status:
-                    logger.warning(f"[wonder] amendment ignored (does not match an applied action), the action stands: {amended}")
+                    logger.warning(f"[wonder] amendment ignored (does not match an applied action), the action stands: {safe_action({'fieldAction': amended} if isinstance(amended, dict) else None)}")
                     verdict["amendedAction"] = None
                 status, amended = settled, settled_amended
-            logger.info(f"[wonder] {status}: {reason} | clause={verdict.get('clause')} | amended={amended}")
+            logger.info(f"[wonder] {status}: {safe_reason(reason)} | clause={verdict.get('clause')} | amended={safe_action({'fieldAction': amended} if isinstance(amended, dict) else None)}")
             await self.push_frame(
                 RTVIServerMessageFrame(
                     data={
@@ -403,7 +404,7 @@ class WonderVerifier(FrameProcessor):
             if status == "reject":
                 undo = inverse_actions([a for a in actions if isinstance(a, dict)], before)
                 if undo:
-                    logger.info(f"[wonder] reverting rejected action: {json.dumps(undo, ensure_ascii=False)[:300]}")
+                    logger.info(f"[wonder] reverting rejected action: {safe_action({'fieldActions': undo})}")
                     await self.push_frame(
                         RTVIServerMessageFrame(
                             data={"type": "action", "targetElementId": action.get("targetElementId"), "actionTitle": f"Reverted: {title}", "fieldAction": undo[0], "fieldActions": undo, "verified": True}
