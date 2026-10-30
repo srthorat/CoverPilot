@@ -146,6 +146,7 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
       await page.locator('#card-no-riders input').check();
       await page.getByRole('button', { name: /Continue to Step 3/i }).click();
       await page.getByPlaceholder('e.g. Priya Ramesh Thorat').fill('Anita Sharma');
+      await page.getByPlaceholder('Nominee date of birth (DD/MM/YYYY)').fill('19/08/1996');
       await page.getByRole('button', { name: /Continue to Step 4/i }).click();
       await page.locator('#field-section-45 input[type=checkbox]').check();
       await page.getByRole('button', { name: /Review & Issue Policy/i }).click();

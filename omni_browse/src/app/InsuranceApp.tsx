@@ -7,6 +7,7 @@ import { extractPolicyPages, type PolicyPage } from '@/lib/pdf-text';
 import { GuardianView, type GuardianReviewState } from '@/components/GuardianView';
 import { runChecks, countIssues } from '@/lib/guardian-checks';
 import { buildDraftSummaryPdf, type DraftSummary } from '@/lib/draft-pdf';
+import { parseNomineeDob } from '@/lib/nominee-dob';
 import type { GuardianResponse, ProposalFacts } from '@/lib/guardian-types';
 import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
@@ -205,7 +206,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [nomination, setNomination] = useState({
     primaryName: '',
     primaryRelation: 'Spouse',
-    primaryDob: '19/08/1996',
+    primaryDob: '',
     primaryShare: 100,
     hasSecondaryNominee: false,
     secondaryName: '',
@@ -876,6 +877,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
               ...prev,
               primaryName: action.primaryName !== undefined ? action.primaryName : prev.primaryName,
               primaryRelation: action.primaryRelation !== undefined ? normalizeRelation(action.primaryRelation) : prev.primaryRelation,
+              primaryDob: action.primaryDob !== undefined ? String(action.primaryDob) : prev.primaryDob,
               primaryShare: action.primaryShare !== undefined ? Number(action.primaryShare) : prev.primaryShare,
               hasSecondaryNominee: action.hasSecondaryNominee !== undefined ? action.hasSecondaryNominee : prev.hasSecondaryNominee,
               secondaryName: action.secondaryName !== undefined ? action.secondaryName : prev.secondaryName,
@@ -1590,10 +1592,24 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     monthlyPremium: totalMonthlyPayable,
     termYears: 30,
     riders: [
-      ...(selectedRiders.criticalIllness ? [{ name: `Critical illness ${ciTier === 'tier1' ? '10' : ciTier === 'tier3' ? '50' : '25'} lakh`, monthlyCost: riderRates.criticalIllness }] : []),
-      ...(selectedRiders.accidentalDeath ? [{ name: 'Accidental death and disability', monthlyCost: riderRates.accidentalDeath }] : []),
+      ...(selectedRiders.criticalIllness
+        ? (() => {
+            const lakh = ciTier === 'tier1' ? '10' : ciTier === 'tier3' ? '50' : '25';
+            return [{ name: `Critical illness ${lakh} lakh`, monthlyCost: riderRates.criticalIllness, pays: `Lump sum of ${lakh} lakh rupees on diagnosis of a covered critical illness` }];
+          })()
+        : []),
+      ...(selectedRiders.accidentalDeath
+        ? [
+            {
+              name: `Accidental death and disability (${atpdOption === 'income' ? 'income benefit' : 'lump sum'})`,
+              monthlyCost: riderRates.accidentalDeath,
+              pays: atpdOption === 'income' ? '1 lakh rupees a month for 100 months' : '50 lakh rupees lump sum',
+            },
+          ]
+        : []),
       ...(selectedRiders.waiverOfPremium ? [{ name: 'Waiver of premium', monthlyCost: riderRates.waiverOfPremium }] : []),
       ...(selectedRiders.hospitalCash ? [{ name: 'Hospital daily cash', monthlyCost: riderRates.hospitalCash }] : []),
+      ...(lifeStageEscalator ? [{ name: 'Life stage escalator', monthlyCost: riderRates.lifeStageEscalator }] : []),
     ],
     nomineeCount: allNominees.length,
     nomineesTotalShare: nomineeTotalShare,
@@ -1610,8 +1626,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       aadhaar: profile.aadhaarNumber ? profile.aadhaarNumber.replace(/(\d{4})(?=\d)/g, '$1 ') : undefined,
       mobile: profile.mobileNumber || undefined,
     },
-    nominees: allNominees.map((n) => ({ name: n.name, relation: n.relation, share: Number(n.share) || 0 })),
+    nominees: allNominees.map((n, i) => ({
+      name: n.name,
+      relation: n.relation,
+      share: Number(n.share) || 0,
+      ...(i === 0 ? { dob: nomination.primaryDob.trim() || undefined } : { age: n.age }),
+    })),
     appointeeName: nomination.appointeeName.trim() || undefined,
+    appointeeRelation: nomination.appointeeName.trim() ? nomination.appointeeRelation : undefined,
+    mwpaTrust: nomination.mwpaTrustEnabled,
     declarations: { section45Declared: underwriting.section45Consent, familyHistoryDeclared: underwriting.familyCardiacHistory, hospitalizationDeclared: underwriting.priorHospitalization },
   });
 
@@ -2587,13 +2610,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     ]);
   };
 
+  const nomineeDob = parseNomineeDob(nomination.primaryDob);
   const allNominees = [
-    ...(nomination.primaryName || true ? [{ name: nomination.primaryName || 'Nominee 1', relation: nomination.primaryRelation, share: nomination.primaryShare, age: 99 }] : []),
+    // The primary nominee's age comes from the date of birth; until it is a real date the step is blocked, so 99 is only a placeholder.
+    { name: nomination.primaryName || 'Nominee 1', relation: nomination.primaryRelation, share: nomination.primaryShare, age: nomineeDob.age ?? 99 },
     ...(nomination.hasSecondaryNominee ? [{ name: nomination.secondaryName || 'Nominee 2', relation: nomination.secondaryRelation, share: nomination.secondaryShare, age: nomination.secondaryAge }] : []),
     ...(nomination.hasSecondaryNominee ? nomination.additionalNominees.map((n, i) => ({ name: n.name || `Nominee ${i + 3}`, relation: n.relation, share: n.share, age: n.age })) : []),
   ];
   const nomineeTotalShare = allNominees.reduce((sum, n) => sum + (Number(n.share) || 0), 0);
-  const anyMinorNominee = allNominees.slice(1).some((n) => n.age < 18);
+  const anyMinorNominee = allNominees.some((n) => n.age < 18);
   nominationRef.current = nomination;
   const nomineeSummary = allNominees.map((n) => `${n.name} (${n.relation}, ${n.share}%)`).join(', ');
 
@@ -2633,6 +2658,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         .filter((a) => a.key === 'nominee')
         .map((a) => ({ id: 'nomination-section', msg: `Confirm or undo what the agent entered: ${a.label} = ${approvalSummary(a.key)}.` })),
       ...(!nomination.primaryName.trim() ? [{ id: 'nomination-section', msg: 'Name your primary nominee.' }] : []),
+      ...(nomineeDob.error ? [{ id: 'input-nominee-dob', msg: nomineeDob.error }] : []),
       ...(nomination.hasSecondaryNominee && !nomination.secondaryName.trim() ? [{ id: 'nomination-section', msg: 'Name the second nominee.' }] : []),
       ...(nomination.hasSecondaryNominee && nomination.additionalNominees.some((n) => !n.name.trim()) ? [{ id: 'nomination-section', msg: 'Name every additional nominee.' }] : []),
       ...(nomineeTotalShare !== 100 ? [{ id: 'nomination-section', msg: `Nominee shares add up to ${nomineeTotalShare}%; they must total 100%.` }] : []),
@@ -4527,7 +4553,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   <span className="text-[11px] tabular-nums text-slate-500 font-bold">Share: {nomination.primaryShare}%</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
                     <label className="text-[11px] font-semibold text-slate-700 block mb-1">Full Legal Name</label>
                     <input
@@ -4552,6 +4578,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       <option value="Mother">Mother</option>
                       <option value="Sibling">Brother / Sister</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">Date of birth</label>
+                    <input
+                      id="input-nominee-dob"
+                      data-testid="input-nominee-dob"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Nominee date of birth (DD/MM/YYYY)"
+                      value={nomination.primaryDob}
+                      onChange={(e) => setNomination(prev => ({ ...prev, primaryDob: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 font-medium focus:ring-2 focus:ring-[#582be8] focus:border-[#582be8]"
+                    />
                   </div>
                   <div>
                     <label className="text-[11px] font-semibold text-slate-700 block mb-1">Share Allocation %</label>

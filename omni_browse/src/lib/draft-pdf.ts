@@ -24,7 +24,8 @@ export interface DraftSummary {
   sumAssuredLabel: string; // e.g. '1.5 crore rupees'
   monthlyPremium: number; // rupees, base cover plus riders, no GST
   termYears: number;
-  riders: Array<{ name: string; monthlyCost: number }>;
+  // Each rider as chosen: the critical illness name carries its tier, `pays` the text for the chosen option only.
+  riders: Array<{ name: string; monthlyCost: number; pays?: string }>;
   nomineeCount: number;
   nomineesTotalShare: number;
   anyMinorNominee: boolean;
@@ -33,10 +34,14 @@ export interface DraftSummary {
   declarations: { section45Declared: boolean; familyHistoryDeclared: boolean; hospitalizationDeclared: boolean };
   // Optional detail from the application (this file is made in the customer's own browser).
   policyholder?: { name: string; dob: string; gender: string; city: string; pincode: string; pan?: string; aadhaar?: string; mobile?: string; email?: string };
-  nominees?: Array<{ name: string; relation: string; share: number }>;
+  // The first nominee is the primary one (date of birth); the others carry an age.
+  nominees?: Array<{ name: string; relation: string; share: number; dob?: string; age?: number }>;
   appointeeName?: string;
+  appointeeRelation?: string;
+  mwpaTrust?: boolean;
   sumAssuredRupees?: number;
   logoDataUrl?: string; // PNG data URL; fetched from /brand/nexasure-mark.png in the browser when absent
+  watermarkDataUrl?: string; // PNG for the SAMPLE watermark; drawn on a canvas in the browser when absent (none in node)
 }
 
 export const DRAFT_TITLE = 'Proposed Policy Document (draft)';
@@ -72,12 +77,22 @@ export function buildPolicyBlocks(d: DraftSummary): Block[] {
   const catalogue = RIDER_CATALOG.map((r) => ({ ...r }));
   const chosenNames = d.riders.map((r) => r.name.toLowerCase());
   const isChosen = (name: string) => chosenNames.some((n) => n.startsWith(name.toLowerCase().split(' ')[0]));
+  const available = catalogue.filter((c) => !isChosen(c.name));
+  // The text for the option actually chosen, never the catalogue line that lists every tier.
+  const riderPays = (r: { name: string; pays?: string }) => {
+    if (r.pays) return r.pays;
+    const n = r.name.toLowerCase();
+    if (n.startsWith('life stage')) return 'Raises the sum assured automatically: 10 percent a year, 50 percent on marriage or 25 percent on the birth of a child, with no new medical tests';
+    const lakh = /(\d+) lakh/.exec(n)?.[1];
+    if (n.startsWith('critical') && lakh) return `Lump sum of ${lakh} lakh rupees on diagnosis of a covered critical illness`;
+    return catalogue.find((c) => n.startsWith(c.name.toLowerCase().split(' ')[0]))?.pays ?? '';
+  };
   const nomineeText = d.nominees?.length
     ? d.nominees.map((n) => `${n.name} (${n.relation}, ${n.share} percent)`).join('; ')
     : `${d.nomineeCount} nominee${d.nomineeCount === 1 ? '' : 's'}, shares add up to ${d.nomineesTotalShare} percent`;
   const appointee = d.anyMinorNominee
     ? d.appointeeNamed
-      ? `${d.appointeeName?.trim() || 'Named'} (adult appointee for a nominee under 18)`
+      ? `${d.appointeeName?.trim() || 'Named'}${d.appointeeRelation ? ` (${d.appointeeRelation})` : ''}, adult appointee for a nominee under 18`
       : 'Not yet named (a nominee is under 18)'
     : 'Not applicable (nominee is an adult)';
 
@@ -124,6 +139,27 @@ export function buildPolicyBlocks(d: DraftSummary): Block[] {
       text: 'This proposed policy becomes a policy only after NexaSure issues it. Please read the whole document, including the terms and conditions below, and tell us within the free-look period if anything is not as you expected.',
     },
     { t: 'h2', text: POLICY_HEADINGS[2] },
+    ...(d.nominees?.length
+      ? ([
+          {
+            t: 'table',
+            head: ['No.', 'Nominee name', 'Relationship', 'Date of birth / age', 'Share'],
+            widths: [0.08, 0.32, 0.17, 0.27, 0.16],
+            rows: d.nominees.map((n, i) => [
+              String(i + 1),
+              n.name,
+              n.relation,
+              i === 0 ? n.dob?.trim() || 'Not provided' : n.age === undefined ? 'Not provided' : `${n.age} years${n.age < 18 ? ' (under 18)' : ''}`,
+              `${n.share}%`,
+            ]),
+          },
+        ] as Block[])
+      : ([{ t: 'p', text: `${d.nomineeCount} nominee${d.nomineeCount === 1 ? '' : 's'}, shares add up to ${d.nomineesTotalShare} percent. Nominee details were not provided.` }] as Block[])),
+    {
+      t: 'kv4',
+      rows: [['Appointee (nominee under 18)', appointee, "Section 6, Married Women's Property Act trust", d.mwpaTrust ? 'Yes' : 'No']],
+    },
+    { t: 'h2', text: POLICY_HEADINGS[3] },
     {
       t: 'table',
       head: ['Item', 'Monthly amount'],
@@ -135,12 +171,12 @@ export function buildPolicyBlocks(d: DraftSummary): Block[] {
       ],
     },
     { t: 'p', text: GST_NOTE },
-    { t: 'h2', text: POLICY_HEADINGS[3] },
+    { t: 'h2', text: POLICY_HEADINGS[4] },
     { t: 'h3', text: 'Death benefit' },
     { t: 'p', text: DEATH_BENEFIT.replace('{sumAssured}', d.sumAssuredLabel) },
     { t: 'h3', text: 'No maturity benefit' },
     { t: 'p', text: NO_MATURITY_BENEFIT },
-    { t: 'h2', text: POLICY_HEADINGS[4] },
+    { t: 'h2', text: POLICY_HEADINGS[5] },
     ...(d.riders.length
       ? ([
           { t: 'h3', text: 'Riders selected on this policy' },
@@ -148,32 +184,33 @@ export function buildPolicyBlocks(d: DraftSummary): Block[] {
             t: 'table',
             head: ['Rider', 'What it pays', 'Cost a month'],
             widths: [0.26, 0.54, 0.2],
-            rows: d.riders.map((r) => {
-              const entry = catalogue.find((c) => isChosen(c.name) && r.name.toLowerCase().startsWith(c.name.toLowerCase().split(' ')[0]));
-              return [r.name, entry?.pays ?? '', money(r.monthlyCost)];
-            }),
+            rows: d.riders.map((r) => [r.name, riderPays(r), money(r.monthlyCost)]),
           },
         ] as Block[])
       : ([{ t: 'p', text: 'No riders selected (base cover only).' }] as Block[])),
-    { t: 'h3', text: 'Riders available (not selected on this policy)' },
-    {
-      t: 'table',
-      head: ['Rider', 'What it pays', 'Cost a month'],
-      widths: [0.26, 0.54, 0.2],
-      rows: catalogue.filter((c) => !isChosen(c.name)).map((c) => [c.name, c.pays, c.price]),
-    },
+    ...(available.length
+      ? ([
+          { t: 'h3', text: 'Riders available (not selected on this policy)' },
+          {
+            t: 'table',
+            head: ['Rider', 'What it pays', 'Cost a month'],
+            widths: [0.26, 0.54, 0.2],
+            rows: available.map((c) => [c.name, c.pays, c.price]),
+          },
+        ] as Block[])
+      : ([{ t: 'p', text: 'All of the available riders are selected on this policy.' }] as Block[])),
     { t: 'p', text: CI_RIDER_NOTE },
-    { t: 'h2', text: POLICY_HEADINGS[5] },
+    { t: 'h2', text: POLICY_HEADINGS[6] },
     ...TERMS_1.flatMap(([title, text]): Block[] => [
       { t: 'h3', text: title },
       { t: 'p', text },
     ]),
-    { t: 'h2', text: POLICY_HEADINGS[6] },
+    { t: 'h2', text: POLICY_HEADINGS[7] },
     ...TERMS_2.flatMap(([title, text]): Block[] => [
       { t: 'h3', text: title },
       { t: 'p', text },
     ]),
-    { t: 'h2', text: POLICY_HEADINGS[7] },
+    { t: 'h2', text: POLICY_HEADINGS[8] },
     {
       t: 'table',
       head: ['Item', 'What this policy says'],
@@ -189,15 +226,15 @@ export function buildPolicyBlocks(d: DraftSummary): Block[] {
         ['Contestability', 'Three years under section 45'],
       ],
     },
-    { t: 'h2', text: POLICY_HEADINGS[8] },
-    { t: 'list', items: GRIEVANCE_LADDER },
     { t: 'h2', text: POLICY_HEADINGS[9] },
+    { t: 'list', items: GRIEVANCE_LADDER },
+    { t: 'h2', text: POLICY_HEADINGS[10] },
     { t: 'p', text: DECLARATION_TEXT },
     {
       t: 'p',
-      text: `Declarations in this application: Section 45 declaration ${d.declarations.section45Declared ? 'made' : 'not yet made'}; family history declaration ${
-        d.declarations.familyHistoryDeclared ? 'made' : 'not made'
-      }; prior hospitalisation declaration ${d.declarations.hospitalizationDeclared ? 'made' : 'not made'}. The first premium is paid by the customer at issuance (demo payment, no money moves).`,
+      text: `Declarations in this application: Section 45 declaration: ${d.declarations.section45Declared ? 'made' : 'not made'}; Family cardiac history: ${
+        d.declarations.familyHistoryDeclared ? 'declared' : 'none declared'
+      }; Prior hospitalisation: ${d.declarations.hospitalizationDeclared ? 'declared' : 'none declared'}. The first premium is paid by the customer at issuance (demo payment, no money moves).`,
     },
     {
       t: 'sig',
@@ -259,9 +296,29 @@ async function loadLogo(d: DraftSummary): Promise<string> {
   });
 }
 
+/** 'SAMPLE', tilted, on a transparent square; null where there is no canvas (node), so tests pass their own. */
+function makeWatermark(): string | null {
+  if (typeof document === 'undefined') return null;
+  const size = 1000;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate((-30 * Math.PI) / 180);
+  ctx.fillStyle = 'rgb(88,43,232)';
+  ctx.font = 'bold 300px Helvetica, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SAMPLE', 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
 /** Builds the PDF in the browser (jsPDF is loaded on demand, so server rendering never sees it). */
 export async function buildDraftSummaryPdf(d: DraftSummary): Promise<Blob> {
   const logo = await loadLogo(d);
+  const watermark = d.watermarkDataUrl ?? makeWatermark();
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   doc.setProperties({ title: `NexaSure Flexi Shield - ${DRAFT_TITLE}`, subject: 'Proposed policy document generated from the application, not an issued policy', author: 'NexaSure (fictional)' });
@@ -384,7 +441,8 @@ export async function buildDraftSummaryPdf(d: DraftSummary): Promise<Blob> {
         break;
       }
       case 'h2': {
-        const next = measure(blocks[bi + 1]);
+        // A heading followed by a sub-heading and a table keeps the table with it, so neither is stranded at a page foot.
+        const next = blocks[bi + 1]?.t === 'h3' ? 6 + measure(blocks[bi + 2]) : measure(blocks[bi + 1]);
         need(next && next < 90 ? 12 + next : 24);
         y += 2;
         doc.setFillColor(239, 234, 255);
@@ -551,14 +609,14 @@ export async function buildDraftSummaryPdf(d: DraftSummary): Promise<Blob> {
     doc.setTextColor(...GREY);
     doc.text(FOOTER_TEXT, L, 291);
     doc.text(`Page ${p} of ${total}`, L + W, 291, { align: 'right' });
-    doc.saveGraphicsState();
-    const GState = (doc as unknown as { GState: new (o: { opacity: number }) => unknown }).GState;
-    doc.setGState(new GState({ opacity: 0.07 }) as never);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(110);
-    doc.setTextColor(...PURPLE);
-    doc.text('SAMPLE', 105, 165, { angle: 30, align: 'center' });
-    doc.restoreGraphicsState();
+    if (watermark) {
+      // An image, so the word is not a text line a reader or a parser would pick up between the clauses.
+      doc.saveGraphicsState();
+      const GState = (doc as unknown as { GState: new (o: { opacity: number }) => unknown }).GState;
+      doc.setGState(new GState({ opacity: 0.07 }) as never);
+      doc.addImage(watermark, 'PNG', 20, 60, 170, 170, 'sample-watermark', 'FAST');
+      doc.restoreGraphicsState();
+    }
   }
   return doc.output('blob');
 }

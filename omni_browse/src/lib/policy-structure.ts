@@ -5,6 +5,7 @@
 export const POLICY_HEADINGS = [
   'Policyholder',
   'Proposed policy schedule',
+  'Nomination details',
   'Premium',
   'Benefits',
   'Riders',

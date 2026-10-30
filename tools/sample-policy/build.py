@@ -101,7 +101,12 @@ def good():
 <tr><td class="k">Nominee and share</td><td>One nominee, 100 percent</td><td class="k">Appointee</td><td>Not applicable (nominee is an adult)</td></tr>
 </table>
 <div class="note">This schedule forms part of the policy. Please read the whole document, including the terms and conditions on pages 3 and 4, and tell us within the free-look period if anything is not as you expected.</div>"""
-    p2 = """<h2>Premium</h2>
+    p2 = """<h2>Nomination details</h2>
+<table><tr><th>No.</th><th>Nominee name</th><th>Relationship</th><th>Date of birth</th><th>Share</th></tr>
+<tr><td>1</td><td>Priya Rahul Sharma</td><td>Spouse</td><td>19/08/1996</td><td>100%</td></tr></table>
+<table class="t4">
+<tr><td class="k">Appointee (nominee under 18)</td><td>Not applicable (the nominee is an adult)</td><td class="k">Section 6, Married Women's Property Act trust</td><td>No</td></tr></table>
+<h2>Premium</h2>
 <table><tr><th>Item</th><th>Monthly amount</th></tr>
 <tr><td>Base cover, 1.5 crore rupees, non-smoker rate</td><td>₹1,050</td></tr>
 <tr><td>Riders selected</td><td>None (base cover only)</td></tr>
