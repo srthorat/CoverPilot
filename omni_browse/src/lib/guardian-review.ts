@@ -117,7 +117,7 @@ async function sparkOpenJson(messages: ChatMessage[]): Promise<{ data: unknown; 
     // An 816B model on a serverless GPU can need a minute to wake up before it generates.
     signal: AbortSignal.timeout(240_000),
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, temperature: 0, max_tokens: 6000, reasoning_effort: 'medium', messages }),
+    body: JSON.stringify({ model, temperature: 0, max_tokens: 8000, reasoning_effort: 'medium', response_format: { type: 'json_object' }, messages }),
   });
   if (!res.ok) throw new MetaApiError(res.status, await res.text()); // body stays in the server log
   const json: any = await res.json();
