@@ -10,6 +10,7 @@
 
 import { PipecatClient, type BotReadyData, type TranscriptData, type Participant, type RTVIMessage } from '@pipecat-ai/client-js';
 import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
+import { agentIsBusy, isBusyError, VOICE_BUSY_MESSAGE } from './voice-busy';
 
 export type AgentState = 'listening' | 'thinking' | 'speaking';
 
@@ -165,6 +166,8 @@ export class VoiceAgentClient {
 
   async start(): Promise<void> {
     this.stopped = false;
+    // Say so before asking for the microphone or opening a connection when the agent is full.
+    if (await agentIsBusy(VOICE_AGENT_OFFER_URL)) throw new Error(VOICE_BUSY_MESSAGE);
     const iceServers = await fetchIceServers();
     const emit = (ev: AgentEvent) => {
       if (!this.stopped) this.opts.onEvent(ev);
@@ -318,10 +321,13 @@ export class VoiceAgentClient {
           /* already closed */
         }
         const mic = (err as { name?: string })?.name;
-        const fatal = this.stopped || attempt >= MAX_ATTEMPTS || mic === 'NotAllowedError' || mic === 'PermissionDeniedError';
+        // The agent refuses new sessions with HTTP 503 when it is at its limit (voice-agent-py/coverpilot/capacity.py).
+        // Trying again straight away cannot help, so say so plainly instead.
+        const busy = isBusyError(err) || (await agentIsBusy(VOICE_AGENT_OFFER_URL));
+        const fatal = this.stopped || attempt >= MAX_ATTEMPTS || busy || mic === 'NotAllowedError' || mic === 'PermissionDeniedError';
         if (fatal) {
           this.stop();
-          throw err;
+          throw busy ? new Error(VOICE_BUSY_MESSAGE) : err;
         }
         console.warn('Voice connection failed, retrying once', err);
       }

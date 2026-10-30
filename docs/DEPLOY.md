@@ -61,7 +61,8 @@ The image is built with the sample-documents-only demo behaviour. The controls f
   - With a Cloudflare Realtime TURN key (`CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN`) each browser request mints its own credential that lasts 2 hours, nothing is shared or cached between visitors, and the route allows 5 requests a minute per visitor. The agent mints its own at start-up (24 hours; restart the container daily on a long run).
   - Use a dedicated TURN key for the demo and set a spend or usage alert in Cloudflare: the monthly quota is the real ceiling on abuse.
   - Emergency: in the Cloudflare dashboard open Realtime, TURN Server, pick the key, and delete or regenerate it (this ends every credential made from it), then update `.env.local` and restart. A single credential can also be revoked through the API: `POST /v1/turn/keys/<key id>/credentials/<username>/revoke`.
-- Capacity is unmeasured: one container runs one voice pipeline per session. Do not assume it scales to many simultaneous callers.
+- Capacity is measured (see `docs/LOAD_TEST.md`): one container carries 8 live voice conversations. The agent refuses a ninth with a clear "busy, try again in a minute" message (`MAX_SESSIONS`, default 8) because beyond about 10 the turns stop being answered at all. Page views, the vault and Guardian reviews scale far past that. For more simultaneous callers run more containers behind a load balancer that keeps each visitor on one container (for example Caddy `lb_policy ip_hash`).
+- The vault refuses new proposals with a 503 once 2000 are stored (replacing an existing one still works); entries expire after 14 days.
 - Rotate any key that was ever pasted into a chat or a log.
 
 ## Update or remove

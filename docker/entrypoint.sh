@@ -5,7 +5,8 @@ set -uo pipefail
 
 AGENT_PORT="${AGENT_PORT:-7860}"
 
-(cd /app/voice-agent-py && exec /app/voice-agent-py/.venv/bin/python bot.py -t webrtc --host 127.0.0.1 --port "$AGENT_PORT") &
+# MALLOC_ARENA_MAX=2: glibc otherwise keeps a freed-memory arena per thread, and the agent has dozens of ONNX and executor threads.
+(cd /app/voice-agent-py && exec env MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}" /app/voice-agent-py/.venv/bin/python bot.py -t webrtc --host 127.0.0.1 --port "$AGENT_PORT") &
 agent=$!
 (cd /app/omni_browse && exec node server.mjs) &
 web=$!

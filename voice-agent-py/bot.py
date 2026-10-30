@@ -39,6 +39,8 @@ from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 
 from coverpilot import cases
+from coverpilot.capacity import CapMiddleware, SessionCap, max_sessions_from_env
+from coverpilot.diag import install_diag_signal, schedule_release, start_memory_trim
 from coverpilot.config import Settings
 from coverpilot.google_tts import GoogleRestTTSService
 from coverpilot.mms_tts import MetaMmsTTSService
@@ -375,8 +377,21 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
     await runner.run(task)
 
 
+SESSION_CAP = SessionCap(max_sessions_from_env())  # new offers past MAX_SESSIONS get a 503 (coverpilot/capacity.py)
+
+
 async def bot(runner_args: RunnerArguments):
     """Entry point for Pipecat's development runner (`uv run bot.py -t webrtc`)."""
+    SESSION_CAP.started()
+    install_diag_signal()  # kill -USR2 <pid> dumps pending tasks and thread stacks to the log (no data), see coverpilot/diag.py
+    try:
+        await _bot(runner_args)
+    finally:
+        SESSION_CAP.finished()
+        schedule_release()  # collect the finished session's cyclic garbage and trim, so memory does not climb with sessions served
+
+
+async def _bot(runner_args: RunnerArguments):
     transport_params = {
         "webrtc": lambda: TransportParams(
             audio_in_enabled=True,
@@ -464,7 +479,19 @@ def _patch_offer_request_model() -> None:
 
 if __name__ == "__main__":
     _patch_offer_request_model()
-    from pipecat.runner.run import main
+    from pipecat.runner.run import app as _runner_app, main
+
+    _runner_app.add_middleware(CapMiddleware, cap=SESSION_CAP)
+
+    @_runner_app.get("/api/capacity")
+    async def capacity():
+        """Lets the web app say "busy" before it opens a connection (the voice library hides the 503's status)."""
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(SESSION_CAP.status(), headers={"Cache-Control": "no-store"})
+
+    start_memory_trim()
+    logger.info(f"[capacity] at most {SESSION_CAP.limit} concurrent voice sessions (MAX_SESSIONS)")
 
     # coverpilot.config has already loaded .env and ../omni_browse/.env.local.
     os.environ.setdefault("PIPECAT_ICE_SERVERS", _default_ice_servers())
