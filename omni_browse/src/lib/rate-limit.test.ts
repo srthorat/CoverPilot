@@ -82,4 +82,16 @@ test('limits table matches the agreed defaults', () => {
     [60, 20, 20, 20, 6, 6, 6, 5]
   );
   assert.equal(LIMITS.audit.maxBodyBytes, 200_000);
+  assert.equal(LIMITS.vault.perMinute, 30);
+  assert.ok(LIMITS.vault.maxBodyBytes > 200 * 1024, 'the vault body cap leaves room for the largest allowed blob');
+});
+
+test('a forged X-Forwarded-For does not get a fresh bucket unless the proxy is trusted', () => {
+  resetLimiter();
+  const opts = { name: 'vault-forge', perMinute: 3 };
+  const calls = (env: Record<string, string>) =>
+    Array.from({ length: 6 }, (_, i) => guard(req({ 'x-nexasure-client': '10.0.0.5', 'x-forwarded-for': `203.0.113.${i}` }), opts, { env })?.status ?? 200);
+  assert.deepEqual(calls({}), [200, 200, 200, 429, 429, 429], 'without TRUST_PROXY the forged header is ignored');
+  resetLimiter();
+  assert.deepEqual(calls({ TRUST_PROXY: 'true' }), [200, 200, 200, 200, 200, 200], 'behind a trusted proxy each forwarded address is its own caller');
 });

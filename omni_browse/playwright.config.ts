@@ -9,7 +9,7 @@ const browser = (process.env.BROWSER || 'chromium') as 'chromium' | 'firefox';
 // `pnpm e2e` runs the acceptance suite only. The voice-in smoke test and the dress rehearsal run when they are
 // named: `npx playwright test e2e/voice.spec.ts` or `e2e/rehearsal.spec.ts` (they launch their own Chromium).
 const named = process.argv.join(' ');
-const testMatch = /voice\.spec|rehearsal\.spec/.test(named) ? /(voice|rehearsal)\.spec\.ts/ : /acceptance\.spec\.ts/;
+const testMatch = /voice\.spec|rehearsal\.spec|capacity\.spec/.test(named) ? /(voice|rehearsal|capacity)\.spec\.ts/ : /acceptance\.spec\.ts/;
 
 export default defineConfig({
   testDir: './e2e',

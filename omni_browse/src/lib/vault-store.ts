@@ -9,6 +9,9 @@ import path from 'node:path';
 export const ID_PATTERN = /^NXP-[A-HJKMNP-Z2-9]{8}$/;
 export const MAX_BLOB_BYTES = 200 * 1024;
 export const EXPIRY_MS = 14 * 24 * 3600 * 1000;
+// A full vault refuses new codes (503) instead of growing without bound: 2000 proposals is at most about 400 MB at the
+// size cap and a few MB of real drafts. Replacing an existing proposal is still allowed.
+export const MAX_BLOBS = 2000;
 
 export interface StoredBlob {
   v: 1;
@@ -21,7 +24,7 @@ export interface StoredBlob {
   authVerifier: string;
 }
 
-export type SaveResult = 'created' | 'updated' | 'forbidden' | 'invalid' | 'too_large';
+export type SaveResult = 'created' | 'updated' | 'forbidden' | 'invalid' | 'too_large' | 'full';
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
@@ -53,16 +56,20 @@ function tokenMatches(authToken: string | undefined, verifier: string): boolean 
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function sweep(dir: string, now: number) {
+/** Removes expired proposals and returns how many remain. */
+function sweep(dir: string, now: number): number {
+  let live = 0;
   for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith('.json')) continue;
     try {
       const p = path.join(dir, name);
       if (now - fs.statSync(p).mtimeMs > EXPIRY_MS) fs.rmSync(p, { force: true });
+      else live++;
     } catch {
       /* another request got there first */
     }
   }
+  return live;
 }
 
 function read(dir: string, id: string, now: number): StoredBlob | null {
@@ -78,7 +85,7 @@ function read(dir: string, id: string, now: number): StoredBlob | null {
   }
 }
 
-export function saveBlob(raw: unknown, authToken?: string, opts: { dir?: string; now?: number } = {}): SaveResult {
+export function saveBlob(raw: unknown, authToken?: string, opts: { dir?: string; now?: number; maxBlobs?: number } = {}): SaveResult {
   const dir = opts.dir ?? vaultDir();
   const now = opts.now ?? Date.now();
   const blob = parseBlob(raw);
@@ -86,9 +93,10 @@ export function saveBlob(raw: unknown, authToken?: string, opts: { dir?: string;
   const text = JSON.stringify(blob);
   if (Buffer.byteLength(text) > MAX_BLOB_BYTES) return 'too_large';
   fs.mkdirSync(dir, { recursive: true });
-  sweep(dir, now);
+  const live = sweep(dir, now);
   const existing = read(dir, blob.id, now);
   if (existing && !tokenMatches(authToken, existing.authVerifier)) return 'forbidden';
+  if (!existing && live >= (opts.maxBlobs ?? MAX_BLOBS)) return 'full';
   const tmp = path.join(dir, `.${blob.id}.${randomBytes(6).toString('hex')}.tmp`);
   fs.writeFileSync(tmp, text, { mode: 0o600 });
   fs.renameSync(tmp, file(dir, blob.id)); // atomic: a reader sees the old or the new file, never half of one

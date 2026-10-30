@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { guard, LIMITS } from '@/lib/rate-limit';
 import { deleteBlob, getBlob, MAX_BLOB_BYTES, saveBlob } from '@/lib/vault-store';
 
 /**
@@ -10,30 +11,18 @@ import { deleteBlob, getBlob, MAX_BLOB_BYTES, saveBlob } from '@/lib/vault-store
  *   GET    ?id=NXP-XXXXXXXX  the blob (404 when there is none)
  *   DELETE ?id=NXP-XXXXXXXX  needs the X-Vault-Auth token
  *
- * Calls are limited to 30 a minute per client address. The address comes from X-Forwarded-For, which is
- * only trustworthy behind a proxy that sets it (Caddy's reverse_proxy, used in deploy/, adds it), so treat the limit as
- * a guard against casual hammering, not as security: the security is the key, which the server never has.
+ * Every call goes through the shared guard (src/lib/rate-limit.ts): cross-site browser requests get 403, an oversized
+ * body 413, and each client address 30 calls a minute (429). The address is the socket address that server.mjs stamps,
+ * or the first X-Forwarded-For entry only when TRUST_PROXY=true, so a caller cannot get a fresh bucket by forging the
+ * header. The limit is a guard against hammering, not security: the security is the key, which the server never has.
+ * The number of stored proposals is capped too (see vault-store.ts), so a flood cannot fill the disk.
  */
 
-const WINDOW_MS = 60_000;
-const LIMIT = 30;
-const hits = new Map<string, number[]>();
-
-function limited(req: NextRequest): boolean {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
-  const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-  recent.push(now);
-  hits.set(ip, recent);
-  if (hits.size > 5000) for (const [k, v] of hits) if (!v.some((t) => now - t < WINDOW_MS)) hits.delete(k);
-  return recent.length > LIMIT;
-}
-
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
-const tooMany = () => json({ error: 'Too many requests, wait a minute' }, 429);
 
 export async function PUT(req: NextRequest) {
-  if (limited(req)) return tooMany();
+  const blocked = guard(req, LIMITS.vault);
+  if (blocked) return blocked;
   const text = await req.text();
   if (text.length > MAX_BLOB_BYTES + 2048) return json({ error: 'Too large' }, 413);
   let body: unknown;
@@ -46,6 +35,7 @@ export async function PUT(req: NextRequest) {
     const result = saveBlob(body, req.headers.get('x-vault-auth') ?? undefined);
     if (result === 'invalid') return json({ error: 'Invalid request' }, 400);
     if (result === 'too_large') return json({ error: 'Too large' }, 413);
+    if (result === 'full') return json({ error: 'The vault is full right now. Your draft is still saved in this browser.' }, 503);
     if (result === 'forbidden') return json({ error: 'A copy with this code already exists and cannot be replaced from here' }, 403);
     return json({ ok: true, status: result });
   } catch (err: any) {
@@ -55,13 +45,15 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  if (limited(req)) return tooMany();
+  const blocked = guard(req, LIMITS.vault);
+  if (blocked) return blocked;
   const blob = getBlob(req.nextUrl.searchParams.get('id') || '');
   return blob ? json(blob) : json({ error: 'No saved proposal with that code' }, 404);
 }
 
 export async function DELETE(req: NextRequest) {
-  if (limited(req)) return tooMany();
+  const blocked = guard(req, LIMITS.vault);
+  if (blocked) return blocked;
   const result = deleteBlob(req.nextUrl.searchParams.get('id') || '', req.headers.get('x-vault-auth') ?? undefined);
   if (result === 'deleted') return json({ ok: true });
   return result === 'forbidden' ? json({ error: 'Not allowed' }, 403) : json({ error: 'No saved proposal with that code' }, 404);

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { deleteBlob, EXPIRY_MS, getBlob, MAX_BLOB_BYTES, parseBlob, saveBlob } from './vault-store.ts';
+import { deleteBlob, EXPIRY_MS, MAX_BLOBS, getBlob, MAX_BLOB_BYTES, parseBlob, saveBlob } from './vault-store.ts';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-test-'));
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -65,4 +65,17 @@ test('copies older than 14 days are gone, on read and on the next write', () => 
   fs.utimesSync(p, new Date(Date.now() - EXPIRY_MS - 60_000), new Date(Date.now() - EXPIRY_MS - 60_000));
   assert.equal(saveBlob(blob({ id: 'NXP-DDDDDDDD' }), undefined, { dir }), 'created'); // the sweep removes the stale file
   assert.equal(fs.existsSync(p), false);
+});
+
+test('a full vault refuses new codes but still lets an existing one be replaced, and expired files make room', () => {
+  const full = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-full-'));
+  const ids = ['NXP-AAAAAAA2', 'NXP-AAAAAAA3', 'NXP-AAAAAAA4'];
+  const t0 = Date.now();
+  for (const id of ids.slice(0, 2)) assert.equal(saveBlob(blob({ id }), undefined, { dir: full, now: t0, maxBlobs: 2 }), 'created');
+  assert.equal(saveBlob(blob({ id: ids[2] }), undefined, { dir: full, now: t0, maxBlobs: 2 }), 'full');
+  assert.equal(getBlob(ids[2], { dir: full }), null, 'nothing was written for the refused code');
+  assert.equal(saveBlob(blob({ id: ids[0], step: 5 }), TOKEN, { dir: full, now: t0, maxBlobs: 2 }), 'updated', 'replacing an existing proposal is not blocked');
+  // Once the two have expired the sweep frees the space.
+  assert.equal(saveBlob(blob({ id: ids[2] }), undefined, { dir: full, now: t0 + EXPIRY_MS + 60_000, maxBlobs: 2 }), 'created');
+  assert.ok(MAX_BLOBS >= 1000 && MAX_BLOBS <= 10_000);
 });
