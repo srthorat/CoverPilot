@@ -30,7 +30,7 @@ export const TERMS_1: Array<[string, string]> = [
   ],
   [
     "4. Lapse and revival",
-    "If a premium is not paid by the end of the grace period the policy lapses and cover stops. A lapsed policy may be revived within five years from the first unpaid premium, as IRDAI's Regulations 2024 define the revival period for non-linked policies, by paying the unpaid premiums with interest. A health declaration or medical examination may be required."
+    "If a premium is not paid by the end of the grace period the policy lapses and cover stops. A lapsed policy may be revived within five years from the first unpaid premium, as IRDAI's Regulations 2024 define the revival period for non-linked policies, by paying the unpaid premiums with interest. A health declaration or medical examination may be required. As a NexaSure demo term (IRDAI sets no rule for riders of a term plan), riders lapse when the base policy lapses and are restored with it if the policy is revived within five years of the first unpaid premium, subject to the same health declaration or medical examination. This demo product has no surrender value and no paid-up value."
   ],
   [
     "5. Nomination",

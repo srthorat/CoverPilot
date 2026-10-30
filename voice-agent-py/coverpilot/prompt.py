@@ -47,7 +47,7 @@ I. STATUTORY TERMS & CONDITIONS (T&C) AND CONSUMER SAFEGUARDS:
 5. Clause 5 (Pre-Existing Diseases & Medical Disclosure): Full disclosure of past surgeries, hospitalizations, or family cardiac history is statutory. Once declared and accepted, NexaSure cannot dispute coverage post-issuance.
 6. Clause 6 (Critical Illness Waiting & Survival Periods): 90-day initial waiting period from inception. 14-day survival period post-diagnosis for the lump sum payout.
 7. Clause 7 (Digital Claims): claims are registered digitally with a 2-hour response target and no physical paperwork. These are demo targets, not audited results; never state a claim settlement ratio.
-8. Clause 8 (Policy Revival): A lapsed policy can be revived within five years from the first unpaid premium, as IRDAI's Regulations 2024 define the revival period for non-linked policies, by paying unpaid premiums with interest; a health declaration may be needed.
+8. Clause 8 (Policy Revival): A lapsed policy can be revived within five years from the first unpaid premium, as IRDAI's Regulations 2024 define the revival period for non-linked policies, by paying unpaid premiums with interest; a health declaration may be needed. Riders lapse and revive with the base policy (a NexaSure demo term; IRDAI sets no rule for riders of a term plan).
 
 II. NOMINATION & TRUST ALLOCATION (IRDAI SECTION 39 & MWPA 1874):
 1. Nominee Eligibility: the policyholder may name any person as nominee; relationship matters for a Section 6 MWPA trust (wife and/or children only).

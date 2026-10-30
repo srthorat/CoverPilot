@@ -1388,8 +1388,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       title: 'Policy Revival',
       category: 'Policy Continuity',
       irdaiRef: 'IRDAI Protection of Policyholders Interests 2024, lapse and revival',
-      summary: 'If your policy ever lapses due to missed payments, you can revive it within five years from the first unpaid premium, as IRDAI\'s Regulations 2024 define the revival period for non-linked policies, by paying unpaid premiums with interest. A health declaration may be needed.',
-      fullText: 'A lapsed policy may be revived within five years from the first unpaid premium, as IRDAI\'s Regulations 2024 define the revival period for non-linked policies, on paying the unpaid premiums with interest or a late fee, and possibly a health declaration or medical examination.',
+      summary: 'If your policy ever lapses due to missed payments, you can revive it within five years from the first unpaid premium, as IRDAI\'s Regulations 2024 define the revival period for non-linked policies, by paying unpaid premiums with interest. A health declaration may be needed. Riders lapse and revive with the base policy (a NexaSure demo term; IRDAI sets no rule for riders of a term plan).',
+      fullText: 'A lapsed policy may be revived within five years from the first unpaid premium, as IRDAI\'s Regulations 2024 define the revival period for non-linked policies, on paying the unpaid premiums with interest or a late fee, and possibly a health declaration or medical examination. As a NexaSure demo term (IRDAI sets no rule for riders of a term plan), riders lapse when the base policy lapses and are restored with it if the policy is revived within five years of the first unpaid premium, subject to the same health declaration or medical examination. This demo product has no surrender value and no paid-up value.',
     },
   ];
 

@@ -46,6 +46,7 @@ CASES = [
     ("does my term plan give a surrender value", "surrender value on a pure term plan"),
     ("can I take a loan on my term policy", "policy loans and paid-up"),
     ("what happens to my rider if the main policy lapses", "riders if the base policy lapses"),
+    ("what happens to my riders if I stop paying", "riders if the base policy lapses"),
     ("how do I report a death and register the claim", "tell the insurer about a claim"),
     ("must the policy document list the claim documents and the website too", "documents the insurer must list"),
     ("how many days does the insurer have to pay a death claim", "settle a death claim"),
