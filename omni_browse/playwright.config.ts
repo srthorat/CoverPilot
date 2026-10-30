@@ -12,8 +12,8 @@ const browser = (process.env.BROWSER || 'chromium') as 'chromium' | 'firefox' | 
 // The engine, phone and accessibility checks run the same way: `e2e/crossbrowser.spec.ts` (any BROWSER), `e2e/mobile.spec.ts`
 // (launches its own WebKit and Chromium with phone descriptors) and `e2e/a11y.spec.ts` (axe, Chromium).
 const named = process.argv.join(' ');
-const testMatch = /voice\.spec|rehearsal\.spec|capacity\.spec/.test(named)
-  ? /(voice|rehearsal|capacity)\.spec\.ts/
+const testMatch = /voice\.spec|rehearsal\.spec|capacity\.spec|language\.spec|speech-hi-mr\.spec/.test(named)
+  ? /(voice|rehearsal|capacity|language|speech-hi-mr)\.spec\.ts/
   : /crossbrowser\.spec|mobile\.spec|a11y\.spec/.test(named)
   ? /(crossbrowser|mobile|a11y)\.spec\.ts/
   : /acceptance\.spec\.ts/;

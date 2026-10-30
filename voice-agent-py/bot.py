@@ -237,6 +237,12 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
         observers=[RTVIObserver(rtvi, params=RTVIObserverParams(bot_llm_enabled=False))],
     )
 
+    async def ask_again_in_language():
+        # The first draft was in the wrong language: run the same customer turn once more (see ScreenStateInjector).
+        await task.queue_frames([LLMMessagesAppendFrame(messages=[], run_llm=True)])
+
+    actions._on_language_retry = ask_again_in_language
+
     @rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi_proc):
         await rtvi_proc.set_bot_ready(

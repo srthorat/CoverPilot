@@ -24,6 +24,8 @@ _CORRECTIONS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bnex(?:a|us|o)\s*(?:sure|shore|sher)\b", re.I), "NexaSure"),
     (re.compile(r"\bflexible\s+shield\b", re.I), "Flexi Shield"),
     (re.compile(r"\bflexy\s+shield\b", re.I), "Flexi Shield"),
+    # Marathi: the recogniser wrote रोक (stop) or रोग (disease) for रोख (cash) before the word रायडर, heard on spoken tests
+    (re.compile(r"(?<![\u0900-\u097F])(?:रोक|रोग)(?=\s+रायडर)"), "रोख"),
     # Amount misreads
     (re.compile(r"\bone\s+and\s+a\s+half\s+crore\b", re.I), "one and a half crore"),
     (re.compile(r"\bone\s+half\s+crore\b", re.I), "one and a half crore"),

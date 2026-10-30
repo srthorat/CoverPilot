@@ -48,6 +48,10 @@ class SessionState:
     user_turns: list[str] = field(default_factory=list)  # last few user turns, oldest first
     customer_id: str | None = None
     memory_text: str = ""  # rendered CUSTOMER MEMORY block
+    reply_lang: str | None = None  # Indian language the current answer must be in (hi/mr), or None
+    retries_done: int = 0  # language re-asks already made for the current customer turn
+    language_retry: bool = False  # a re-ask has been requested and not yet run
+    retry_turn: bool = False  # the turn now running is a language re-ask
     prior_turns_text: str = ""  # earlier turns of this conversation, handed over when a session restarts after a pause
     main_started: bool = False  # Spark started streaming the current answer
     turn_started_at: float = 0.0  # when the current user turn was handed to Spark
