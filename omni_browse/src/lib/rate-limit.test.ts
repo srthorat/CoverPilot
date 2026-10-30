@@ -79,7 +79,7 @@ test('size cap: a declared length over the limit is 413, and a body read past th
 test('limits table matches the agreed defaults', () => {
   assert.deepEqual(
     [LIMITS.tts.perMinute, LIMITS.ocr.perMinute, LIMITS.locateIds.perMinute, LIMITS.sam.perMinute, LIMITS.guardian.perMinute, LIMITS.audit.perMinute, LIMITS.policyCard.perMinute, LIMITS.iceServers.perMinute],
-    [60, 20, 20, 20, 6, 6, 6, 30]
+    [60, 20, 20, 20, 6, 6, 6, 5]
   );
   assert.equal(LIMITS.audit.maxBodyBytes, 200_000);
 });

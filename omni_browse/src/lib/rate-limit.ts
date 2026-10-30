@@ -126,5 +126,5 @@ export const LIMITS = {
   guardian: { name: 'guardian', perMinute: 6, maxBodyBytes: 1_000_000 },
   audit: { name: 'audit', perMinute: 6, maxBodyBytes: 200_000 },
   policyCard: { name: 'policy-card', perMinute: 6, maxBodyBytes: 20_000 },
-  iceServers: { name: 'ice-servers', perMinute: 30 },
+  iceServers: { name: 'ice-servers', perMinute: 5 }, // a session needs one call; each one mints a credential
 } as const;

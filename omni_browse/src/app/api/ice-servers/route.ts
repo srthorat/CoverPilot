@@ -10,22 +10,23 @@ import { guard, LIMITS } from '@/lib/rate-limit';
  * ExpressTURN (static credentials) or Cloudflare Realtime / coturn (short-lived
  * credentials minted here) plug in without touching the client.
  *
- * With CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN set, short-lived Cloudflare Realtime TURN
- * credentials are minted here (24 h, cached until the last hour) and used instead of the static TURN_* values.
+ * With CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN set, every browser request mints its own Cloudflare
+ * Realtime TURN credential that lives 2 hours, so a leaked one dies quickly and nothing is shared between visitors.
+ * The Python agent mints its own credential at start-up (bot.py) and never goes through this route. Requests that
+ * are not from a browser (no Sec-Fetch-Site header, such as the container healthcheck) never mint.
+ * Emergency: revoke one credential or the whole key in the Cloudflare dashboard (Realtime, TURN Server, the key).
  */
-const CF_TTL_SECONDS = 86400;
-let cfCache: { servers: RTCIceServer[]; expiresAt: number } | null = null;
+const CF_BROWSER_TTL_SECONDS = 7200;
 
 async function cloudflareIceServers(): Promise<RTCIceServer[] | null> {
   const keyId = process.env.CLOUDFLARE_TURN_KEY_ID;
   const token = process.env.CLOUDFLARE_TURN_API_TOKEN;
   if (!keyId || !token) return null;
-  if (cfCache && cfCache.expiresAt > Date.now()) return cfCache.servers;
   try {
     const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ttl: CF_TTL_SECONDS }),
+      body: JSON.stringify({ ttl: CF_BROWSER_TTL_SECONDS }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -36,7 +37,6 @@ async function cloudflareIceServers(): Promise<RTCIceServer[] | null> {
       urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => !/:53(\?|$)/.test(u)),
     }));
     if (!servers.length) throw new Error('empty ice server list');
-    cfCache = { servers, expiresAt: Date.now() + (CF_TTL_SECONDS - 3600) * 1000 };
     return servers;
   } catch (err: any) {
     console.error('[ice-servers] Cloudflare TURN credentials failed:', err?.message || err);
@@ -66,10 +66,11 @@ export async function GET(req: NextRequest) {
   // visible to anyone who opens the site, so the limits only slow abuse; use a relay account with its own quota.
   const blocked = guard(req, LIMITS.iceServers);
   if (blocked) return blocked;
-  const minted = await cloudflareIceServers();
+  const fromBrowser = Boolean(req.headers.get('sec-fetch-site'));
+  const minted = fromBrowser ? await cloudflareIceServers() : null;
   const iceServers = minted ? [{ urls: 'stun:stun.l.google.com:19302' }, ...minted] : buildIceServers();
   return Response.json(
-    { iceServers, ttl: 3600 },
+    { iceServers, ttl: CF_BROWSER_TTL_SECONDS / 2 },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
