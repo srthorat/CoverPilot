@@ -25,6 +25,40 @@ for a in "$@"; do
 done
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
+scan_dir() {
+  local TARGET="$1"
+  SECRETS_TMP="$(mktemp)"; trap 'rm -f "$SECRETS_TMP"' EXIT
+  ENV_FILE="$ROOT/omni_browse/.env.local"
+  if [ -f "$ENV_FILE" ]; then
+    for var in META_MODEL_API_KEY META_API_KEY GOOGLE_TTS_API_KEY GUARDIAN_OPEN_API_KEY TURN_CREDENTIAL TURN_USERNAME; do
+      val="$(sed -n -E "s/^${var}=(\"([^\"]*)\"|'([^']*)'|([^#[:space:]]*)).*/\2\3\4/p" "$ENV_FILE" | head -1)"
+      # skip empty values and the id half of a combined token only if too short to be meaningful
+      [ "${#val}" -ge 8 ] && printf '%s\n' "$val" >> "$SECRETS_TMP"
+      # a "<id>.<secret>" token: scan both halves as well
+      case "$val" in *.*) for part in ${val//./ }; do [ "${#part}" -ge 8 ] && printf '%s\n' "$part" >> "$SECRETS_TMP"; done ;; esac
+    done
+  fi
+  FOUND=0
+  if [ -s "$SECRETS_TMP" ] && grep -r -I -l -F -f "$SECRETS_TMP" "$TARGET" >/dev/null 2>&1; then
+    echo "ABORT: a real key value from omni_browse/.env.local appears in these files:" >&2
+    grep -r -I -l -F -f "$SECRETS_TMP" "$TARGET" >&2
+    FOUND=1
+  fi
+  PATTERNS='(wk-[A-Za-z0-9]{10,}|ws-[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|[Bb]earer [A-Za-z0-9._~+/=-]{20,}|(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[A-Z_]*[=:][ ]*["'"'"']?[A-Za-z0-9+/_.-]{24,})'
+  # lock files and the sample documents contain long hashes and fictional values; skip them for the pattern scan only
+  HITS="$(grep -r -I -n -E "$PATTERNS" "$TARGET" --exclude=pnpm-lock.yaml --exclude=uv.lock --exclude-dir=samples 2>/dev/null \
+    | grep -v -E 'Bearer \$\{|Bearer \{|Bearer <|your_[a-z_]*key|META_MODEL_API_KEY=your|invalid-key-for-failure-test' \
+    | cut -d: -f1,2 || true)"
+  if [ -n "$HITS" ]; then
+    echo "ABORT: something in the export looks like a secret (file:line only, review these lines):" >&2
+    printf '%s\n' "$HITS" >&2
+    FOUND=1
+  fi
+  [ "$FOUND" = 0 ] && echo "    scan clean"
+  return "$FOUND"
+}
+
+if [ "${ARGS[0]:-}" = "--scan" ]; then scan_dir "${ARGS[1]:?usage: --scan <dir>}" && exit 0 || exit 1; fi
 TARGET="${ARGS[0]:-$ROOT/../coverpilot-public}"
 
 NAME="${PUBLIC_AUTHOR_NAME:-$(git config user.name || true)}"
@@ -63,31 +97,7 @@ git archive HEAD | tar -x -C "$TARGET"
 )
 
 echo "==> scanning for secrets"
-SECRETS_TMP="$(mktemp)"; trap 'rm -f "$SECRETS_TMP"' EXIT
-ENV_FILE="$ROOT/omni_browse/.env.local"
-if [ -f "$ENV_FILE" ]; then
-  for var in META_MODEL_API_KEY META_API_KEY GOOGLE_TTS_API_KEY GUARDIAN_OPEN_API_KEY TURN_CREDENTIAL TURN_USERNAME; do
-    val="$(sed -n -E "s/^${var}=(\"([^\"]*)\"|'([^']*)'|([^#[:space:]]*)).*/\2\3\4/p" "$ENV_FILE" | head -1)"
-    # skip empty values and the id half of a combined token only if too short to be meaningful
-    [ "${#val}" -ge 8 ] && printf '%s\n' "$val" >> "$SECRETS_TMP"
-    # a "<id>.<secret>" token: scan both halves as well
-    case "$val" in *.*) for part in ${val//./ }; do [ "${#part}" -ge 8 ] && printf '%s\n' "$part" >> "$SECRETS_TMP"; done ;; esac
-  done
-fi
-FOUND=0
-if [ -s "$SECRETS_TMP" ] && grep -r -I -l -F -f "$SECRETS_TMP" "$TARGET" >/dev/null 2>&1; then
-  echo "ABORT: a real key value from omni_browse/.env.local appears in these files:" >&2
-  grep -r -I -l -F -f "$SECRETS_TMP" "$TARGET" >&2
-  FOUND=1
-fi
-PATTERNS='(wk-[A-Za-z0-9]{10,}|ws-[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|[Bb]earer [A-Za-z0-9._~+/=-]{20,}|(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[A-Z_]*[=:][ ]*["'"'"']?[A-Za-z0-9+/_.-]{24,})'
-# lock files and the sample documents contain long hashes and fictional values; skip them for the pattern scan only
-if grep -r -I -n -E "$PATTERNS" "$TARGET" --exclude=pnpm-lock.yaml --exclude=uv.lock --exclude-dir=samples 2>/dev/null | grep -v -E 'Bearer \$\{|Bearer \{|Bearer <|your_[a-z_]*key|META_MODEL_API_KEY=your' ; then
-  echo "ABORT: something in the export looks like a secret (lines above, values shown only because they matched a pattern)." >&2
-  FOUND=1
-fi
-[ "$FOUND" = 0 ] || exit 1
-echo "    scan clean"
+scan_dir "$TARGET" || exit 1
 
 echo "==> creating a single-commit repository"
 cd "$TARGET"
