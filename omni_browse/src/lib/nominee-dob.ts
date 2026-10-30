@@ -6,7 +6,10 @@ export interface NomineeDob {
   error: string | null;
 }
 
-export function parseNomineeDob(text: string, now: Date = new Date()): NomineeDob {
+// `now` is a Date for tests; the default is the current time as a number. A bare `new Date()` evaluated while a
+// client component renders is refused by the production build, so the default is Date.now() like the applicant's age.
+export function parseNomineeDob(text: string, nowInput: Date | number = Date.now()): NomineeDob {
+  const now = new Date(nowInput);
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text.trim());
   const ask = "Enter the primary nominee's date of birth as DD/MM/YYYY.";
   if (!m) return { age: null, error: ask };
