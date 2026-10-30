@@ -1639,7 +1639,24 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     setGuardianReview((r) => ({ ...r, status: 'running', error: undefined }));
     try {
       const facts = proposalFacts();
-      const res = await fetch('/api/guardian', {
+      // The review model has a limited call budget: the same document with the same application numbers
+      // reuses the earlier review, and only a changed application (after a fix) or document asks again.
+      const cacheKey = (() => {
+        const text = JSON.stringify([policyDoc.pages.map((p) => p.text), facts]);
+        let h = 5381;
+        for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+        return `nexasure.review.${h}.${text.length}`;
+      })();
+      let cached: GuardianResponse | null = null;
+      try {
+        const raw = window.sessionStorage.getItem(cacheKey);
+        cached = raw ? (JSON.parse(raw) as GuardianResponse) : null;
+      } catch {
+        cached = null;
+      }
+      const res = cached
+        ? ({ ok: true, json: async () => cached } as unknown as Response)
+        : await fetch('/api/guardian', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages: policyDoc.pages, proposal: facts }),
@@ -1647,8 +1664,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       const data = await res.json();
       if (!res.ok || !data.review) throw new Error(data.error || `Guardian HTTP ${res.status}`);
       const response = data as GuardianResponse;
+      if (!cached) {
+        try {
+          window.sessionStorage.setItem(cacheKey, JSON.stringify(response));
+        } catch {
+          /* storage full or blocked: the review still works, it just is not remembered */
+        }
+      }
       const checks = runChecks(response.review.facts, facts, { compareApplication: draftHasContent });
-      recordModel(response.model, 'document review', response.ms);
+      if (!cached) recordModel(response.model, 'document review', response.ms); // a reused review made no model call
       setGuardianSection(0);
       setReviewedSections([]);
       setGuardianReview((r) => ({ status: 'done', response, checks, history: [...r.history, { at: Date.now(), issues: countIssues(checks), model: response.model }] }));
