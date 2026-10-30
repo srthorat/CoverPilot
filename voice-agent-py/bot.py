@@ -51,7 +51,7 @@ from coverpilot.session import ACCENTS, AGENT_NAMES, LANGS, LANGUAGE_BIAS, PERSO
 AUDIO_IN_RATE = 16000  # Silero + Smart Turn need 16 kHz
 AUDIO_OUT_RATE = 24000
 
-KNOWLEDGE = KnowledgeBase()  # the co-browsing agent's: every file, loaded once per process
+KNOWLEDGE = KnowledgeBase(exclude_prefix=("guardian-",))  # the co-browsing agent's: every shared file and its own cobrowse-* files, loaded once per process
 # Integrity Guardian's own knowledge base: the rules and terms needed to read a policy document, without
 # the files about using the application (faq, process-and-payment).
 KNOWLEDGE_GUARDIAN = KnowledgeBase(
@@ -62,7 +62,8 @@ KNOWLEDGE_GUARDIAN = KnowledgeBase(
         "benefit-ladders-tax-underwriting",
         "disclosure-consequences",
         "choosing-cover-and-riders",
-    }
+    },
+    include_prefix=("guardian-",),  # plus the guardian-* files written only for the reviewer
 )
 MEMORY = MemoryStore()
 

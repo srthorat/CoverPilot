@@ -2863,7 +2863,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             </div>
             <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-500">
               <div className="font-semibold text-slate-700">Shared Meta-powered agent runtime</div>
-              Muse Spark · Muse Voice Transcribe · Muse Wonder · SAM 3.1 · Muse Image
+              Muse Spark · Muse Spark Open · Muse Voice Transcribe · Muse Wonder · SAM 3.1 · Muse Image
               <div className="mt-1 text-slate-600">Review → Resolve → Regenerate → Review again</div>
             </div>
           </div>
