@@ -166,12 +166,17 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
       await expect(page.getByText(/4 pages, read in your browser/)).toBeVisible({ timeout: 30_000 });
       await page.getByRole('button', { name: 'Run Integrity Guardian' }).click();
       const checks = page.getByText('Checks against your application and the rules').locator('xpath=..');
-      await expect(checks).toContainText(/sum assured of/, { timeout: 120_000 });
+      try {
+        await expect(checks).toContainText(/sum assured of/, { timeout: 120_000 });
+      } catch (e) {
+        const ui = (await page.evaluate(() => document.body.innerText)).split('Document to review:')[1]?.slice(0, 700) ?? '';
+        throw new Error(`Review panel said: ${ui.replace(/\s+/g, ' ')}`);
+      }
       await expect(checks).toContainText(/10 days of grace for monthly premiums/);
       await expect(checks).toContainText(/24 months/);
       await expect(checks).toContainText(/no nomination section/i);
       const reply = await ask('What happens if I miss a payment in month two?');
-      expect(reply).toMatch(/grace|fifteen|ten|page/i);
+      expect(reply, `Guardian reply was: ${reply}`).toMatch(/grace|fifteen|ten|page/i);
     });
 
     await beat('Fix in the application, then Review again (history shows the issue count falling)', '2:25-2:45', async () => {

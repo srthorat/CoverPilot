@@ -123,22 +123,35 @@ export async function POST(req: NextRequest) {
 
   const startedAt = Date.now();
   try {
-    const settled = await Promise.allSettled(variants.map((v) => sparkJson<Record<string, unknown>>(ask(v), { reasoningEffort: 'low', temperature: 0 })));
-    const answers = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
-    if (answers.length < 2) {
-      const failure = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
-      throw failure?.reason ?? new Error('Muse Spark returned fewer than two answers');
+    // One extra round if the answers disagreed: a region is still only accepted when two answers agree.
+    let model = '';
+    let answerCount = 0;
+    let regions: { concept: string; box: Box }[] = [];
+    let unconfirmed: string | null = null;
+    for (let round = 0; round < 2; round++) {
+      const settled = await Promise.allSettled(variants.map((v) => sparkJson<Record<string, unknown>>(ask(v), { reasoningEffort: 'low', temperature: 0 })));
+      const answers = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+      if (answers.length < 2) {
+        const failure = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+        throw failure?.reason ?? new Error('Muse Spark returned fewer than two answers');
+      }
+      model = answers[0].model;
+      answerCount = answers.length;
+      regions = [];
+      unconfirmed = null;
+      for (const f of fields) {
+        const confirmed = agreed(answers.map((a) => a.data[f.key]).filter(validBox));
+        if (!confirmed) {
+          unconfirmed = f.label;
+          break;
+        }
+        regions.push({ concept: f.label, box: pad(confirmed, documentType === 'aadhaar' ? PAD_AADHAAR : PAD) });
+      }
+      if (!unconfirmed) break;
     }
-    const model = answers[0].model;
-    const regions = [];
-    for (const f of fields) {
-      const boxes = answers.map((a) => a.data[f.key]).filter(validBox);
-      const confirmed = agreed(boxes);
-      // No two answers agree: the position is unconfirmed, so nothing may be read.
-      if (!confirmed) throw new Error(`Could not confirm where the ${f.label} is (the answers disagreed); nothing was sent`);
-      regions.push({ concept: f.label, box: pad(confirmed, documentType === 'aadhaar' ? PAD_AADHAAR : PAD) });
-    }
-    return Response.json({ regions, telemetry: { model, totalMs: Date.now() - startedAt, answers: answers.length } });
+    // No two answers agree: the position is unconfirmed, so nothing may be read.
+    if (unconfirmed) throw new Error(`Could not confirm where the ${unconfirmed} is (the answers disagreed); nothing was sent`);
+    return Response.json({ regions, telemetry: { model, totalMs: Date.now() - startedAt, answers: answerCount } });
   } catch (err: any) {
     const message = err instanceof MetaApiError ? err.message : `Locating IDs failed: ${err?.message || err}`;
     console.error('[locate-ids]', message);
