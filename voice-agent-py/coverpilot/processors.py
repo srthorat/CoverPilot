@@ -39,6 +39,7 @@ from pipecat.processors.frameworks.rtvi.frames import RTVIServerMessageFrame
 from .asr_corrections import correct as asr_correct
 from .config import Settings
 from .knowledge import KnowledgeBase
+from .langcheck import REMINDER, RETRY_REMINDER, check_reply, expected_reply_language
 from .logsafe import safe_action, safe_reason, safe_text
 from .prompt import ACTION_MARKER, VERIFIER_SYSTEM_PROMPT, build_system_prompt, parse_action
 from .revert import inverse_actions
@@ -80,7 +81,7 @@ class ScreenStateInjector(FrameProcessor):
         if isinstance(frame, LLMContextFrame):
             self._refresh(frame.context)
             await self.push_frame(frame, direction)
-            if self._session.last_user_text:
+            if self._session.last_user_text and not self._session.retry_turn:  # a language re-ask is not a new customer turn
                 source, self._session.turn_source = self._session.turn_source, "voice"
                 await self.push_frame(RTVIServerMessageFrame(data={
                     "type": "user_turn",
@@ -113,15 +114,25 @@ class ScreenStateInjector(FrameProcessor):
             messages[0]["content"] = system
         else:
             messages.insert(0, {"role": "system", "content": system})
+        # A language re-ask runs the same customer turn again: start from the plain text, not the decorated one.
+        retry, s.language_retry = s.language_retry, False
+        s.retry_turn = retry
+        if retry and messages:
+            orig = self._decorated.get(id(messages[-1]))
+            if orig is not None:
+                messages[-1]["content"] = orig
         if not messages or messages[-1].get("role") != "user" or not isinstance(messages[-1].get("content"), str):
             return
         last = messages[-1]
         text = asr_correct(last["content"])
         last["content"] = text
         s.last_user_text = text
-        s.user_turns = (s.user_turns + [text])[-3:]
+        if not retry:
+            s.user_turns = (s.user_turns + [text])[-3:]
+            s.turn_started_at = time.time()
+            s.retries_done = 0
         s.main_started = False
-        s.turn_started_at = time.time()
+        s.reply_lang = expected_reply_language(s.lang, text)
         logger.info(f"[turn] user ({s.turn_source}, {role}): {safe_text(text)}")
         self._decorated[id(last)] = text
         # Knowledge retrieved for this turn only.
@@ -152,6 +163,12 @@ class ScreenStateInjector(FrameProcessor):
         if note:
             decorated = f"{decorated}\n\n{note}"
             logger.info(f"[gate] note of {len(note)} chars")
+        # Last thing before the model answers: which language to answer in. The knowledge notes above are in English,
+        # and a long English block pulls the answer towards English unless this says otherwise.
+        if s.reply_lang in REMINDER:
+            decorated = f"{decorated}\n\n{REMINDER[s.reply_lang]}"
+            if retry:
+                decorated = f"{decorated}\n{RETRY_REMINDER[s.reply_lang]}"
         shot = s.fresh_screenshot() if role == "cobrowse" else None
         if shot:
             last["content"] = [
@@ -177,10 +194,12 @@ class ActionMarkerFilter(FrameProcessor):
         on_action: ActionCallback | None = None,
         on_turn_complete: TurnCallback | None = None,
         on_escalate: EscalateCallback | None = None,
+        on_language_retry: Callable[[], Awaitable[None]] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._session = session
+        self._on_language_retry = on_language_retry
         self._on_action = on_action
         self._on_turn_complete = on_turn_complete
         self._on_escalate = on_escalate
@@ -191,12 +210,19 @@ class ActionMarkerFilter(FrameProcessor):
         self._spoken = ""
         self._first_text_at = 0.0
         self._bot_speaking = False
+        self._hold = ""  # first sentence of a Hindi or Marathi answer, held until its language is checked
+        self._checked = False
+        self._discard = False  # this answer was in the wrong language and is being dropped for a re-ask
+        self._reasking = False  # the next response is that re-ask: it continues the same message on screen
 
     def _reset(self):
         self._pending = ""
         self._action_raw = ""
         self._marker_seen = False
         self._spoken = ""
+        self._hold = ""
+        self._checked = False
+        self._discard = False
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -219,7 +245,10 @@ class ActionMarkerFilter(FrameProcessor):
             self._in_response = True
             self._first_text_at = 0.0
             await self.push_frame(frame, direction)
-            await self.push_frame(RTVIServerMessageFrame(data={"type": "agent_start"}))
+            if self._reasking:
+                self._reasking = False  # same message bubble as the dropped draft: no second agent_start
+            else:
+                await self.push_frame(RTVIServerMessageFrame(data={"type": "agent_start"}))
         elif isinstance(frame, InterruptionFrame):
             # Only a real barge-in counts: Spark still streaming, or the bot still talking.
             interrupted = self._in_response or self._bot_speaking
@@ -246,6 +275,17 @@ class ActionMarkerFilter(FrameProcessor):
             return
         elif isinstance(frame, LLMFullResponseEndFrame):
             await self._drain(final=True)
+            await self._release_hold(force=True)
+            if self._discard:
+                # Wrong language: nothing of this draft was spoken or shown. Close it quietly and ask once more.
+                self._in_response = False
+                self._discard = False
+                await self.push_frame(frame, direction)
+                self._reasking = True
+                self._session.language_retry = True
+                if self._on_language_retry:
+                    await self._on_language_retry()
+                return
             # The form as it was before this reply's action reaches the browser, so a reject can undo it.
             before = copy.deepcopy(self._session.screen_state or {})
             action = parse_action(self._action_raw) if self._marker_seen else None
@@ -298,6 +338,34 @@ class ActionMarkerFilter(FrameProcessor):
             await self._emit_text(text)
 
     async def _emit_text(self, text: str):
+        if self._discard:
+            return
+        if not self._checked and self._session.reply_lang in ("hi", "mr"):
+            # Hold the first sentence until its language is known; the voice waits for a whole sentence anyway,
+            # so this costs no extra time before speech. Only the on-screen text of that sentence arrives together.
+            self._hold += text
+            await self._release_hold(force=False)
+            return
+        await self._send_text(text)
+
+    async def _release_hold(self, force: bool):
+        if self._checked or self._discard or not self._hold:
+            return
+        if not force and not (re.search(r"[।.?!]", self._hold) or len(self._hold) >= 160):
+            return
+        text, self._hold = self._hold, ""
+        self._checked = True
+        ok, why = check_reply(text, self._session.reply_lang or "hi")
+        if not ok and self._session.retries_done < 1:
+            self._session.retries_done += 1
+            self._discard = True
+            logger.warning(f"[language] draft not in {self._session.reply_lang} ({why}); dropping it and asking once more")
+            return
+        if not ok:
+            logger.warning(f"[language] second draft still not in {self._session.reply_lang} ({why}); using it")
+        await self._send_text(text)
+
+    async def _send_text(self, text: str):
         if not self._first_text_at:
             self._first_text_at = time.time()
         self._session.main_started = True
@@ -472,6 +540,8 @@ class AckProcessor(FrameProcessor):
             text = ((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
             if not text or self._session.main_started:
                 return  # the real answer beat us: do not interject
+            if self._session.lang in ("hi", "mr") and not check_reply(text, self._session.lang)[0]:
+                return  # an acknowledgement in the wrong language is worse than none
             target = self._downstream or self
             await target.push_frame(RTVIServerMessageFrame(data={"type": "agent_ack", "text": text, "ms": int((time.time() - t0) * 1000)}))
             await target.push_frame(TTSSpeakFrame(text=text, append_to_context=False))
