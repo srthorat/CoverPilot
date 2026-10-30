@@ -170,6 +170,7 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
         await expect(checks).toContainText(/sum assured of/, { timeout: 120_000 });
       } catch (e) {
         const ui = (await page.evaluate(() => document.body.innerText)).split('Document to review:')[1]?.slice(0, 700) ?? '';
+        console.log('PANEL>>', ui.replace(/\s+/g, ' '));
         throw new Error(`Review panel said: ${ui.replace(/\s+/g, ' ')}`);
       }
       await expect(checks).toContainText(/10 days of grace for monthly premiums/);

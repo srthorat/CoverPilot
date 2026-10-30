@@ -399,6 +399,24 @@ def _default_ice_servers() -> str:
     (TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL, same values /api/ice-servers
     gives the browser). Without them the bot only offers host candidates."""
     servers: list[dict] = [{"urls": "stun:stun.l.google.com:19302"}]
+    key_id, token = os.getenv("CLOUDFLARE_TURN_KEY_ID"), os.getenv("CLOUDFLARE_TURN_API_TOKEN")
+    if key_id and token:
+        try:
+            import urllib.request
+
+            req = urllib.request.Request(
+                f"https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate-ice-servers",
+                data=json.dumps({"ttl": 86400}).encode(),
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "coverpilot-agent/1.0"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=8) as res:
+                minted = json.load(res).get("iceServers") or []
+            if minted:
+                # Credentials last 24 h and are minted once at start-up: restart the container daily on a long run.
+                return json.dumps(servers + minted)
+        except Exception as e:  # noqa: BLE001 - fall back to STUN and any static TURN_* values
+            logger.warning(f"[ice] Cloudflare TURN credentials failed ({type(e).__name__} {getattr(e, 'code', '')}); using STUN and any static TURN values")
     urls = [u.strip() for u in (os.getenv("TURN_URLS") or "").split(",") if u.strip()]
     if urls:
         entry: dict = {"urls": urls[0] if len(urls) == 1 else urls}
