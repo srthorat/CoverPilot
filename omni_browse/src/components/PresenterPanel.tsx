@@ -413,7 +413,7 @@ export function PresenterPanel({ turns, memoryFacts, agentState, stats, usage, c
 
       {/* Footer */}
       <div className="px-3 py-2 bg-[#1a0f42] border-t border-purple-900/40 text-[9px] text-purple-400/60 text-center">
-        Muse Spark 1.3 · Voice Transcribe 1.0 · Wonder 1.0 · Pipecat 1.14.0
+        Spark 1.3 · Spark Open · Voice Transcribe · Wonder · SAM 3.1 · Image · Pipecat 1.14.0
       </div>
     </div>
   );
