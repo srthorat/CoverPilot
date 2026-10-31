@@ -3083,6 +3083,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
             <div className="text-center">
               <h1 className="text-xl font-bold text-[#111827]">What would you like to do?</h1>
               <p className="text-sm text-slate-500">One voice assistant, two ways to help. Demo product, not a real insurer.</p>
+              <p className="mt-1 text-xs font-semibold text-[#582be8]" data-testid="hackathon-tag">Built during the Meta Global AI Developer Hackathon · sample documents · fictional insurer</p>
             </div>
             {pendingResume && (
               <div className="rounded-xl border border-purple-300 bg-purple-50 px-3 py-2 text-xs text-purple-900 flex flex-wrap items-center gap-2">
@@ -3121,8 +3122,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   setMode('cobrowse');
                   setEntry('done');
                 }}
-                className="text-left rounded-2xl border-2 border-slate-200 hover:border-[#582be8] bg-white p-5 shadow-sm transition-colors"
+                className="flex flex-col items-start justify-start text-left rounded-2xl border-2 border-slate-200 hover:border-[#582be8] bg-white p-5 shadow-sm transition-colors"
               >
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Co-browsing agent</div>
                 <div className="text-base font-bold text-[#111827]">Start a new policy</div>
                 <p className="mt-1 text-sm text-slate-600">
                   The voice assistant explains each question and fills your application with you, step by step. You only click where a declaration, signature or payment is yours to make.
@@ -3135,8 +3137,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   setMode('guardian');
                   setEntry('done');
                 }}
-                className="text-left rounded-2xl border-2 border-slate-200 hover:border-[#582be8] bg-white p-5 shadow-sm transition-colors"
+                className="flex flex-col items-start justify-start text-left rounded-2xl border-2 border-slate-200 hover:border-[#582be8] bg-white p-5 shadow-sm transition-colors"
               >
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Independent reviewer · Integrity Guardian</div>
                 <div className="text-base font-bold text-[#111827]">Review a policy</div>
                 <p className="mt-1 text-sm text-slate-600">
                   Review a proposed policy (this demo uses sample documents). Integrity Guardian explains it section by section, checks it against your application and the rules, and answers every question with page references.
