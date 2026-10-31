@@ -32,3 +32,21 @@ Cut first: the Hindi beat, the privacy panel close-up, pause and resume.
 - Say "blurred copies go to Meta, the original stays in your browser", never "no data reaches Meta" (name, date of birth, address and PIN on the redacted image do).
 - Say "possible issue", never "illegal" or "wrong". Never say a claim will or will not be paid.
 - Say the insurer documents and product are fictional and the payment is a demo.
+
+## Narration with the Meta models named (use this wording for the voice-over)
+
+Naming: the first agent is **OmniCB Agent**, the co-browsing voice agent (say the full phrase once, then "OmniCB Agent"). The second is **Integrity Guardian**. Say each model where the viewer sees it work, not all at once.
+
+| Clip | Models to say, and where |
+|---|---|
+| 1 Landing (about 28 s) | Card 1: "OmniCB Agent, our co-browsing voice agent, hears you with Muse Voice Transcribe, answers with Muse Spark and fills your application with you. Declarations, signature and payment stay yours." Card 2: "a second, independent agent, Integrity Guardian, reviews a proposed policy with Muse Spark Open." Strip: "Six Meta models in one runtime. First, a new policy." |
+| 2 Voice fills the form | "Muse Voice Transcribe hears it, Muse Spark decides what to fill, and Muse Wonder checks each change before you confirm." |
+| 3 Document and privacy | "SAM 3.1 finds the photo and signature on a blurred copy; Muse Spark reads only the redacted copy." |
+| 4 Hindi and the step gate | "Muse Spark answers in Hindi and points to the clause." |
+| 5 Step 5 | "OmniCB Agent checks that nothing is missing before the proposed policy is made." |
+| 6 Guardian review | "Muse Spark Open, an open-weights model, reads the document, and fixed rules check it next to the model." |
+| 7 Fix and review again | no new model; say "Review, resolve, review again." |
+| 8 Readiness report | "Muse Image draws the policy card" only if the card is on screen; otherwise leave it for the end card. |
+| End card | List all six with one line each, and say plainly: "Google Cloud text-to-speech is the one non-Meta part: the voice." |
+
+Models and what each does in this build: Muse Spark (agent replies, reads the redacted ID, finds the number box, case notes), Muse Spark Open (Guardian review only), Muse Voice Transcribe (speech to text), Muse Wonder (checks each action the agent wants to make, and writes the audit note), SAM 3.1 (photo, signature and QR regions on a blurred copy), Muse Image (the policy card).
