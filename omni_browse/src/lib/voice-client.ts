@@ -9,6 +9,7 @@
 // JSON on the WebRTC data channel using the RTVI message protocol.
 
 import { PipecatClient, type BotReadyData, type TranscriptData, type Participant, type RTVIMessage } from '@pipecat-ai/client-js';
+import { isHarmlessAudioNote } from './agent-error';
 import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
 import { agentIsBusy, isBusyError, VOICE_BUSY_MESSAGE } from './voice-busy';
 
@@ -263,6 +264,7 @@ export class VoiceAgentClient {
               text = 'Voice agent error';
             }
           }
+          if (isHarmlessAudioNote(text)) return; // spoken fine; Pipecat only reports an empty tail context
           emit({ type: 'error', message: text });
         },
         onDisconnected: () => {

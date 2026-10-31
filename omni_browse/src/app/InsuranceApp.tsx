@@ -12,6 +12,7 @@ import type { GuardianResponse, ProposalFacts } from '@/lib/guardian-types';
 import type { ModelUsage } from '@/components/PresenterPanel';
 import { currentId, deleteDraft, loadDraft, newDraftId, normalizeCode, readIndex, saveDraft, setCurrent, type DraftMeta } from '@/lib/proposal-draft';
 import { openIds, sealIds, type IdNumbers } from '@/lib/id-seal';
+import { agentErrorLabel } from '@/lib/agent-error';
 import { ID_PDF_MESSAGES, rasterizeIdPdf } from '@/lib/id-raster';
 import { assessShield, cardCrop, leakMessage, pixelBlock, RETAKE_HINT, ShieldRefusal, snapBoxToInk } from '@/lib/shield-safeguards';
 import { CLIENT_REVIEW_TIMEOUT_MS, reviewFailureMessage } from '@/lib/guardian-timing';
@@ -1324,7 +1325,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         setVoiceTelemetry((t) => ({ ...t, lastError: ev.message }));
         setChatMessages((prev) => [
           ...prev,
-          { sender: 'agent', text: `Meta API error (no fallback configured): ${ev.message}`, time: stampNow() },
+          { sender: 'agent', text: agentErrorLabel(ev.message), time: stampNow() },
         ]);
         break;
       case 'closed':
