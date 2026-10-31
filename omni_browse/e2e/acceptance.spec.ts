@@ -157,6 +157,10 @@ test('AC-07 A material answer the agent enters waits for Confirm or Undo', async
   await expect(page.locator('#field-approvals')).toBeVisible();
   await page.locator('#field-approvals').getByRole('button', { name: 'Confirm' }).click();
   await expect(page.locator('#field-approvals')).toBeHidden();
+  // The agent must see the confirmation: it used to keep saying the Confirm was pending (stale screen state).
+  await page.waitForTimeout(1500);
+  const after = await ask('Do I still need to press Confirm on anything?', () => true);
+  expect(after).not.toMatch(/(smok|tobacco|non-smoker).{0,40}(confirm|pending)|(still|please|press).{0,20}confirm/i);
 });
 
 test('AC-08 The action executes only on the intended field', async () => {

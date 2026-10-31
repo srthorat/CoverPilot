@@ -3032,8 +3032,10 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   useEffect(() => {
     if (isSharingPaused) return;
     agentRef.current?.sendScreenState(getLiveScreenSnapshot());
+    // Everything in getLiveScreenSnapshot() must be listed below, or the agent keeps working from stale state: it kept
+    // saying a Confirm was pending after the customer had pressed it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStep, profile, baseSumAssured, selectedRiders, underwriting, currentFocusedField, nomination, ciTier, atpdOption, lifeStageEscalator, terminalIllnessCover, isSharingPaused]);
+  }, [activeStep, profile, baseSumAssured, selectedRiders, underwriting, currentFocusedField, nomination, ciTier, atpdOption, lifeStageEscalator, terminalIllnessCover, isSharingPaused, pendingApprovals, docDiscrepancies, esignValid, paymentValid, showTermsDrawer, highlightedClause, mode, guardianSection, reviewedSections, guardianReview.status, guardianReview.checks, noRiders]);
 
   // Tear the live session down if the component unmounts.
   useEffect(() => {
