@@ -323,6 +323,13 @@ cd omni_browse && BASE_URL=http://localhost:3000 pnpm e2e  # 22 acceptance check
 cd voice-agent-py && uv run --with pytest python -m pytest -q tests/integration -s   # live prompt-injection test
 ```
 
+On a deployed host the Python tests are inside the image, so they can be run against the exact build that is serving:
+
+```bash
+docker exec coverpilot uv run --with pytest python -m pytest -q tests --ignore=tests/harness_offline.py --ignore=tests/integration
+BASE_URL=https://<your-host> pnpm e2e        # the browser suite runs from your machine against the host
+```
+
 The acceptance suite (`omni_browse/e2e/acceptance.spec.ts`) covers: explicit consent, a Hindi reply, field identification from live context, clause citation and highlight, a document read in the browser with page citations, screenshot use, Confirm/Undo on material answers, the action landing on the intended field, browser-side value confirmation, the step-5 application check, pause and revoke, a failing model call changing no data, refusal to sign or pay, hostile text in a document, the Guardian finding the planted problems with pages, a follow-up with a page, a finding that routes back to the application, two distinct agents, cross-browser resume with code and key, idle disconnect and resume, and a failed or slow review being explained and retried. Each check has a time budget; three failures stop the run. Other specs measure language reliability, capacity, the identity shield on generated cards, accessibility (axe-core) and phone layouts. CI (`.github/workflows/ci.yml`) runs the unit tests and the type check on every push; the browser suite is run by hand because it calls the live models.
 
 ## Built during the hackathon

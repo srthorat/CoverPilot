@@ -12,8 +12,10 @@
 **/.env
 **/.env.*
 !**/.env.example
+# Live runtime data (memory, cases, vault) lives on the data volume, never in the image.
 voice-agent-py/data
-voice-agent-py/tests
+# voice-agent-py/tests ARE in the image: run them on any host with
+#   docker exec coverpilot uv run --with pytest python -m pytest -q tests --ignore=tests/harness_offline.py --ignore=tests/integration
 # Not part of the image: rehearsal videos, measurement reports, build tools for the sample documents, demo scripts.
 support
 *.pdf

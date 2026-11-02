@@ -52,3 +52,5 @@ voice-agent-py/data/
 omni_browse/playwright-report/
 /*.pdf
 support/private/*.pdf
+# Private task list; the public export never contains it.
+/todo.md
