@@ -3,6 +3,7 @@
 # CoverPilot
 
 **Two voice agents on one Meta-powered runtime, for a term-life insurance application: one fills the form with the customer, the other checks the policy before they sign.**
+*A verifiable agent: every action is typed and allow-listed, a second Meta model checks each one and a rejected one is reverted, deterministic code does the comparisons the model must not, and the browser confirms what actually changed.*
 *Built for the Meta Global AI Developer Hackathon 2026, problem statement "Build for Your World".*
 
 **Demo video:** _link added at submission_ · **Presenter view:** `/presenter` on a running instance
@@ -11,12 +12,13 @@
 
 ## Contents
 
+0. [For judges: three minutes with the live demo](#for-judges-three-minutes-with-the-live-demo)
 1. [The problem, and how CoverPilot solves it](#the-problem-and-how-coverpilot-solves-it)
 2. [What it does](#what-it-does)
 3. [Measured](#measured)
 4. [Architecture](#architecture)
 5. [Meta models and what each one does](#meta-models-and-what-each-one-does)
-6. [Why this is more than a chatbot with RAG](#why-this-is-more-than-a-chatbot-with-rag)
+6. [A verifiable agent, not a chatbot with RAG](#a-verifiable-agent-not-a-chatbot-with-rag)
 7. [Privacy: what leaves the browser](#privacy-what-leaves-the-browser)
 8. [Tech stack](#tech-stack)
 9. [Repository layout](#repository-layout)
@@ -27,6 +29,28 @@
 14. [Built during the hackathon](#built-during-the-hackathon)
 15. [Honest limits](#honest-limits)
 16. [Other uses and future work](#other-uses-and-future-work)
+
+## For judges: three minutes with the live demo
+
+**Click path (about 90 seconds, Chrome, microphone allowed).** Open the live URL → **Start a new policy** → **Accept and start co-browsing** → say *"use the sample documents"* and tap **Sample PAN Card**, **Masked Aadhaar**, **Salary Slip** when asked → say *"I am a non-smoker"* and press **Confirm** on the card that appears → at step 5 press **Review it with Integrity Guardian** → **Run Integrity Guardian** → ask it *"what is the grace period?"* To see it catch problems, go back to the opening screen, pick **Review a policy** and load **Sample proposed policy (with issues)**: seven findings, each with a page. The presenter view (`/presenter`) shows, live, which model answered each turn and the tokens it used.
+
+**What to notice.** The agent's cursor moves to the field it fills and the browser confirms the value; income, smoking and nominee answers wait for your Confirm; the identity-shield panel shows the blurred copy that was sent and the sharp card that was not; the Guardian cites pages, names which two things disagree, and refuses to change the application or predict a claim. In Guardian mode the presenter label switches from Muse Spark 1.3 to Muse Spark Open.
+
+**Where each Meta model is called.**
+
+| Model | Code |
+|---|---|
+| Muse Voice Transcribe (realtime) | [`voice-agent-py/coverpilot/meta_stt.py`](voice-agent-py/coverpilot/meta_stt.py) |
+| Muse Spark 1.3: agent replies and actions | [`voice-agent-py/bot.py`](voice-agent-py/bot.py) (pipeline and LLM switch), [`coverpilot/prompt.py`](voice-agent-py/coverpilot/prompt.py), [`coverpilot/processors.py`](voice-agent-py/coverpilot/processors.py) (context, action filter) |
+| Muse Spark 1.3: reading redacted documents, locating ID numbers on blurred copies | [`omni_browse/src/app/api/ocr/route.ts`](omni_browse/src/app/api/ocr/route.ts), [`api/locate-ids/route.ts`](omni_browse/src/app/api/locate-ids/route.ts), shared client [`src/lib/meta.ts`](omni_browse/src/lib/meta.ts) |
+| Muse Spark Open (open weights): the Guardian's review and spoken answers | [`omni_browse/src/lib/guardian-review.ts`](omni_browse/src/lib/guardian-review.ts) (`sparkOpenJson`), [`voice-agent-py/coverpilot/modes.py`](voice-agent-py/coverpilot/modes.py) (the switch) |
+| Muse Wonder: verifies each action, reverts a rejected one; audit narrative | [`coverpilot/processors.py`](voice-agent-py/coverpilot/processors.py) (`WonderVerifier`), [`coverpilot/revert.py`](voice-agent-py/coverpilot/revert.py), [`api/audit/route.ts`](omni_browse/src/app/api/audit/route.ts) |
+| SAM 3.1: photo, signature, QR on blurred ID copies | [`omni_browse/src/app/api/sam/route.ts`](omni_browse/src/app/api/sam/route.ts) |
+| Muse Image: policy summary card | [`omni_browse/src/app/api/policy-card/route.ts`](omni_browse/src/app/api/policy-card/route.ts) |
+
+**The parts the model is not trusted with.** Deterministic policy checks: [`src/lib/guardian-checks.ts`](omni_browse/src/lib/guardian-checks.ts). Shape validators for every model output: [`guardian-validate.ts`](omni_browse/src/lib/guardian-validate.ts), [`ocr-clean.ts`](omni_browse/src/lib/ocr-clean.ts). Blur, two-of-three box agreement, leak probe: [`kyc-blur.ts`](omni_browse/src/lib/kyc-blur.ts), [`box-agreement.ts`](omni_browse/src/lib/box-agreement.ts), [`leak-probe.ts`](omni_browse/src/lib/leak-probe.ts). Step gate: [`coverpilot/stepgate.py`](voice-agent-py/coverpilot/stepgate.py).
+
+**What was built in the hackathon window** is listed, with the exact boundary in the commit history, under [Built during the hackathon](#built-during-the-hackathon).
 
 ## The problem, and how CoverPilot solves it
 
@@ -196,7 +220,7 @@ flowchart LR
 
 Not used: Muse Glimmer. Muse Code is a coding tool, not part of the product. There are no simulated or keyword fallbacks anywhere: if a Meta or Google call fails, the screen says so.
 
-## Why this is more than a chatbot with RAG
+## A verifiable agent, not a chatbot with RAG
 
 - **It acts, and checks itself.** Typed, allow-listed actions; a second model verifies each one; a rejected action is reverted; the browser confirms the value changed.
 - **A human approves what matters.** Confirm / Undo on material answers, steps that cannot be skipped, no signing, paying or submitting by the agent.
