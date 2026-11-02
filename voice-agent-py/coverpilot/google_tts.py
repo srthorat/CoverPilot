@@ -49,7 +49,7 @@ class GoogleRestTTSService(TTSService):
         voice: str = "en-IN-Chirp3-HD-Aoede",
         language_code: str = "en-IN",
         sample_rate: int | None = None,
-        cache_size: int = 400,
+        cache_size: int = 40,  # replies rarely repeat; 400 could hold ~200 MB of PCM per session
         **kwargs,
     ):
         super().__init__(

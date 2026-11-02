@@ -39,6 +39,9 @@ from websockets.protocol import State
 SESSION_LIMIT_S = 60 * 60
 ROTATE_AFTER_S = 55 * 60
 QUIET_BEFORE_ROTATE_S = 1.5
+# Pause between reopen attempts when Meta cannot be reached, doubling up to the maximum.
+RECONNECT_MIN_WAIT_S = 1.0
+RECONNECT_MAX_WAIT_S = 10.0
 
 
 def should_rotate(session_age_s: float, quiet_s: float) -> bool:
@@ -59,6 +62,10 @@ class MetaRealtimeSTTService(WebsocketSTTService):
         sample_rate: int | None = None,
         **kwargs,
     ):
+        # The receive loop below reopens the Meta session itself (rotation, time limit, a failed reopen). Pipecat's
+        # own reconnect would run a second reopen on the same socket and, after its retries, mark the service
+        # unusable: the mic goes silent with no error. So it stays off and the loop never returns early.
+        kwargs.setdefault("reconnect_on_error", False)
         super().__init__(sample_rate=sample_rate, settings=STTSettings(model=model, language=None), **kwargs)
         self._api_key = api_key
         self._model = model
@@ -235,13 +242,19 @@ class MetaRealtimeSTTService(WebsocketSTTService):
         raise Exception("Websocket not connected")
 
     async def _receive_messages(self):
+        retry_wait = RECONNECT_MIN_WAIT_S
         while not self._disconnecting:
             ws = self._websocket
             if not ws:
                 await self._connect_websocket()
                 ws = self._websocket
                 if not ws:
-                    raise Exception("Meta ASR websocket unavailable")
+                    # The reopen failed (the error was already reported). Keep trying with a growing pause, so the
+                    # mic comes back when Meta does, instead of handing the loop to Pipecat's reconnect.
+                    await asyncio.sleep(retry_wait)
+                    retry_wait = min(retry_wait * 2, RECONNECT_MAX_WAIT_S)
+                    continue
+            retry_wait = RECONNECT_MIN_WAIT_S
             generation = self._ws_generation
             try:
                 async for message in ws:
@@ -254,6 +267,10 @@ class MetaRealtimeSTTService(WebsocketSTTService):
                     await self._handle_meta_event(msg)
             except ConnectionClosed:
                 pass  # a close with an error code is handled below, the same as a clean one
+            except Exception as e:
+                # Anything else while reading (a transport error, a bad event) must not end this loop:
+                # outside it there is nothing left to bring the socket back.
+                logger.warning(f"{self}: error reading the Meta ASR stream ({type(e).__name__}); reopening")
             # The socket we were reading has ended. If it was replaced on purpose (a rotation or a language
             # change) the newer socket is already current: leave it alone and read that one next.
             if self._disconnecting:

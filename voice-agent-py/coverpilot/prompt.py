@@ -40,7 +40,7 @@ INSURANCE_KNOWLEDGE_BASE = """
 NEXASURE FLEXI SHIELD (PURE TERM LIFE INSURANCE) - DEMO PRODUCT FROM NEXASURE, AN AI-FIRST DIGITAL INSURANCE COMPANY
 
 I. STATUTORY TERMS & CONDITIONS (T&C) AND CONSUMER SAFEGUARDS:
-1. Clause 1 (Section 45 Incontestability Rule): Under Section 45 of the Insurance Act 1938, no life insurance policy can be called in question or repudiated by the insurer after the expiry of 3 continuous years from the policy inception date on ANY grounds whatsoever (fraud excepted if legally documented).
+1. Clause 1 (Section 45 Incontestability Rule): Under Section 45 of the Insurance Act 1938, no life insurance policy can be called in question or repudiated by the insurer after the expiry of 3 years from the latest of the issue date, the start of risk, a revival date or a rider date, on ANY ground whatsoever, fraud included. Within those 3 years it can be questioned only for fraud or a wrong or hidden fact that matters, with the grounds given in writing.
 2. Clause 2 (Grace Period): 30 calendar days grace period for quarterly, half-yearly, and annual premium frequencies; 15 days for monthly mode. The policy remains in FULL FORCE during the grace period.
 3. Clause 3 (Free-Look Cancellation): 30-day Free-Look Period from receipt of the policy document. The refund is the premium paid minus a proportionate risk premium for the time covered, the medical examination cost and stamp duty, so it is not always a full refund.
 4. Clause 4 (Suicide Exclusion Clause): Death by suicide within 12 months of the date risk started or of revival: the nominee gets at least 80% of the premiums paid or the surrender value, whichever is higher. Death after 12 months is not excluded for this reason.

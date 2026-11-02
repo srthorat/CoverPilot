@@ -1,7 +1,7 @@
 # What happens if a field is declared wrongly
 
 ## Smoking status declared wrongly
-If you used tobacco in the last twelve months and still declare non-smoker, that is a wrong statement of a fact that matters. Within three years of issue the insurer may question the policy under Section 45, in writing with the grounds, and if it rejects the claim it returns the premiums. After three years it can only be questioned for proven fraud. Declaring honestly costs more premium but protects the claim. The discount itself is a NexaSure demo term.
+If you used tobacco in the last twelve months and still declare non-smoker, that is a wrong statement of a fact that matters. Within three years of issue the insurer may question the policy under Section 45, in writing with the grounds, and if it rejects the claim it returns the premiums. After three years from the latest of the issue date, the start of risk, a revival date or a rider date, the policy cannot be questioned on any ground. Declaring honestly costs more premium but protects the claim. The discount itself is a NexaSure demo term.
 Source: Insurance Act 1938 section 45, https://lawgist.in/insurance-act/45; NexaSure demo terms for the discount.
 
 ## Income declared higher or lower than actual
@@ -41,5 +41,5 @@ A missed premium starts the grace period of thirty days, or fifteen for monthly,
 Source: IRDAI Master Circular on Life Insurance Products 2024, paras 8 and 10; five years is a NexaSure demo term.
 
 ## Declared everything honestly
-After three years from issue no claim can be questioned on any ground except proven fraud, and declared and accepted conditions are not used against you. Honest disclosure gives you the strongest claim.
+After three years from the latest of the issue date, the start of risk, a revival date or a rider date, the policy cannot be questioned on any ground, and declared and accepted conditions are not used against you. Honest disclosure gives you the strongest claim.
 Source: Insurance Act 1938 section 45, https://lawgist.in/insurance-act/45

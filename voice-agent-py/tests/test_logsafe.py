@@ -103,6 +103,14 @@ def test_patcher_masks_numbers_and_cuts_pipecat_payload_lines(monkeypatch):
     keep = {"message": "Pipecat started", "name": "pipecat.runner", "level": SimpleNamespace(no=10)}
     _patch(keep)
     assert keep["message"] == "Pipecat started"
+    # A warning or error from inside Pipecat that prints a frame is cut the same way as a DEBUG line.
+    for level in (30, 40):
+        warn = {"message": "GoogleRestTTSService#0 send failed: TTSSpeakFrame(text='my name is Priya Sharma')", "name": "pipecat.services.tts_service", "level": SimpleNamespace(no=level)}
+        _patch(warn)
+        assert "Priya" not in warn["message"] and warn["message"].endswith("[…]"), warn
+    ours = {"message": "[turn] user (voice): 'Priya'", "name": "coverpilot.processors", "level": SimpleNamespace(no=30)}
+    _patch(ours)
+    assert ours["message"] == "[turn] user (voice): 'Priya'"  # our own lines are already safe and are not cut
     monkeypatch.setenv("DEBUG_LOG_TRANSCRIPTS", "1")
     dbg = {"message": "Generating LLM response [Priya]", "name": "pipecat.services.x", "level": SimpleNamespace(no=10)}
     _patch(dbg)

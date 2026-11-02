@@ -6,8 +6,10 @@ and verifier verdicts without their free text. Set DEBUG_LOG_TRANSCRIPTS=1 to ge
 debugging on your own machine. The switch is read on every call, so tests can flip it.
 
 A loguru patcher is also installed as defence in depth: every message has Aadhaar, PAN, mobile, email and
-account numbers masked, and Pipecat's own DEBUG lines (which print whole LLM requests and TTS text) are cut
-at their first bracket or quote so the payload never reaches the log.
+account numbers masked, and Pipecat's own lines up to ERROR (which print whole LLM requests, TTS text and frames) are cut
+at their first bracket or quote so the payload never reaches the log. bot.py also turns loguru's
+"diagnose" off before loguru is imported, so a traceback from inside Pipecat does not print the local
+variables that hold the transcript.
 """
 
 from __future__ import annotations
@@ -93,7 +95,8 @@ def _patch(record: dict) -> None:
     if debug_transcripts():
         return
     msg = record["message"]
-    if str(record["name"]).startswith("pipecat") and record["level"].no <= 10:
+    # Pipecat logs frame contents at WARNING and ERROR too (a failed send prints the frame), not only at DEBUG.
+    if str(record["name"]).startswith("pipecat") and record["level"].no <= 40:
         m = _CUT.search(msg)
         if m:
             msg = msg[: m.start()] + "[…]"

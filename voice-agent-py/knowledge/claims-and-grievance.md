@@ -9,7 +9,7 @@ IRDAI requires a death claim to be settled within fifteen days of getting all do
 Source: IRDAI Master Circular on Protection of Policyholders' Interests 2024, life section, claim timelines.
 
 ## Why claims get rejected
-The main reasons are a wrong or hidden fact in the proposal within the first three years, a lapsed policy, and a death within an excluded period. After three years a claim can be rejected only for proven fraud. The insurer must give its reasons in writing.
+The main reasons are a wrong or hidden fact in the proposal within the first three years, a lapsed policy, and a death within an excluded period. After three years from the latest of the issue date, the start of risk, a revival date or a rider date, the policy cannot be questioned on any ground, so a misstatement in the proposal is no longer a reason. The insurer must give its reasons in writing.
 Source: Insurance Act 1938 section 45; IRDAI Master Circular on Protection of Policyholders' Interests 2024.
 
 ## Making a complaint
