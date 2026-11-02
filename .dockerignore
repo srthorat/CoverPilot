@@ -14,3 +14,9 @@
 !**/.env.example
 voice-agent-py/data
 voice-agent-py/tests
+# Not part of the image: rehearsal videos, measurement reports, build tools for the sample documents, demo scripts.
+support
+*.pdf
+*.mp4
+omni_browse/test-results
+omni_browse/playwright-report

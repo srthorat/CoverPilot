@@ -3,13 +3,14 @@
 #
 #   deploy/deploy.sh <ssh-target> <public-ip-or-hostname> [path/to/.env.local]
 #
-#   deploy/deploy.sh ubuntu@3.110.1.2 3.110.1.2
-#   deploy/deploy.sh my-ec2-alias example.com
+#   deploy/deploy.sh ubuntu@203.0.113.10 203.0.113.10     # a bare IP (203.0.113.0/24 is the documentation range)
+#   deploy/deploy.sh my-ec2-alias app.example.com
 #
 # - A bare IP is served as <ip>.sslip.io so Caddy can get a real certificate without a domain.
 # - The host needs Docker with the compose plugin and ports 80 and 443 open (plus SSH).
 # - The image is built for linux/amd64 (most EC2 types). For Graviton (arm64) set PLATFORM=linux/arm64.
-# - Extra ssh/scp options (for example -i key.pem) go in SSH_OPTS.
+# - Extra ssh/scp options (for example -i key.pem) go in SSH_OPTS; extra docker build flags
+#   (for example --build-arg NEXT_PUBLIC_ALLOW_OWN_FILES=true) go in BUILD_ARGS.
 set -euo pipefail
 
 TARGET="${1:?usage: deploy.sh <ssh-target> <public-ip-or-hostname> [env-file]}"
@@ -36,7 +37,8 @@ ssh_ 'docker compose version >/dev/null 2>&1' || {
 }
 
 echo "==> building $TAG"
-docker build --platform "$PLATFORM" -t "$TAG" .
+# shellcheck disable=SC2086
+docker build --platform "$PLATFORM" -t "$TAG" ${BUILD_ARGS:-} .
 
 echo "==> sending the image (this is a few hundred MB compressed)"
 docker save "$TAG" | gzip | ssh_ "gunzip | docker load"

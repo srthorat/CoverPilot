@@ -40,6 +40,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     PYTHONUNBUFFERED=1 \
+    LOGURU_DIAGNOSE=False \
     NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=localhost \
@@ -48,7 +49,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app/voice-agent-py
 COPY voice-agent-py/pyproject.toml voice-agent-py/uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+# The wheel cache survives between builds, so a pyproject.toml edit does not re-download every package.
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
 COPY --chown=app:app voice-agent-py/ ./
 RUN mkdir -p data && chown -R app:app /app/voice-agent-py
 
