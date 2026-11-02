@@ -13,25 +13,37 @@ Run locally (serves the WebRTC offer endpoint and a prebuilt test UI on :7860):
 
 from __future__ import annotations
 
+import os
+
+# Before loguru is imported anywhere: with "diagnose" on, a traceback from inside Pipecat prints the local
+# variables of every frame, and those hold what the customer said. The scrubber in coverpilot/logsafe.py
+# cannot reach that output, so it is switched off at the source (an explicit LOGURU_DIAGNOSE still wins).
+os.environ.setdefault("LOGURU_DIAGNOSE", "False")
+
 import asyncio
 import json
-import os
 import re
 
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.frames.frames import InterruptionWorkerFrame, LLMMessagesAppendFrame, TTSSpeakFrame
+from pipecat.frames.frames import (
+    InterruptionWorkerFrame,
+    LLMMessagesAppendFrame,
+    TTSSpeakFrame,
+)
+from pipecat.pipeline.llm_switcher import LLMSwitcher
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.service_switcher import ManuallySwitchServiceFrame
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.processors.frameworks.rtvi.observer import RTVIObserver, RTVIObserverParams
 from pipecat.processors.frameworks.rtvi.frames import RTVIServerMessageFrame
+from pipecat.processors.frameworks.rtvi.observer import RTVIObserver, RTVIObserverParams
 from pipecat.processors.frameworks.rtvi.processor import RTVIProcessor
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
@@ -40,17 +52,33 @@ from pipecat.transports.base_transport import BaseTransport, TransportParams
 
 from coverpilot import cases
 from coverpilot.capacity import CapMiddleware, SessionCap, max_sessions_from_env
-from coverpilot.diag import install_diag_signal, schedule_release, start_memory_trim
 from coverpilot.config import Settings
+from coverpilot.diag import install_diag_signal, schedule_release, start_memory_trim
 from coverpilot.google_tts import GoogleRestTTSService
-from coverpilot.mms_tts import MetaMmsTTSService
 from coverpilot.knowledge import Chunk, KnowledgeBase
 from coverpilot.logsafe import debug_transcripts, install_log_patcher, safe_keys
 from coverpilot.memory import MemoryStore, MemoryWriter, customer_ref, valid_customer_id
 from coverpilot.meta_stt import MetaRealtimeSTTService
-from coverpilot.processors import AckProcessor, ActionMarkerFilter, ScreenStateInjector, WonderVerifier
+from coverpilot.mms_tts import MetaMmsTTSService
+from coverpilot.modes import plan_mode_switch
+from coverpilot.processors import (
+    AckProcessor,
+    ActionMarkerFilter,
+    ScreenStateInjector,
+    WonderVerifier,
+)
 from coverpilot.prompt import build_system_prompt
-from coverpilot.session import ACCENTS, AGENT_NAMES, LANGS, LANGUAGE_BIAS, PERSONAS, SessionState, render_prior_turns, voice_for
+from coverpilot.session import (
+    ACCENTS,
+    AGENT_NAMES,
+    LANGS,
+    LANGUAGE_BIAS,
+    PERSONAS,
+    SessionState,
+    normalise_lang,
+    render_prior_turns,
+    voice_for,
+)
 
 AUDIO_IN_RATE = 16000  # Silero + Smart Turn need 16 kHz
 AUDIO_OUT_RATE = 24000
@@ -97,6 +125,23 @@ def build_processors(settings: Settings, session: SessionState, *, sample_rate_i
             extra={"reasoning_effort": settings.reasoning_effort},
         ),
     )
+    # The Integrity Guardian answers with Muse Spark Open (open weights, on Modal) and nothing else; the co-browse
+    # agent keeps Muse Spark. Only the active one is called. If Spark Open is not configured the switch is refused.
+    llm_open = None
+    if settings.guardian_base_url and settings.guardian_api_key:
+        llm_open = OpenAILLMService(
+            api_key=settings.guardian_api_key,
+            base_url=settings.guardian_base_url,
+            settings=OpenAILLMService.Settings(
+                model=settings.guardian_model,
+                temperature=0.2,
+                extra={"reasoning_effort": settings.reasoning_effort},
+            ),
+        )
+    llm_spark = llm
+    llm = LLMSwitcher(llms=[llm_spark] + ([llm_open] if llm_open else []))
+    llm.spark_service, llm.open_service = llm_spark, llm_open
+    session.llm_model = settings.spark_model
     lang_code, voice = voice_for(session.active_persona(), session.lang, session.accent)
     if tts_provider == "meta-mms":  # experimental, chosen by the customer in the app; Google is the default
         tts = MetaMmsTTSService(language_code=lang_code, sample_rate=sample_rate_out)
@@ -249,6 +294,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
             about={
                 "sttModel": settings.transcribe_model,
                 "llmModel": settings.spark_model,
+                "guardianModel": settings.spark_model if settings.guardian_provider == "spark" else (settings.guardian_model if llm.open_service else None),
                 "reasoningEffort": settings.reasoning_effort,
                 "ttsVoice": tts.voice,
                 "turnDetection": "pipecat-smart-turn-v3",
@@ -330,10 +376,14 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
                 # Two different agents share the session: switch the role (prompt, knowledge base, voice).
                 mode = data.get("mode")
                 if mode in AGENT_NAMES:
+                    # Refused (RuntimeError, reported to the client below) before anything about the session changes.
+                    model, service = plan_mode_switch(mode, spark_service=llm.spark_service, open_service=llm.open_service, spark_model=settings.spark_model, guardian_model=settings.guardian_model, provider=settings.guardian_provider)
                     session.role = mode
+                    session.llm_model = model
+                    await task.queue_frames([ManuallySwitchServiceFrame(service=service)])
                     session.last_kb_chunks = []
                     tts.set_voice(*voice_for(session.active_persona(), session.lang, session.accent))
-                    new_system = build_system_prompt(session.lang, session.accent, settings.spark_model, session.role)
+                    new_system = build_system_prompt(session.lang, session.accent, session.llm_model or settings.spark_model, session.role)
                     if context.messages and context.messages[0].get("role") == "system":
                         context.messages[0]["content"] = new_system
                     else:
@@ -361,7 +411,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments | None 
                     await stt.set_language_bias(LANGUAGE_BIAS[session.lang])
                     # Refresh the system prompt immediately so Spark replies in the new language
                     # on this very turn rather than the next one.
-                    new_system = build_system_prompt(session.lang, session.accent, settings.spark_model, session.role)
+                    new_system = build_system_prompt(session.lang, session.accent, session.llm_model or settings.spark_model, session.role)
                     if context.messages and context.messages[0].get("role") == "system":
                         context.messages[0]["content"] = new_system
                     else:
@@ -412,7 +462,7 @@ async def _bot(runner_args: RunnerArguments):
     await run_bot(
         transport,
         runner_args,
-        lang=body.get("lang", os.getenv("COVERPILOT_LANG", "en")),
+        lang=normalise_lang(body.get("lang"), os.getenv("COVERPILOT_LANG")),
         persona=body.get("persona", "veena"),
         accent=body.get("accent", "in"),
         customer_id=body.get("customerId"),
@@ -444,7 +494,7 @@ def _default_ice_servers() -> str:
             if minted:
                 # Credentials last 24 h and are minted once at start-up: restart the container daily on a long run.
                 return json.dumps(servers + minted)
-        except Exception as e:  # noqa: BLE001 - fall back to STUN and any static TURN_* values
+        except Exception as e:
             logger.warning(f"[ice] Cloudflare TURN credentials failed ({type(e).__name__} {getattr(e, 'code', '')}); using STUN and any static TURN values")
     urls = [u.strip() for u in (os.getenv("TURN_URLS") or "").split(",") if u.strip()]
     if urls:
@@ -464,9 +514,8 @@ def _patch_offer_request_model() -> None:
     a pydantic model that accepts both spellings; the handler only reads attributes."""
     from typing import Any as _Any
 
-    from pydantic import BaseModel, ConfigDict, Field
-
     import pipecat.transports.smallwebrtc.request_handler as rh
+    from pydantic import BaseModel, ConfigDict, Field
 
     class SmallWebRTCRequest(BaseModel):
         model_config = ConfigDict(populate_by_name=True, extra="ignore")
@@ -485,7 +534,8 @@ def _patch_offer_request_model() -> None:
 
 if __name__ == "__main__":
     _patch_offer_request_model()
-    from pipecat.runner.run import app as _runner_app, main
+    from pipecat.runner.run import app as _runner_app
+    from pipecat.runner.run import main
 
     _runner_app.add_middleware(CapMiddleware, cap=SESSION_CAP)
 

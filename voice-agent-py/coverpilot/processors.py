@@ -102,7 +102,7 @@ class ScreenStateInjector(FrameProcessor):
                 m["content"] = orig
         # System prompt: static (cacheable) part first, then memory and the live form state.
         role = s.role
-        static = build_system_prompt(s.lang, s.accent, self._settings.spark_model, role)
+        static = build_system_prompt(s.lang, s.accent, s.llm_model or self._settings.spark_model, role)
         tail = []
         if s.memory_text:
             tail.append(s.memory_text)
@@ -244,6 +244,7 @@ class ActionMarkerFilter(FrameProcessor):
                         RTVIServerMessageFrame(
                             data={
                                 "type": "usage",
+                                "model": self._session.llm_model or None,
                                 "promptTokens": d.value.prompt_tokens,
                                 "completionTokens": d.value.completion_tokens,
                             }
@@ -312,6 +313,7 @@ class ActionMarkerFilter(FrameProcessor):
                         "type": "agent_done",
                         "text": spoken,
                         "telemetry": {
+                            "llmModel": self._session.llm_model or None,
                             "ttftMs": int((self._first_text_at - t0) * 1000) if self._first_text_at else None,
                             "totalMs": int((now - t0) * 1000),
                         },
@@ -408,6 +410,11 @@ class WonderVerifier(FrameProcessor):
         await self.push_frame(frame, direction)
 
     async def verify(self, action: dict[str, Any], before: dict[str, Any]) -> None:
+        # Only the co-browse agent's form actions are checked against the form rules. The Guardian's actions
+        # (open the next section) change nothing on the form, and a correction spoken in its voice would have
+        # nothing to undo.
+        if self._session.role != "cobrowse":
+            return
         task = asyncio.create_task(self._verify(action, list(self._session.user_turns), before))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -516,7 +523,9 @@ class AckProcessor(FrameProcessor):
         elif isinstance(frame, LLMContextFrame):
             self._cancel()
             text = self._session.last_user_text.strip()
-            if text:
+            # The acknowledgement is a Muse Spark call; the Guardian answers with Muse Spark Open only.
+            # A language re-ask runs the same customer turn again: it was acknowledged the first time.
+            if text and self._session.role != "guardian" and not self._session.retry_turn:
                 self._task = asyncio.create_task(self._ack(text))
         await self.push_frame(frame, direction)
 

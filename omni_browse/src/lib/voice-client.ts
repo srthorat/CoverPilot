@@ -45,7 +45,7 @@ export type AgentEvent =
     }
   | { type: 'policy_doc_ready'; ok: boolean; name?: string; pages?: number; passages?: number; error?: string }
   | { type: 'agent_role'; role: 'cobrowse' | 'guardian'; name?: string }
-  | { type: 'usage'; promptTokens?: number | null; completionTokens?: number | null }
+  | { type: 'usage'; model?: string | null; promptTokens?: number | null; completionTokens?: number | null }
   | { type: 'memory'; facts: string[]; summary: string; updated_at?: number | null }
   | { type: 'memory_updated'; added: number; facts: string[]; summary?: string | null }
   | { type: 'interrupt' }

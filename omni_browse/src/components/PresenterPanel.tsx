@@ -36,6 +36,7 @@ export interface TurnRecord {
   marks?: TurnMarks;
   memoryAdded?: string[];
   agentText?: string;
+  agentModel?: string | null; // the model that answered this turn
   ttftMs?: number | null;
   totalMs?: number | null;
   wonder?: {
@@ -277,7 +278,7 @@ export function PresenterPanel({ turns, memoryFacts, agentState, stats, usage, c
             {/* Agent response */}
             {latest.agentText && (
               <div className="bg-[#0f1a2e] border border-blue-900/50 rounded-lg p-2.5 mb-2">
-                <div className="text-[10px] text-blue-400 mb-1">🤖 Muse Spark 1.3</div>
+                <div className="text-[10px] text-blue-400 mb-1">🤖 {/spark-open/i.test(latest.agentModel || '') ? 'Muse Spark Open' : 'Muse Spark 1.3'}</div>
                 <div className="text-slate-200 text-[11px] leading-relaxed">{latest.agentText}</div>
               </div>
             )}

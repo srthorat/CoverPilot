@@ -30,6 +30,19 @@ GUARDIAN_PERSONA = "rishi"
 AGENT_NAMES = {"cobrowse": "OmniCB co-browsing agent", "guardian": "Integrity Guardian"}
 
 
+def normalise_lang(requested: Any, fallback: Any = None) -> str:
+    """The session language from the offer body: a value outside LANGS (or a bad COVERPILOT_LANG) means English,
+    so a typo in the request cannot stop the session from starting."""
+    for candidate in (requested, fallback):
+        if isinstance(candidate, str) and candidate in LANGS:
+            return candidate
+    if requested is not None:
+        from loguru import logger
+
+        logger.info(f"[session] unknown lang {str(requested)[:12]!r} in the offer; using en")
+    return "en"
+
+
 def voice_for(persona: str, lang: str, accent: str) -> tuple[str, str]:
     """Return (language_code, voice_name) for Google Cloud TTS."""
     code = ("en-US" if accent == "us" else "en-IN") if lang == "en" else _LANG_CODE.get(lang, "en-IN")
@@ -61,6 +74,7 @@ class SessionState:
     policy_doc: Any = None  # KnowledgeBase over the customer's uploaded policy pages (in memory only)
     policy_name: str = ""
     memory_writer: Any = None  # the session's MemoryWriter, so Forget me can cancel its in-flight work
+    llm_model: str = ""  # the model answering now: Muse Spark for the co-browse agent, Muse Spark Open for the Guardian
     role: str = "cobrowse"  # which agent answers: "cobrowse" (fills the application) or "guardian" (reviews the document)
     policy_chunks: dict[str, Any] = field(default_factory=dict)  # id -> {total, parts} while a document arrives
 

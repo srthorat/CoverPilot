@@ -17,6 +17,12 @@ load_dotenv(_HERE / ".env", override=False)
 load_dotenv(_HERE.parent / "omni_browse" / ".env.local", override=False)
 
 
+def _real(value: str | None) -> str:
+    """A value copied unchanged from .env.example ("<workspace>--<app>", "<modal-token-id>...") counts as unset."""
+    v = (value or "").strip()
+    return "" if "<" in v else v
+
+
 @dataclass(frozen=True)
 class Settings:
     meta_api_key: str
@@ -27,6 +33,10 @@ class Settings:
     wonder_model: str
     reasoning_effort: str
     google_tts_api_key: str
+    guardian_base_url: str = ""  # Muse Spark Open (Modal): the model behind the Integrity Guardian
+    guardian_api_key: str = ""
+    guardian_model: str = "meta-models/muse-spark-open-1026"
+    guardian_provider: str = "spark-open"  # GUARDIAN_PROVIDER: "spark-open" (default) or "spark"; same switch as the web review
 
     @staticmethod
     def load() -> "Settings":
@@ -42,4 +52,8 @@ class Settings:
             wonder_model=os.getenv("META_MODEL_WONDER") or "muse-wonder-1.0",
             reasoning_effort=os.getenv("META_REASONING_EFFORT") or "low",
             google_tts_api_key=os.getenv("GOOGLE_TTS_API_KEY") or "",
+            guardian_base_url=_real(os.getenv("GUARDIAN_OPEN_BASE_URL")).rstrip("/"),
+            guardian_api_key=_real(os.getenv("GUARDIAN_OPEN_API_KEY")),
+            guardian_model=(os.getenv("GUARDIAN_OPEN_MODEL") or "meta-models/muse-spark-open-1026").strip(),
+            guardian_provider=(os.getenv("GUARDIAN_PROVIDER") or "spark-open").strip().lower(),
         )

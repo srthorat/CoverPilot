@@ -68,5 +68,6 @@ export interface GuardianResponse {
   provider: 'spark' | 'spark-open';
   model: string;
   ms: number;
+  usage?: { promptTokens: number | null; completionTokens: number | null };
   review: GuardianReview;
 }

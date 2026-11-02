@@ -76,7 +76,7 @@ function userMessage(pages: GuardianPage[], p: ProposalFacts): string {
 }
 
 function provider(): 'spark' | 'spark-open' {
-  const v = (process.env.GUARDIAN_PROVIDER || 'spark').trim().toLowerCase();
+  const v = (process.env.GUARDIAN_PROVIDER || 'spark-open').trim().toLowerCase();
   if (v !== 'spark' && v !== 'spark-open') throw new GuardianConfigError('GUARDIAN_PROVIDER must be "spark" or "spark-open"');
   return v;
 }
@@ -109,7 +109,14 @@ export function attemptTimeoutMs(which: 'spark' | 'spark-open'): number {
   return which === 'spark-open' ? 130_000 : 120_000;
 }
 
-async function sparkReviewJson(messages: ChatMessage[], timeoutMs: number): Promise<{ data: unknown; model: string }> {
+type Usage = { promptTokens: number | null; completionTokens: number | null };
+function usageOf(json: any): Usage | undefined {
+  const u = json?.usage;
+  if (!u) return undefined;
+  return { promptTokens: u.prompt_tokens ?? null, completionTokens: u.completion_tokens ?? null };
+}
+
+async function sparkReviewJson(messages: ChatMessage[], timeoutMs: number): Promise<{ data: unknown; model: string; usage?: Usage }> {
   const env = metaEnv();
   const res = await fetch(`${env.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -120,25 +127,27 @@ async function sparkReviewJson(messages: ChatMessage[], timeoutMs: number): Prom
   });
   if (!res.ok) throw new MetaApiError(res.status, await res.text());
   const json: any = await res.json();
-  return { data: parseModelJson(json.choices?.[0]?.message?.content ?? ''), model: json.model ?? env.sparkModel };
+  return { data: parseModelJson(json.choices?.[0]?.message?.content ?? ''), model: json.model ?? env.sparkModel, usage: usageOf(json) };
 }
 
-async function sparkOpenJson(messages: ChatMessage[], timeoutMs: number): Promise<{ data: unknown; model: string }> {
-  const base = process.env.GUARDIAN_OPEN_BASE_URL?.trim();
-  const key = process.env.GUARDIAN_OPEN_API_KEY?.trim();
+async function sparkOpenJson(messages: ChatMessage[], timeoutMs: number): Promise<{ data: unknown; model: string; usage?: Usage }> {
+  // A value copied unchanged from .env.example ("<workspace>--<app>", "<modal-token-id>...") counts as unset.
+  const real = (v: string | undefined) => (v && !v.includes('<') ? v.trim() : '');
+  const base = real(process.env.GUARDIAN_OPEN_BASE_URL);
+  const key = real(process.env.GUARDIAN_OPEN_API_KEY);
   const missing = [!base && 'GUARDIAN_OPEN_BASE_URL', !key && 'GUARDIAN_OPEN_API_KEY'].filter(Boolean);
-  if (missing.length) throw new GuardianConfigError(`GUARDIAN_PROVIDER=spark-open needs ${missing.join(' and ')} to be set`);
+  if (missing.length) throw new GuardianConfigError(`GUARDIAN_PROVIDER=spark-open needs ${missing.join(' and ')} to be set (replace the placeholders from .env.example)`);
   const model = process.env.GUARDIAN_OPEN_MODEL?.trim() || 'meta-models/muse-spark-open-1026';
   const res = await fetch(`${base!.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     // An 816B model on a serverless GPU can need a minute to wake up before it generates.
     signal: AbortSignal.timeout(timeoutMs),
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, temperature: 0, max_tokens: 8000, reasoning_effort: 'medium', response_format: { type: 'json_object' }, messages }),
+    body: JSON.stringify({ model, temperature: 0, max_tokens: 8000, reasoning_effort: process.env.GUARDIAN_REASONING_EFFORT?.trim() || 'low', response_format: { type: 'json_object' }, messages }),
   });
   if (!res.ok) throw new MetaApiError(res.status, await res.text()); // body stays in the server log
   const json: any = await res.json();
-  return { data: parseModelJson(json.choices?.[0]?.message?.content ?? ''), model: json.model ?? model };
+  return { data: parseModelJson(json.choices?.[0]?.message?.content ?? ''), model: json.model ?? model, usage: usageOf(json) };
 }
 
 /** One line per attempt, with sizes and a failure kind only: no document or model text. */
@@ -182,9 +191,9 @@ export async function reviewDocument(input: { pages: GuardianPage[]; proposal: P
   };
   // A model that times out, errors or returns unreadable JSON gets one more try (a cold start or a one-off slip);
   // a second failure is reported, never hidden. Configuration errors are never retried.
-  const { data, model } = await attempt(1).catch((e) => {
+  const { data, model, usage } = await attempt(1).catch((e) => {
     if (e instanceof GuardianConfigError) throw e;
     return attempt(2);
   });
-  return { provider: which, model, ms: Date.now() - t0, review: validateReview(data, pages.map((p) => p.page)) };
+  return { provider: which, model, ms: Date.now() - t0, usage, review: validateReview(data, pages.map((p) => p.page)) };
 }
