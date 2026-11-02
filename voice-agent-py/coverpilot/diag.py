@@ -89,7 +89,7 @@ def release_memory() -> float:
 
     A finished session leaves a graph of objects with reference cycles (the pipeline, its processors, two ONNX sessions,
     their thread pools). Python frees those only at its next full collection, which may be minutes away, so the process
-    grows by about 20 MB per finished session in between (see docs/LOAD_TEST.md). Collecting right after sessions end
+    grows by about 20 MB per finished session in between (see support/docs/LOAD_TEST.md). Collecting right after sessions end
     keeps the size flat. The pause is a few tens of milliseconds on the event loop."""
     t = time.perf_counter()
     gc.collect()

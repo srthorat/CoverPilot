@@ -84,6 +84,6 @@ for (const phone of PHONES) {
 }
 
 test.afterAll(() => {
-  fs.mkdirSync('../docs', { recursive: true });
-  fs.writeFileSync('../docs/mobile-layout-findings.txt', findings.length ? findings.join('\n') + '\n' : 'No sideways overflow or off-screen offenders found.\n');
+  fs.mkdirSync('../support/docs', { recursive: true });
+  fs.writeFileSync('../support/docs/mobile-layout-findings.txt', findings.length ? findings.join('\n') + '\n' : 'No sideways overflow or off-screen offenders found.\n');
 });

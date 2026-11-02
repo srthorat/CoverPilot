@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chromium, expect, test, type Page } from '@playwright/test';
 
-// Dress rehearsal of docs/DEMO_SCRIPT.md, beat by beat, against the live app and the live Meta models.
+// Dress rehearsal of support/docs/DEMO_SCRIPT.md, beat by beat, against the live app and the live Meta models.
 // Customer speech is typed into the same pipeline voice uses (the voice-in path is covered by voice.spec.ts), the
-// whole run is video recorded, and docs/rehearsal-report.md gets one row per beat with planned and actual time.
+// whole run is video recorded, and support/docs/rehearsal-report.md gets one row per beat with planned and actual time.
 // Run on its own: `npx playwright test e2e/rehearsal.spec.ts` (Chromium only). It does not depend on any other spec.
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
@@ -33,7 +33,7 @@ async function beat(name: string, planned: string, fn: () => Promise<void>) {
   rows.push({ beat: name, planned, at: (start - t0) / 1000, seconds: (Date.now() - start) / 1000, ok, note });
 }
 
-test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', async () => {
+test('REHEARSAL The 3-minute flow in support/docs/DEMO_SCRIPT.md, start to finish', async () => {
   test.setTimeout(420_000); // takes about 2.5 minutes; stop a stalled run early
   fs.rmSync(VIDEO_DIR, { recursive: true, force: true });
   const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
@@ -208,10 +208,10 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
     if (webm && fs.existsSync(webm)) {
       const mb = fs.statSync(webm).size / 1024 / 1024;
       if (mb < 25) {
-        fs.mkdirSync(path.join(ROOT, 'docs/rehearsal'), { recursive: true });
-        const dest = path.join(ROOT, 'docs/rehearsal/rehearsal.webm');
+        fs.mkdirSync(path.join(ROOT, 'support/docs/rehearsal'), { recursive: true });
+        const dest = path.join(ROOT, 'support/docs/rehearsal/rehearsal.webm');
         fs.copyFileSync(webm, dest);
-        videoNote = `docs/rehearsal/rehearsal.webm (${mb.toFixed(1)} MB)`;
+        videoNote = `support/docs/rehearsal/rehearsal.webm (${mb.toFixed(1)} MB)`;
       } else {
         videoNote = `${path.relative(ROOT, webm)} (${mb.toFixed(1)} MB, left in test-results because it is over 25 MB)`;
       }
@@ -220,7 +220,7 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
     const lines = [
       `# Dress rehearsal report (${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC)`,
       '',
-      `Follows docs/DEMO_SCRIPT.md against ${BASE} with the live Meta models. Customer speech is typed into the same pipeline voice uses (voice.spec.ts covers the microphone path). Total ${total.toFixed(0)} s of automation; the script's own pace is 180 s, because a person speaks and the models take their time.`,
+      `Follows support/docs/DEMO_SCRIPT.md against ${BASE} with the live Meta models. Customer speech is typed into the same pipeline voice uses (voice.spec.ts covers the microphone path). Total ${total.toFixed(0)} s of automation; the script's own pace is 180 s, because a person speaks and the models take their time.`,
       '',
       `Video: ${videoNote}`,
       '',
@@ -231,7 +231,7 @@ test('REHEARSAL The 3-minute flow in docs/DEMO_SCRIPT.md, start to finish', asyn
       `${rows.filter((r) => r.ok).length} of ${rows.length} beats passed.`,
       '',
     ];
-    fs.writeFileSync(path.join(ROOT, 'docs/rehearsal-report.md'), lines.join('\n'));
+    fs.writeFileSync(path.join(ROOT, 'support/docs/rehearsal-report.md'), lines.join('\n'));
   }
   const failed = rows.filter((r) => !r.ok);
   expect(failed.map((r) => `${r.beat}: ${r.note}`)).toEqual([]);

@@ -1,6 +1,6 @@
 """How many voice sessions one agent process takes, and what happens past that.
 
-Every session runs on the agent's single asyncio event loop. Measured on a 5-core container (docs/LOAD_TEST.md): up to
+Every session runs on the agent's single asyncio event loop. Measured on a 5-core container (support/docs/LOAD_TEST.md): up to
 8 fully active sessions answer in about 8 s at the median, 10 still answer, and at 12 the turns stop being answered at all.
 So the agent refuses new connections past MAX_SESSIONS (default 8) with a clear 503 instead of letting every caller
 hang. A refused visitor sees the "busy" message and can try again in a moment; sessions already running are untouched.

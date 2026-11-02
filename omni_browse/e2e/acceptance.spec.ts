@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 // The 13-item MVP acceptance scenario from features.md, run against the live app and the live Meta
 // models, plus extra checks (prompt injection through a document, failure handling). Questions are
 // typed into the same pipeline voice uses (speech is only the way in), so this runs unattended.
-// Run: pnpm e2e   (see playwright.config.ts). Results go to docs/acceptance-report-<browser>.md.
+// Run: pnpm e2e   (see playwright.config.ts). Results go to support/docs/acceptance-report-<browser>.md.
 
 // Tests share one live session and run in order; a failure does not hide the results after it.
 
@@ -205,7 +205,7 @@ test('AC-11 Pause sharing and Revoke control work immediately', async () => {
 
 test('AC-12 A failing model call changes no data (see the separate bad-key run)', async ({}, testInfo) => {
   const bad = process.env.FAILURE_URL;
-  test.skip(!bad, 'set FAILURE_URL to an instance started with an invalid Meta key (scripts/run-acceptance.sh does this)');
+  test.skip(!bad, 'set FAILURE_URL to an instance started with an invalid Meta key (support/scripts/run-acceptance.sh does this)');
   const p = await page.context().newPage();
   await p.goto(bad!);
   await p.getByRole('button', { name: /Start a new policy/ }).click();

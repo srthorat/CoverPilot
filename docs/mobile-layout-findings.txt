@@ -1,1 +1,0 @@
-No sideways overflow or off-screen offenders found.

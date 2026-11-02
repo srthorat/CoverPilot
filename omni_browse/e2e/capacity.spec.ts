@@ -4,7 +4,7 @@ import { chromium, expect, test } from '@playwright/test';
 
 // What a visitor sees when the voice agent is already carrying its limit of conversations (MAX_SESSIONS, default 8):
 // a plain "busy, try again" message, and a normal session once someone leaves. Eight sessions are held open by the
-// load client (scripts/loadtest/voice_client.py) in a throwaway container from the same image.
+// load client (support/scripts/loadtest/voice_client.py) in a throwaway container from the same image.
 //
 //   CLIENT_IMAGE=coverpilot:local BASE_URL=http://localhost:3000 npx playwright test e2e/capacity.spec.ts
 //
@@ -15,7 +15,7 @@ const IMAGE = process.env.CLIENT_IMAGE || 'coverpilot:local';
 const LIMIT = Number(process.env.EXPECTED_LIMIT || 8);
 const HOLD_SECONDS = 50;
 const NAME = 'lt-capacity-hold';
-const loadtestDir = path.resolve(__dirname, '../../scripts/loadtest');
+const loadtestDir = path.resolve(__dirname, '../../support/scripts/loadtest');
 
 function docker(...args: string[]): string {
   return execFileSync('docker', args, { encoding: 'utf8' });

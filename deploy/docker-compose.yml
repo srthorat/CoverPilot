@@ -7,7 +7,7 @@
 #                        META_MODEL_API_KEY, GOOGLE_TTS_API_KEY, TURN_*, and GUARDIAN_PROVIDER plus the
 #                        GUARDIAN_OPEN_* values when Muse Spark Open is used (see omni_browse/.env.example).
 #                        Keys are mounted read-only at run time and are never baked into the image.
-# See docs/DEPLOY.md for the full steps.
+# See support/docs/DEPLOY.md for the full steps.
 services:
   coverpilot:
     image: ${COVERPILOT_IMAGE:-coverpilot:amd64}

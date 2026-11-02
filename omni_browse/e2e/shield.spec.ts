@@ -2,16 +2,16 @@
 //
 //   SHIELD_TAG=baseline BASE_URL=http://localhost:3015 npx playwright test e2e/shield.spec.ts
 //
-// Needs an image built with NEXT_PUBLIC_ALLOW_OWN_FILES=true, the cards from tools/id-cards/build.mjs, and the
+// Needs an image built with NEXT_PUBLIC_ALLOW_OWN_FILES=true, the cards from support/tools/id-cards/build.mjs, and the
 // Meta key in .env.local (a second, independent reading of every redacted image uses it; the key is never printed).
 // Spends live model calls: roughly 13 per photo card, 5 per salary slip, plus one read per card. SHIELD_ONLY=a,b limits
-// the cards. Writes tools/id-cards/results/<tag>.json and the redacted images next to it.
+// the cards. Writes support/tools/id-cards/results/<tag>.json and the redacted images next to it.
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const CARDS = path.resolve(__dirname, '../../tools/id-cards/out');
-const RESULTS = path.resolve(__dirname, '../../tools/id-cards/results');
+const CARDS = path.resolve(__dirname, '../../support/tools/id-cards/out');
+const RESULTS = path.resolve(__dirname, '../../support/tools/id-cards/results');
 const TAG = process.env.SHIELD_TAG || 'run';
 const ONLY = (process.env.SHIELD_ONLY || '').split(',').filter(Boolean);
 
@@ -86,7 +86,7 @@ for (const edge of [
   { file: 'edge-two-pages.pdf', say: /more than one page/ },
 ]) {
   test(`edge: ${edge.file} is refused with a clear message and nothing is sent`, async ({ page }) => {
-    test.skip(!fs.existsSync(path.join(CARDS, edge.file)), 'run tools/id-cards/make-edge-pdfs.py first');
+    test.skip(!fs.existsSync(path.join(CARDS, edge.file)), 'run support/tools/id-cards/make-edge-pdfs.py first');
     const sent: string[] = [];
     page.on('request', (r) => {
       if (/\/api\/(sam|locate-ids|ocr)/.test(r.url())) sent.push(r.url());

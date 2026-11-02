@@ -39,8 +39,17 @@ pnpm-debug.log*
 .superpowers/
 .gstack/
 En-Notified-*.pdf
-docs/rehearsal/
+support/docs/rehearsal/
 omni_browse/test-results/
 proposed-policy-draft-*.pdf
-tools/id-cards/results/
+support/tools/id-cards/results/
 .local-tools/
+
+# Local data, caches and build output
+voice-agent-py/data/
+.pytest_cache/
+.ruff_cache/
+*.tsbuildinfo
+omni_browse/playwright-report/
+/*.pdf
+support/private/*.pdf

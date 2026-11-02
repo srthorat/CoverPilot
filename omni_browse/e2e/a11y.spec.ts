@@ -5,7 +5,7 @@ import { fillStep1, finishApplication, startNewPolicy } from './helpers';
 
 // Accessibility: an axe scan (WCAG 2.0/2.1 A and AA) of every screen the demo shows, plus a keyboard-only pass
 // through Step 1 and the Resume session banner. Serious and critical violations fail the run; all of them are
-// written to docs/accessibility-report.md. Automated scans find roughly a third of real problems: this is not an
+// written to support/docs/accessibility-report.md. Automated scans find roughly a third of real problems: this is not an
 // audit and not a conformance claim. Run: npx playwright test e2e/a11y.spec.ts   (BASE_URL, Chromium)
 
 test.describe.configure({ mode: 'serial' });
@@ -150,8 +150,8 @@ test.afterAll(() => {
     ...rows.map((r) => `| ${r.screen} | ${r.id} | ${r.impact} | ${r.nodes} | ${r.help.replace(/\|/g, '/')} | \`${r.sample.replace(/\|/g, '/')}\` |`),
     '',
   ];
-  fs.mkdirSync('../docs', { recursive: true });
-  fs.writeFileSync(process.env.A11Y_REPORT || '../docs/accessibility-report.md', lines.join('\n'));
+  fs.mkdirSync('../support/docs', { recursive: true });
+  fs.writeFileSync(process.env.A11Y_REPORT || '../support/docs/accessibility-report.md', lines.join('\n'));
 });
 
 test('A11Y-99 No serious or critical violations on any scanned screen', async () => {

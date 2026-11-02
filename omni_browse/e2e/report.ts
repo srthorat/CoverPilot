@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 
-// Writes docs/acceptance-report.md: one row per acceptance item, with the real outcome of the run.
+// Writes support/docs/acceptance-report.md: one row per acceptance item, with the real outcome of the run.
 export default class AcceptanceReport implements Reporter {
   private rows: Array<{ id: string; title: string; status: string; ms: number; note: string }> = [];
 
@@ -27,8 +27,8 @@ export default class AcceptanceReport implements Reporter {
       ...this.rows.map((r) => `| ${r.id} | ${r.title} | ${r.status} | ${(r.ms / 1000).toFixed(1)} | ${r.note.replace(/\|/g, '/')} |`),
       '',
     ];
-    fs.mkdirSync('../docs', { recursive: true });
+    fs.mkdirSync('../support/docs', { recursive: true });
     // Acceptance items keep their own report; the engine, phone and accessibility checks get a separate one.
-    fs.writeFileSync(`../docs/${acceptance ? 'acceptance-report' : 'extra-checks-report'}-${browser}.md`, lines.join('\n'));
+    fs.writeFileSync(`../support/docs/${acceptance ? 'acceptance-report' : 'extra-checks-report'}-${browser}.md`, lines.join('\n'));
   }
 }
