@@ -119,7 +119,7 @@ A real customer with think time and a human reading pace will take longer; this 
 | Page under load | 214 requests/s at 100 concurrent; vault and rate limits held |
 | Identity shield on 14 fictional card layouts (bilingual, rotated, low/high resolution, phone photos, PDFs, three payslips) | No number left readable without being caught: 11 clean, 1 PDF refused with a retake message, 2 payslips still readable but detected by the leak probe and the scan not used |
 | Prompt injection (hostile text in a document) | 9 of 9 live cases did not steer the agent; the same 9 passed with the prompt rule removed, so the rule is defence in depth |
-| Unit tests | 104 (web) + 270 (voice agent), run in CI on every push |
+| Unit tests | 104 (web) + 283 (voice agent), run in CI on every push |
 
 ## Architecture
 
@@ -261,7 +261,7 @@ voice-agent-py/         Pipecat voice agent
   bot.py                pipeline, set_mode, LLM switch, WebRTC offer endpoint
   coverpilot/           meta_stt, processors, prompt, modes, knowledge, memory, logsafe, …
   knowledge/            the two agents' knowledge bases, with SOURCES*.md
-  tests/                270 unit tests (no network)
+  tests/                283 unit tests (no network)
 deploy/                 docker-compose.yml, Caddyfile, deploy.sh (build locally, ship over SSH)
 docker/                 entrypoint.sh, healthcheck.py
 Dockerfile              multi-stage: web build, then Python runtime, non-root, keys never baked in
@@ -342,7 +342,7 @@ The script builds the image locally for the target platform, streams it over SSH
 cd omni_browse && pnpm test:unit                          # 104 unit tests (validators, checks, masking, rate limit, …)
 cd omni_browse && pnpm exec tsc --noEmit                  # type check
 cd voice-agent-py && uv run --with pytest python -m pytest -q tests/ --ignore=tests/harness_offline.py --ignore=tests/integration
-                                                          # 270 unit tests (STT rotation and reconnect, action filter, mode switch, log scrubbing, …)
+                                                          # 283 unit tests (STT rotation and reconnect, action filter, mode switch, log scrubbing, …)
 cd omni_browse && BASE_URL=http://localhost:3000 pnpm e2e  # 22 acceptance checks against a running instance (live models; costs API calls)
 cd voice-agent-py && uv run --with pytest python -m pytest -q tests/integration -s   # live prompt-injection test
 ```
