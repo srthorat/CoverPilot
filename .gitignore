@@ -43,7 +43,6 @@ support/docs/rehearsal/
 omni_browse/test-results/
 proposed-policy-draft-*.pdf
 support/tools/id-cards/results/
-.local-tools/
 
 # Local data, caches and build output
 voice-agent-py/data/
