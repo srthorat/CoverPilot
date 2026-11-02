@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { sparkJson, MetaApiError, ChatMessage } from '@/lib/meta';
-import { cleanAddress, cleanDob, cleanGender, cleanName, cleanPayPeriod, cleanPincode, parseRupees } from '@/lib/ocr-clean';
+import { cleanAddress, cleanDob, cleanGender, cleanName, cleanPayPeriod, cleanPincode, parseRupees, cleanCity, cityFromAddress } from '@/lib/ocr-clean';
 import { guard, LIMITS, readJsonLimited } from '@/lib/rate-limit';
 import { leakProbeMessages, partialLeaks } from '@/lib/leak-probe';
 
@@ -29,6 +29,7 @@ interface OcrFields {
   idNumber: string | null;
   address: string | null;
   pincode: string | null;
+  city?: string | null;
   fatherName: string | null;
   // salary slip
   employerName?: string | null;
@@ -112,6 +113,8 @@ export async function POST(req: NextRequest) {
       fatherName: cleanName(data.fatherName),
       address: cleanAddress(data.address),
       pincode: cleanPincode(data.pincode),
+      // The city comes from the address the reader already returns (nothing extra is read from the card).
+      city: cleanCity(data.city) ?? cityFromAddress(data.address),
       idNumberMasked: maskId(data.idNumber ?? null, documentType === 'aadhaar' ? 'aadhaar' : 'pan'),
       // income proof (salary slip); account identifiers are masked before leaving the server
       employerName: cleanName(data.employerName),

@@ -105,7 +105,7 @@ const GUIDANCE_CONTENT: Record<
       mr: 'धूम्रपान / तंबाखू सवय मार्गदर्शन',
     },
     advice: {
-      en: 'If you have not consumed cigarettes, beedis, or nicotine products in the last 12 months, choose "Non-Smoker"to unlock an instant 20% health discount for your entire policy tenure.',
+      en: 'If you have not consumed cigarettes, beedis, or nicotine products in the last 12 months, choose "Non-Smoker" to unlock an instant 20% health discount for your entire policy tenure.',
       hi: 'यदि आपने पिछले 12 महीनों में सिगरेट, बीड़ी या निकोटीन का सेवन नहीं किया है, तो "Non-Smoker"चुनें और पूरे 30 साल के लिए 20% की सीधी छूट पाएं।',
       mr: 'जर तुम्ही मागील 12 महिन्यांत सिगारेट, विडी किंवा तंबाखूचे सेवन केले नसेल, तर "Non-Smoker"निवडा आणि संपूर्ण पॉलिसीसाठी 20% थेट सूट मिळवा.',
     },
@@ -336,7 +336,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const [chatMessages, setChatMessages] = useState<Array<{ id?: number; sender: 'user' | 'agent'; text: string; time: string }>>([
     {
       sender: 'agent',
-      text: "Welcome to NexaSure! I am OmniCB Agent. When you are ready, click 'Accept and start co-browsing'to begin our secure live voice session.",
+      text: "Welcome to NexaSure! I am OmniCB Agent. When you are ready, click 'Accept and start co-browsing' to begin our secure live voice session.",
       time: 'Just now',
     },
   ]);
@@ -403,7 +403,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   // Step 2 needs a decision: at least one rider, or an explicit "no riders".
   const [noRiders, setNoRiders] = useState(false);
   // A document never overwrites what the customer typed: a difference is shown and the customer picks.
-  type DocDiscrepancy = { field: 'fullName' | 'dob' | 'pincode' | 'gender' | 'annualIncome'; label: string; typed: string; fromDocument: string; source: string };
+  type DocDiscrepancy = { field: 'fullName' | 'dob' | 'pincode' | 'city' | 'gender' | 'annualIncome'; label: string; typed: string; fromDocument: string; source: string };
   // Material answers the agent entered (income, smoking status, nominees) wait for the customer's click:
   // Confirm keeps them, Undo restores the previous value. A spoken "yes" never counts, because speech
   // recognition can be wrong. Typing or choosing the value yourself needs no approval.
@@ -739,6 +739,24 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCoBrowsingConnected]);
 
+  // The microphone or the agent did not start: take back the "connected" state set optimistically above, so the page
+  // does not claim a live session it does not have. The customer can click Accept again.
+  const abortConnect = (message: string) => {
+    setIsCoBrowsingConnected(false);
+    isCoBrowsingConnectedRef.current = false;
+    setIsScreenSharing(false);
+    setScreenControlStatus('revoked');
+    welcomeRef.current = { ...welcomeRef.current, spoken: true };
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender: 'agent',
+        text: `Voice agent did not start: ${message} Click "Accept and start co-browsing" to try again.`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  };
+
   // Establish the live WebRTC session with the voice agent
   const connectCoBrowsingSession = async () => {
     const resuming = idlePaused;
@@ -774,7 +792,11 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         welcomeRef.current.greetingDone = true;
         maybeSpeakAgentWelcome();
       });
-      await startVoiceListening(selectedLanguage);
+      const startError = await startVoiceListening(selectedLanguage);
+      if (startError) {
+        abortConnect(startError);
+        return;
+      }
       setChatMessages((prev) => [
         ...prev,
         {
@@ -785,6 +807,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       ]);
     } catch (e) {
       console.error('Failed to start the live session:', e);
+      abortConnect(`${e instanceof Error ? e.message : String(e)}.`);
     } finally {
       setIsConnecting(false);
     }
@@ -900,7 +923,19 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     }
   };
 
-  // The annual income field is a range dropdown; map an exact figure (OCR or spoken) onto it.
+  // The annual income field is a range dropdown (its value is a code like '15L-20L'); the labels match the <option>s.
+  const INCOME_RANGE_LABELS: Record<string, string> = {
+    '5L-10L': '₹5,00,000 - ₹10,00,000',
+    '10L-15L': '₹10,00,000 - ₹15,00,000',
+    '15L-20L': '₹15,00,000 - ₹20,00,000',
+    '20L-35L': '₹20,00,000 - ₹35,00,000',
+    '35L+': 'Above ₹35,00,000',
+  };
+  const incomeRangeLabel = (code: string): string => INCOME_RANGE_LABELS[code] || code;
+  // Critical-illness cover for the chosen tier, same figures as the rider card and the draft summary.
+  const ciCoverLabel = ciTier === 'tier1' ? '₹10,00,000' : ciTier === 'tier3' ? '₹50,00,000' : '₹25,00,000';
+
+  // Map an exact figure (OCR or spoken) onto the income range dropdown.
   const incomeRangeFor = (raw: string): string => {
     const known = ['5L-10L', '10L-15L', '15L-20L', '20L-35L', '35L+'];
     if (known.includes(raw)) return raw;
@@ -1115,7 +1150,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     if (!agent || !agent.isOpen) {
       setChatMessages((prev) => [
         ...prev,
-        { sender: 'agent', text: 'Voice agent session is not connected. Click "Accept and start co-browsing"first.', time: stampNow() },
+        { sender: 'agent', text: 'Voice agent session is not connected. Click "Accept and start co-browsing" first.', time: stampNow() },
       ]);
       return;
     }
@@ -1268,7 +1303,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
           setChatMessages((prev) => [...prev, { sender: 'agent', text: `Your policy "${ev.name}" is loaded (${ev.pages} pages). Ask me about it and I will tell you which page the answer is on.`, time: stampNow() }]);
         break;
       case 'usage':
-        recordModel(voiceTelemetryRef.current.sparkModel || 'Muse Spark', 'agent', undefined, ev);
+        recordModel(ev.model || voiceTelemetryRef.current.sparkModel || 'Muse Spark', 'agent', undefined, ev);
         break;
       case 'agent_done':
         recordModel(ev.telemetry?.llmModel || voiceTelemetryRef.current.sparkModel || 'Muse Spark', 'agent', ev.telemetry?.totalMs ?? 0);
@@ -1289,7 +1324,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         setTurns((prev) => {
           if (!prev.length) return prev;
           const last = prev[prev.length - 1];
-          return [...prev.slice(0, -1), { ...last, agentText: ev.text || last.agentText, ttftMs: ev.telemetry?.ttftMs ?? null, totalMs: ev.telemetry?.totalMs ?? null }];
+          return [...prev.slice(0, -1), { ...last, agentText: ev.text || last.agentText, agentModel: ev.telemetry?.llmModel ?? last.agentModel, ttftMs: ev.telemetry?.ttftMs ?? null, totalMs: ev.telemetry?.totalMs ?? null }];
         });
         break;
       case 'memory':
@@ -1838,7 +1873,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         }
       }
       const checks = runChecks(response.review.facts, facts, { compareApplication: draftHasContent });
-      if (!cached) recordModel(response.model, 'document review', response.ms); // a reused review made no model call
+      if (!cached) recordModel(response.model, 'document review', response.ms, response.usage); // a reused review made no model call
       setGuardianSection(0);
       setReviewedSections([]);
       setGuardianReview((r) => ({ status: 'done', response, checks, history: [...r.history, { at: Date.now(), issues: countIssues(checks), model: response.model }] }));
@@ -1945,7 +1980,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     const cur = profileRef.current as Record<string, any>;
     const norm = (field: string, v: string) =>
       field === 'fullName' ? v.toUpperCase().replace(/[^A-Z]/g, '') : field === 'gender' ? v.trim().charAt(0).toUpperCase() : v.replace(/\W/g, '').toUpperCase();
-    const labels: Record<string, string> = { fullName: 'Name', dob: 'Date of birth', pincode: 'PIN code', gender: 'Gender', annualIncome: 'Annual income' };
+    const labels: Record<string, string> = { fullName: 'Name', dob: 'Date of birth', pincode: 'PIN code', city: 'City', gender: 'Gender', annualIncome: 'Annual income' };
     const patch: Record<string, string> = {};
     const found: DocDiscrepancy[] = [];
     for (const [field, value] of Object.entries(incoming)) {
@@ -2127,6 +2162,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         dob: string | null;
         gender: string | null;
         pincode: string | null;
+        city?: string | null;
         idNumberMasked: string | null;
       };
       const summary = [
@@ -2157,7 +2193,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         // A sample's ID number is known to the app; a real upload's number was hidden before reading,
         // so the customer types it into Identity records.
         if (!uploadUrl) setIdFromSample((prev) => ({ ...prev, [type]: true }));
-        reconcileDocument(`${label} card`, { fullName: f.fullName || '', dob: f.dob || '', pincode: f.pincode || '', gender });
+        reconcileDocument(`${label} card`, { fullName: f.fullName || '', dob: f.dob || '', pincode: f.pincode || '', city: f.city || '', gender });
         if (!uploadUrl) setProfile((prev) => ({ ...prev, ...(type === 'pan' ? { panNumber: SAMPLE_IDS.pan } : { aadhaarNumber: SAMPLE_IDS.aadhaar }) }));
       });
     } catch (e: any) {
@@ -2185,13 +2221,13 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       applicant: {
         legalName: profile.fullName || 'Rahul Shankar Sharma',
         dateOfBirth: profile.dob || '14/08/1992',
-        annualIncome: profile.annualIncome ? `₹${Number(profile.annualIncome).toLocaleString()}` : '₹18,00,000',
+        annualIncome: profile.annualIncome ? incomeRangeLabel(profile.annualIncome) : 'not entered',
         tobaccoUser: profile.isSmoker ? 'Yes' : 'No (20% Lifetime Non-Smoker Discount Active)',
       },
       coverageSchedule: {
         baseSumAssured: baseSumAssured === '1cr' ? '₹1.00 Crore' : baseSumAssured === '1.5cr' ? '₹1.50 Crore' : '₹2.00 Crore',
         monthlyBasePremium: `₹${currentMonthlyBase}`,
-        criticalIllnessRider: selectedRiders.criticalIllness ? 'Active (₹25,00,000 cover, Clause 4.2)' : 'Not Opted',
+        criticalIllnessRider: selectedRiders.criticalIllness ? `Active (${ciCoverLabel} cover, Clause 4.2)` : 'Not Opted',
         waiverOfPremiumRider: selectedRiders.waiverOfPremium ? 'Active (30-year premium waiver, Clause 6.1)' : 'Not Opted',
         totalMonthlyPayable: `₹${totalMonthlyPayable}/month`,
       },
@@ -2268,8 +2304,9 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     if (micDecibelTextRef.current) micDecibelTextRef.current.textContent = gated ? 'muted while agent speaks' : `${pct}%`;
   };
 
-  const startVoiceListening = async (langOverride?: 'en' | 'hi' | 'mr') => {
-    if (typeof window === 'undefined' || isListeningRef.current) return;
+  // Resolves to '' when the agent is listening, otherwise to the message shown to the customer (the caller decides what to undo).
+  const startVoiceListening = async (langOverride?: 'en' | 'hi' | 'mr'): Promise<string> => {
+    if (typeof window === 'undefined' || isListeningRef.current) return '';
     setMicPermissionError(null);
     setVoiceTranscriptLive('');
     setSessionTts(ttsProviderRef.current);
@@ -2294,17 +2331,18 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       setMicPermissionError(null);
       setIsListeningVoice(true);
       playChime();
+      return '';
     } catch (err: any) {
       clearTimeout(micHint);
       isListeningRef.current = false;
       agentRef.current = null;
       client.stop();
       const denied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
-      setMicPermissionError(
-        denied
-          ? 'Microphone permission was denied. Please allow microphone access in your browser URL bar.'
-          : `Could not start the voice agent: ${err?.message || err}`
-      );
+      const message = denied
+        ? 'Microphone permission was denied. Please allow microphone access in your browser URL bar.'
+        : `Could not start the voice agent: ${err?.message || err}.`;
+      setMicPermissionError(message);
+      return message;
     }
   };
 
@@ -3029,9 +3067,32 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
   // The live form state is part of the LLM prompt: push it to the agent whenever it changes,
   // unless the customer paused sharing.
+  const screenStateTimer = useRef<number | null>(null);
+  const screenStateKeyRef = useRef('');
   useEffect(() => {
     if (isSharingPaused) return;
-    agentRef.current?.sendScreenState(getLiveScreenSnapshot());
+    // Typing (profile, nominee fields, focus) is coalesced for 300 ms so a full snapshot is not sent on every keystroke.
+    // Anything else (step, Confirm/Undo, discrepancies, checkout, Guardian progress, sharing resumed) is sent at once:
+    // the agent must see a Confirm the customer pressed before its next turn, and an immediate send carries the latest typing too.
+    const promptKey = JSON.stringify([
+      activeStep, baseSumAssured, selectedRiders, underwriting, ciTier, atpdOption, lifeStageEscalator, terminalIllnessCover,
+      pendingApprovals.map((p) => [p.key, p.applied]), docDiscrepancies, esignValid, paymentValid, showTermsDrawer, highlightedClause,
+      mode, guardianSection, reviewedSections, guardianReview.status, guardianReview.checks, noRiders,
+    ]);
+    const send = () => {
+      screenStateTimer.current = null;
+      agentRef.current?.sendScreenState(getLiveScreenSnapshot());
+    };
+    if (screenStateTimer.current !== null) window.clearTimeout(screenStateTimer.current);
+    if (promptKey !== screenStateKeyRef.current) {
+      screenStateKeyRef.current = promptKey;
+      send();
+      return;
+    }
+    screenStateTimer.current = window.setTimeout(send, 300);
+    return () => {
+      if (screenStateTimer.current !== null) window.clearTimeout(screenStateTimer.current);
+    };
     // Everything in getLiveScreenSnapshot() must be listed below, or the agent keeps working from stale state: it kept
     // saying a Confirm was pending after the customer had pressed it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3053,7 +3114,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     `Cover: ${baseSumAssured === '1cr' ? '₹1 Cr' : baseSumAssured === '1.5cr' ? '₹1.5 Cr' : '₹2 Cr'}`,
     `Riders: ${[selectedRiders.criticalIllness && 'Critical Illness', selectedRiders.accidentalDeath && 'Accidental', selectedRiders.waiverOfPremium && 'Waiver', selectedRiders.hospitalCash && 'Hospital Cash'].filter(Boolean).join(', ') || 'none'}`,
     `Name: ${profile.fullName || '—'} · DOB: ${profile.dob || '—'}`,
-    `Income: ${profile.annualIncome ? `₹${Number(profile.annualIncome).toLocaleString('en-IN')}` : '—'} · Pincode: ${profile.pincode || '—'}`,
+    `Income: ${profile.annualIncome ? incomeRangeLabel(profile.annualIncome) : '—'} · Pincode: ${profile.pincode || '—'}`,
     `Nominees: ${nomination.primaryName ? nomineeSummary : '—'}`,
   ];
   const agentFrameLabel = isSharingPaused
@@ -3843,7 +3904,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
 
               {kycRedaction && (
-                <div className={`${kycPanelOpen ? 'p-3' : 'px-3 py-1'} rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2`}>
+                // data-sensitive: this panel shows the original card, so the form screenshot sent to the agent leaves it out.
+                <div data-sensitive="true" className={`${kycPanelOpen ? 'p-3' : 'px-3 py-1'} rounded-xl bg-slate-50 text-slate-800 border border-slate-200 flex flex-col gap-2`}>
                   <button
                     type="button"
                     onClick={() => {
@@ -6086,8 +6148,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {[
-                        { name: 'Muse Spark 1.3', tag: 'Meta Model API', does: 'Reads the form state, a screenshot of the form and the passages found for the question, answers in English, Hindi or Marathi and returns one allowed action.', role: 'Replies for both agents; reads documents after the private parts are hidden; finds ID numbers on blurred copies; writes underwriter case notes.' },
-                        { name: 'Muse Spark Open', tag: 'Open weights, served on Modal', does: 'Reads a whole masked policy document in one call and returns its sections, coverage, exclusions, the facts it states and questions to put to the insurer.', role: 'Integrity Guardian document review only. It is not on the live voice path, and if it is unavailable the review shows an error.' },
+                        { name: 'Muse Spark 1.3', tag: 'Meta Model API', does: 'Reads the form state, a screenshot of the form and the passages found for the question, answers in English, Hindi or Marathi and returns one allowed action.', role: 'Replies for the OmniCB co-browse agent; reads documents after the private parts are hidden; finds ID numbers on blurred copies; writes underwriter case notes.' },
+                        { name: 'Muse Spark Open', tag: 'Open weights, served on Modal', does: 'Reads a whole masked policy document in one call and returns its sections, coverage, exclusions, the facts it states and questions to put to the insurer.', role: 'Everything the Integrity Guardian does: the document review and its spoken answers. The co-browse agent does not use it, and if it is unavailable the Guardian shows an error.' },
                         { name: 'Muse Wonder', tag: 'Meta Model API', does: 'Checks each action the agent took against what the customer said: approve, amend, reject, or ask for one more detail. Rejected actions are reverted.', role: 'Action verifier, and the narrative in the audit certificate.' },
                         { name: 'Muse Voice Transcribe', tag: 'Meta Model API', does: 'Real-time speech to text for English, Hindi and Marathi from the customer microphone.', role: 'Customer voice in. The session is reopened before its 60 minute limit.' },
                         { name: 'SAM 3.1', tag: 'Meta Model API', does: 'Finds the photo, signature and QR code on heavily blurred copies of an ID card.', role: 'Privacy shield: the original image stays in the browser and the browser hides those areas before anything reads the card.' },

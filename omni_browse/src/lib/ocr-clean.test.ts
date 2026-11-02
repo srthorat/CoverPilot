@@ -49,3 +49,12 @@ test('amounts that are not plain numbers are null, never guessed', () => {
     assert.equal(parseRupees(bad as unknown), null, String(bad));
   }
 });
+
+test('the city comes from the part of the address before the state', async () => {
+  const { cityFromAddress } = await import('./ocr-clean.ts');
+  assert.equal(cityFromAddress('402, Sea Breeze Apartments, Marine Drive, Churchgate, Mumbai, Maharashtra - 400001'), 'Mumbai');
+  assert.equal(cityFromAddress('12 MG Road, Pune, Maharashtra 411038'), 'Pune');
+  assert.equal(cityFromAddress('Mumbai'), null);
+  assert.equal(cityFromAddress(null), null);
+  assert.equal(cityFromAddress('1 <script>, alert(1), x, y'), null);
+});

@@ -21,6 +21,17 @@ export const cleanName = (v: unknown) => {
 export const cleanDob = (v: unknown) => text(v, /^\d{2}\/\d{2}\/\d{4}$/);
 export const cleanPincode = (v: unknown) => text(v, /^\d{6}$/);
 export const cleanPayPeriod = (v: unknown) => text(v, /^[A-Za-z0-9][A-Za-z0-9 /-]{0,29}$/);
+export const cleanCity = (v: unknown) => text(v, /^[\p{L}\p{M} .'’-]{2,40}$/u);
+/** The city from an Indian address that ends "..., <city>, <state> - <PIN>": the part before the state. Null if it cannot be told. */
+export function cityFromAddress(address: unknown): string | null {
+  if (typeof address !== 'string') return null;
+  const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 3) return null; // too short to tell a city from a street
+  const last = parts[parts.length - 1];
+  const hasState = /[A-Za-z]/.test(last) && (/\d{6}/.test(last) || parts.length > 3);
+  const candidate = hasState ? parts[parts.length - 2] : parts[parts.length - 1];
+  return cleanCity(candidate.replace(/\b\d{6}\b/g, '').trim());
+}
 export const cleanAddress = (v: unknown) => text(v, /^[\p{L}\p{M}\p{N} ,.'’/#()-]{1,160}$/u);
 
 export function cleanGender(v: unknown): 'Male' | 'Female' | null {
