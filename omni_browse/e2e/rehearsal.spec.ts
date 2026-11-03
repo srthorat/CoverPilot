@@ -47,7 +47,7 @@ test('REHEARSAL The 3-minute flow in support/docs/DEMO_SCRIPT.md, start to finis
   currentPage = page;
   page.setDefaultTimeout(25_000); // a missing element must fail its beat quickly, not wait out the whole test
 
-  const agentLines = async () => [...(await page.evaluate(() => document.body.innerText)).matchAll(/^OmniCB: (.+)$/gm)].map((m) => m[1]);
+  const agentLines = async () => [...(await page.evaluate(() => document.body.innerText)).matchAll(/^(?:OmniCB|Integrity Guardian): (.+)$/gm)].map((m) => m[1]);
   const closeDrawer = async () => {
     const close = page.getByRole('button', { name: 'Close Drawer' });
     for (let i = 0; i < 3 && (await close.isVisible().catch(() => false)); i++) {

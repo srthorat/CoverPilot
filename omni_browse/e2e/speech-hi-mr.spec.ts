@@ -146,7 +146,7 @@ for (const lang of ['hi', 'mr'] as const) {
         await expect(page.getByText(/Live session connected/)).toBeVisible({ timeout: 60_000 });
 
         const transcripts = async () => [...(await page.evaluate(() => document.body.innerText)).matchAll(/You[^\n"]*"([^"\n]+)"/g)].map((m) => m[1]);
-        const replies = async () => [...(await page.evaluate(() => document.body.innerText)).matchAll(/^OmniCB: (.+)$/gm)].map((m) => m[1]);
+        const replies = async () => [...(await page.evaluate(() => document.body.innerText)).matchAll(/^(?:OmniCB|Integrity Guardian): (.+)$/gm)].map((m) => m[1]);
         const baseline = (await replies()).length;
 
         let heard: string[] = [];

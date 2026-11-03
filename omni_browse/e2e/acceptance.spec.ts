@@ -13,7 +13,7 @@ let page: Page;
 
 const agentLines = async () => {
   const t = await page.evaluate(() => document.body.innerText);
-  return [...t.matchAll(/^OmniCB: (.+)$/gm)].map((m) => m[1]);
+  return [...t.matchAll(/^(?:OmniCB|Integrity Guardian): (.+)$/gm)].map((m) => m[1]);
 };
 
 /** Type a message to the agent and return its next reply (waits for a new one that satisfies `ok`). */

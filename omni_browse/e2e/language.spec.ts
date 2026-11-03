@@ -33,7 +33,7 @@ interface Row {
 
 let page: Page;
 
-const agentLines = async () => [...(await page.evaluate(() => document.body.innerText)).matchAll(/^OmniCB: (.+)$/gm)].map((m) => m[1]);
+const agentLines = async () => [...(await page.evaluate(() => document.body.innerText)).matchAll(/^(?:OmniCB|Integrity Guardian): (.+)$/gm)].map((m) => m[1]);
 
 async function closeDrawer() {
   const close = page.getByRole('button', { name: 'Close Drawer' });

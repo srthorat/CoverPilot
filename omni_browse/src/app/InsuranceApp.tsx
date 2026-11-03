@@ -346,6 +346,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   };
   // Which agent a transcript line came from decides its label; lines without a role predate the two-agent split and are OmniCB's.
   const agentLabel = (role?: 'cobrowse' | 'guardian') => (role === 'guardian' ? 'Integrity Guardian' : 'OmniCB Agent');
+  // Short speaker name put in front of a live transcript line, for whichever agent is speaking right now.
+  const agentShort = () => (modeRef.current === 'guardian' ? 'Integrity Guardian' : 'OmniCB');
   const [chatMessages, setChatMessages] = useState<Array<{ id?: number; sender: 'user' | 'agent'; role?: 'cobrowse' | 'guardian'; text: string; time: string }>>([
     {
       sender: 'agent',
@@ -1255,13 +1257,13 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         break;
       case 'agent_ack':
         agentTextRef.current = `${ev.text} `;
-        upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current}`);
+        upsertAgentMessage(`${devRef.current ? `[${agentShort()} • Muse Spark]` : agentShort()}: ${agentTextRef.current}`);
         patchLastTurn((last) => ({ ackMs: ev.ms ?? null, marks: { ...last.marks, ack: Date.now() } }));
         break;
       case 'agent_text':
         if (!agentTextRef.current) markLastTurn('firstToken');
         agentTextRef.current += ev.delta;
-        upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current}`);
+        upsertAgentMessage(`${devRef.current ? `[${agentShort()} • Muse Spark]` : agentShort()}: ${agentTextRef.current}`);
         break;
       case 'action': {
         latestRef.current.applyAction(ev);
@@ -1334,8 +1336,8 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         if (ev.text)
           upsertAgentMessage(
             devRef.current
-              ? `[OmniCB • ${ev.telemetry?.llmModel || 'Muse Spark'}${ev.telemetry?.servedFrom?.startsWith('prediction') ? ' • pre-answered' : ''}]: ${ev.text}`
-              : `OmniCB: ${ev.text}`
+              ? `[${agentShort()} • ${ev.telemetry?.llmModel || 'Muse Spark'}${ev.telemetry?.servedFrom?.startsWith('prediction') ? ' • pre-answered' : ''}]: ${ev.text}`
+              : `${agentShort()}: ${ev.text}`
           );
         setVoiceTelemetry((t) => ({
           ...t,
@@ -1378,7 +1380,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         break;
       case 'interrupt':
         setSessionStats((s) => ({ ...s, interrupts: s.interrupts + 1 }));
-        if (agentTextRef.current) upsertAgentMessage(`${devRef.current ? '[OmniCB • Muse Spark]' : 'OmniCB'}: ${agentTextRef.current} (interrupted)`);
+        if (agentTextRef.current) upsertAgentMessage(`${devRef.current ? `[${agentShort()} • Muse Spark]` : agentShort()}: ${agentTextRef.current} (interrupted)`);
         break;
       case 'error':
         setVoiceTelemetry((t) => ({ ...t, lastError: ev.message }));
@@ -3563,7 +3565,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                   : 'bg-slate-100 text-slate-600 border-slate-200'
               }`}>
                 <span></span>
-                <span>Control: {screenControlStatus === 'granted' ? 'OmniCB Agent Active' : 'User Exclusive'}</span>
+                <span>Control: {screenControlStatus === 'granted' ? `${agentLabel(mode)} Active` : 'User Exclusive'}</span>
               </div>
 
               {/* Pause / Resume Button */}
@@ -6506,7 +6508,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
 
               {/* Quick Voice Question Prompts */}
               <div className="flex flex-wrap gap-1.5 items-center">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Ask OmniCB:</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Ask {agentLabel(mode)}:</span>
                 {[
                   'What is the 30-day Free-Look?',
                   'What is Section 45?',
@@ -6571,7 +6573,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                       }}
                       className="text-[11px] font-bold text-[#582be8] hover:underline flex items-center gap-1 pt-1"
                     >
-                      <span>Hear OmniCB Voice Explanation</span>
+                      <span>Hear {agentLabel(mode)} Voice Explanation</span>
                       <span>→</span>
                     </button>
                   </div>
