@@ -6,7 +6,7 @@
 *A verifiable agent: every action is typed and allow-listed, a second Meta model checks each one and a rejected one is reverted, deterministic code does the comparisons the model must not, and the browser confirms what actually changed.*
 *Built for the Meta Global AI Developer Hackathon 2026, problem statement "Build for Your World".*
 
-**Live demo:** [coverpilot.duckdns.org](https://coverpilot.duckdns.org) (Chrome, microphone, sample documents only) · **Presenter view:** [/presenter](https://coverpilot.duckdns.org/presenter) · **Demo video:** _link added at submission_
+**Live demo:** [coverpilot.veloxpro.in](https://coverpilot.veloxpro.in) (Chrome, microphone, sample documents only) · **Presenter view:** [/presenter](https://coverpilot.veloxpro.in/presenter) · **Demo video:** _link added at submission_
 
 > **Everything here is a demo.** The insurer (NexaSure), its policy documents, UIN, policy numbers and people are fictional. The sample documents are marked as such, the e-signature is a typed name and the payment moves no money. Nothing in this project is an offer of insurance, tax advice or medical advice. The demo build works on the bundled sample documents only (see [Demo build](#demo-build-and-own-files)).
 
@@ -32,7 +32,7 @@
 
 ## For judges: three minutes with the live demo
 
-**Click path (about 90 seconds, Chrome, microphone allowed).** Open [coverpilot.duckdns.org](https://coverpilot.duckdns.org) → **Start a new policy** → **Accept and start co-browsing** → say *"use the sample documents"* and tap **Sample PAN Card**, **Masked Aadhaar**, **Salary Slip** when asked → say *"I am a non-smoker"* and press **Confirm** on the card that appears → at step 5 press **Review it with Integrity Guardian** → **Run Integrity Guardian** → ask it *"what is the grace period?"* To see it catch problems, go back to the opening screen, pick **Review a policy** and load **Sample proposed policy (with issues)**: seven findings, each with a page. The presenter view (`/presenter`) shows, live, which model answered each turn and the tokens it used.
+**Click path (about 90 seconds, Chrome, microphone allowed).** Open [coverpilot.veloxpro.in](https://coverpilot.veloxpro.in) → **Start a new policy** → **Accept and start co-browsing** → say *"use the sample documents"* and tap **Sample PAN Card**, **Masked Aadhaar**, **Salary Slip** when asked → say *"I am a non-smoker"* and press **Confirm** on the card that appears → at step 5 press **Review it with Integrity Guardian** → **Run Integrity Guardian** → ask it *"what is the grace period?"* To see it catch problems, go back to the opening screen, pick **Review a policy** and load **Sample proposed policy (with issues)**: seven findings, each with a page. The presenter view (`/presenter`) shows, live, which model answered each turn and the tokens it used.
 
 **What to notice.** The agent's cursor moves to the field it fills and the browser confirms the value; income, smoking and nominee answers wait for your Confirm; the identity-shield panel shows the blurred copy that was sent and the sharp card that was not; the Guardian cites pages, names which two things disagree, and refuses to change the application or predict a claim. In Guardian mode the presenter label switches from Muse Spark 1.3 to Muse Spark Open.
 
