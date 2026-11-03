@@ -44,12 +44,13 @@ echo "==> sending the image (this is a few hundred MB compressed)"
 docker save "$TAG" | gzip | ssh_ "gunzip | docker load"
 
 echo "==> sending the stack and keys"
+# The directory is owner-only on the host; the file itself must stay readable because the container runs as uid 10001.
 ssh_ "mkdir -p $REMOTE_DIR/secrets && chmod 700 $REMOTE_DIR/secrets"
 # shellcheck disable=SC2086
 scp $SSH_OPTS deploy/docker-compose.yml deploy/Caddyfile "$TARGET:$REMOTE_DIR/"
 # shellcheck disable=SC2086
 scp $SSH_OPTS "$ENV_FILE" "$TARGET:$REMOTE_DIR/secrets/.env.local"
-ssh_ "chmod 600 $REMOTE_DIR/secrets/.env.local && printf 'PUBLIC_HOST=%s\nCOVERPILOT_IMAGE=%s\n' '$PUBLIC_HOST' '$TAG' > $REMOTE_DIR/.env"
+ssh_ "chmod 644 $REMOTE_DIR/secrets/.env.local && printf 'PUBLIC_HOST=%s\nCOVERPILOT_IMAGE=%s\n' '$PUBLIC_HOST' '$TAG' > $REMOTE_DIR/.env"
 
 echo "==> starting"
 ssh_ "cd $REMOTE_DIR && docker compose up -d"

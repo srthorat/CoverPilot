@@ -22,3 +22,4 @@ support
 *.mp4
 omni_browse/test-results
 omni_browse/playwright-report
+*.pem
