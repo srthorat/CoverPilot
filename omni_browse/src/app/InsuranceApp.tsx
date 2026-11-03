@@ -333,7 +333,20 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     hi: 'NexaSure में आपका स्वागत है! मैं OmniCB एजेंट हूँ। आपका सुरक्षित लाइव वॉइस सत्र अभी जोड़ रहा हूँ।',
     mr: 'NexaSure मध्ये आपले स्वागत आहे! मी OmniCB एजंट आहे. तुमचे सुरक्षित लाइव्ह व्हॉइस सत्र आता जोडत आहे.',
   };
-  const [chatMessages, setChatMessages] = useState<Array<{ id?: number; sender: 'user' | 'agent'; text: string; time: string }>>([
+  // The Guardian's own lines for the same three moments, used when the live session is opened from "Review a policy".
+  const GUARDIAN_GREETING_TEXT: Record<'en' | 'hi' | 'mr', string> = {
+    en: 'Welcome to NexaSure. I am Integrity Guardian: an independent review of your proposed policy. Connecting your secure live voice session now.',
+    hi: 'NexaSure में आपका स्वागत है। मैं Integrity Guardian हूँ: आपकी प्रस्तावित पॉलिसी की स्वतंत्र समीक्षा। आपका सुरक्षित लाइव वॉइस सत्र अभी जोड़ रहा हूँ।',
+    mr: 'NexaSure मध्ये आपले स्वागत आहे. मी Integrity Guardian आहे: तुमच्या प्रस्तावित पॉलिसीचे स्वतंत्र पुनरावलोकन. तुमचे सुरक्षित लाइव्ह व्हॉइस सत्र आता जोडत आहे.',
+  };
+  const GUARDIAN_WELCOME_TEXT: Record<'en' | 'hi' | 'mr', string> = {
+    en: 'Your secure live session is connected. This is an independent review of your proposed policy: I read the document, check it against your application and the rules, and I never change your application. Press Run Integrity Guardian for the full review, or ask me anything about the policy and I will answer with the page number.',
+    hi: 'आपका सुरक्षित लाइव सत्र जुड़ गया है। यह आपकी प्रस्तावित पॉलिसी की स्वतंत्र समीक्षा है: मैं दस्तावेज़ पढ़ता हूँ, उसे आपके आवेदन और नियमों से मिलाता हूँ, और आपके आवेदन में कभी कोई बदलाव नहीं करता। पूरी समीक्षा के लिए Run Integrity Guardian दबाएँ, या पॉलिसी के बारे में कुछ भी पूछें, मैं पृष्ठ संख्या के साथ उत्तर दूँगा।',
+    mr: 'तुमचे सुरक्षित लाइव्ह सत्र जोडले गेले आहे. हे तुमच्या प्रस्तावित पॉलिसीचे स्वतंत्र पुनरावलोकन आहे: मी दस्तऐवज वाचतो, तो तुमच्या अर्जाशी आणि नियमांशी पडताळतो, आणि तुमच्या अर्जात कधीही बदल करत नाही. पूर्ण पुनरावलोकनासाठी Run Integrity Guardian दाबा, किंवा पॉलिसीबद्दल काहीही विचारा, मी पान क्रमांकासह उत्तर देईन.',
+  };
+  // Which agent a transcript line came from decides its label; lines without a role predate the two-agent split and are OmniCB's.
+  const agentLabel = (role?: 'cobrowse' | 'guardian') => (role === 'guardian' ? 'Integrity Guardian' : 'OmniCB Agent');
+  const [chatMessages, setChatMessages] = useState<Array<{ id?: number; sender: 'user' | 'agent'; role?: 'cobrowse' | 'guardian'; text: string; time: string }>>([
     {
       sender: 'agent',
       text: "Welcome to NexaSure! I am OmniCB Agent. When you are ready, click 'Accept and start co-browsing' to begin our secure live voice session.",
@@ -771,8 +784,12 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       setIsSharingPaused(false);
       setScreenControlStatus('granted');
 
-      // Same lines the Python agent speaks on connect (voice-agent-py/bot.py WELCOME).
-      const welcomeMsg = resuming
+      // Same lines the Python agent speaks on connect (voice-agent-py/bot.py WELCOME). Opened from "Review a policy",
+      // the session belongs to the Guardian, so it introduces itself instead of the co-browsing agent.
+      const guardianSession = modeRef.current === 'guardian';
+      const welcomeMsg = guardianSession && !resuming
+        ? GUARDIAN_WELCOME_TEXT[selectedLanguage]
+        : resuming
         ? selectedLanguage === 'hi'
           ? 'वापसी पर स्वागत है। हमारी अब तक की बातचीत मेरे पास है। जहाँ रुके थे, वहीं से आगे बढ़ते हैं।'
           : selectedLanguage === 'mr'
@@ -788,7 +805,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       // user gesture), and the agent's own welcome follows once it has ended and the WebRTC
       // session is ready. The agent is told not to greet on its own (autoWelcome: false).
       welcomeRef.current = { text: welcomeMsg, lang: selectedLanguage, greetingDone: false, ready: false, spoken: false };
-      speakText(GREETING_TEXT[selectedLanguage], selectedLanguage, () => {
+      speakText((guardianSession ? GUARDIAN_GREETING_TEXT : GREETING_TEXT)[selectedLanguage], selectedLanguage, () => {
         welcomeRef.current.greetingDone = true;
         maybeSpeakAgentWelcome();
       });
@@ -801,6 +818,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
         ...prev,
         {
           sender: 'agent',
+          role: modeRef.current,
           text: `Live session connected: ${welcomeMsg}`,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
@@ -850,7 +868,13 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const testAndUnmuteAudio = () => {
     playChime();
     const testMsg =
-      selectedLanguage === 'hi'
+      modeRef.current === 'guardian'
+        ? selectedLanguage === 'hi'
+          ? 'ऑडियो चालू है। मैं Integrity Guardian हूँ, आपकी पॉलिसी की समीक्षा के लिए तैयार हूँ।'
+          : selectedLanguage === 'mr'
+          ? 'ऑडिओ सुरू झाला आहे. मी Integrity Guardian आहे, तुमच्या पॉलिसीच्या पुनरावलोकनासाठी सज्ज आहे.'
+          : 'Voice guidance is now active and unmuted. I am Integrity Guardian, ready to review your policy.'
+        : selectedLanguage === 'hi'
         ? "ऑडियो चालू है। मैं आपका OmniCB एजेंट हूँ, आपकी सहायता के लिए तैयार हूँ।"
         : selectedLanguage === 'mr'
         ? "ऑडिओ सुरू झाला आहे. मी तुमचा OmniCB एजंट आहे, मदतीसाठी सज्ज आहे."
@@ -1135,7 +1159,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
     if (id === null) return;
     setChatMessages((prev) => {
       const i = prev.findIndex((m) => m.id === id);
-      if (i < 0) return [...prev, { id, sender: 'agent', text, time: stampNow() }];
+      if (i < 0) return [...prev, { id, sender: 'agent', role: modeRef.current, text, time: stampNow() }];
       const next = [...prev];
       next[i] = { ...next[i], text };
       return next;
@@ -1206,7 +1230,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
       case 'user_turn':
         if (ev.kbChunks?.some((c) => c.doc)) {
           const src = ev.kbChunks.filter((c) => c.doc).map((c) => `${c.label.replace('Your policy › ', '')}: "${(c.excerpt || '').replace(/\s+/g, ' ').slice(0, 110)}…"`).join('  •  ');
-          setChatMessages((prev) => [...prev, { sender: 'agent', text: `Looking in your policy: ${src}`, time: stampNow() }]);
+          setChatMessages((prev) => [...prev, { sender: 'agent', role: 'guardian', text: `Looking in your policy: ${src}`, time: stampNow() }]);
         }
         setVoiceTranscriptLive('');
         setVoiceTelemetry((t) => ({ ...t, asrTurnMs: ev.asrTurnMs }));
@@ -3199,6 +3223,15 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                 onClick={() => {
                   setMode('guardian');
                   setEntry('done');
+                  // The transcript opens with the Guardian's own introduction, not the co-browsing agent's.
+                  setChatMessages([
+                    {
+                      sender: 'agent',
+                      role: 'guardian',
+                      text: 'Integrity Guardian: independent review of your proposed policy. I read the document, check it against your application and the rules, and answer every question with a page reference. I never change your application. Load a policy and press Run Integrity Guardian, or connect the live voice session to ask me directly.',
+                      time: 'Just now',
+                    },
+                  ]);
                 }}
                 className="flex flex-col items-start justify-start text-left rounded-2xl border-2 border-slate-200 hover:border-[#582be8] bg-white p-5 shadow-sm transition-colors"
               >
@@ -6010,7 +6043,7 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
                     }`}
                   >
                     <div className="flex justify-between text-[11px] text-slate-400 tabular-nums mb-1">
-                      <span className="font-bold">{msg.sender === 'agent' ? 'OmniCB Agent' : 'You'}</span>
+                      <span className="font-bold">{msg.sender === 'agent' ? agentLabel(msg.role) : 'You'}</span>
                       <span>{msg.time}</span>
                     </div>
                     <p>{msg.text}</p>
