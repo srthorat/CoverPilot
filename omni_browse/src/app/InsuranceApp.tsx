@@ -18,7 +18,7 @@ import { assessShield, cardCrop, leakMessage, pixelBlock, RETAKE_HINT, ShieldRef
 import { CLIENT_REVIEW_TIMEOUT_MS, reviewFailureMessage } from '@/lib/guardian-timing';
 
 const IDLE_DISCONNECT_MS = 180_000; // the live voice session ends after 3 minutes without speech, a click or a key press
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VoiceAgentClient, type AgentEvent, type AgentAction, type VoicePersona, type EnglishAccent, type CaseRecord } from '@/lib/voice-client';
 import { MaskedIdField, maskAadhaar, maskPan, maskMobile } from '@/components/MaskedIdField';
 import { PresenterPanel, describeFieldAction, type SessionStats, type TurnRecord, type TurnMarks } from '@/components/PresenterPanel';
@@ -348,13 +348,22 @@ export function InsuranceApp({ initialPresenter = false }: { initialPresenter?: 
   const agentLabel = (role?: 'cobrowse' | 'guardian') => (role === 'guardian' ? 'Integrity Guardian' : 'OmniCB Agent');
   // Short speaker name put in front of a live transcript line, for whichever agent is speaking right now.
   const agentShort = () => (modeRef.current === 'guardian' ? 'Integrity Guardian' : 'OmniCB');
-  const [chatMessages, setChatMessages] = useState<Array<{ id?: number; sender: 'user' | 'agent'; role?: 'cobrowse' | 'guardian'; text: string; time: string }>>([
+  type ChatMessage = { id?: number; sender: 'user' | 'agent'; role?: 'cobrowse' | 'guardian'; text: string; time: string };
+  const [chatMessages, rawSetChatMessages] = useState<ChatMessage[]>([
     {
       sender: 'agent',
       text: "Welcome to NexaSure! I am OmniCB Agent. When you are ready, click 'Accept and start co-browsing' to begin our secure live voice session.",
       time: 'Just now',
     },
   ]);
+  // Every agent line added without a role is stamped with the agent active at that moment, so the transcript labels it right.
+  const setChatMessages = useCallback((update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    rawSetChatMessages((prev) => {
+      const next = typeof update === 'function' ? update(prev) : update;
+      const kept = new Set(prev);
+      return next.map((m) => (m.sender === 'agent' && !m.role && !kept.has(m) ? { ...m, role: modeRef.current } : m));
+    });
+  }, []);
   const [userQuery, setUserQuery] = useState<string>('');
 
   // Live two-way voice: mic -> Meta Muse Voice Transcribe (realtime WS) -> Muse Spark (streamed) -> Google Cloud TTS (PCM over the socket)
