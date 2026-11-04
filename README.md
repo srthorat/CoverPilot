@@ -6,9 +6,9 @@
 *A verifiable agent: every action is typed and allow-listed, a second Meta model checks each one and a rejected one is reverted, deterministic code does the comparisons the model must not, and the browser confirms what actually changed.*
 *Built for the Meta Global AI Developer Hackathon 2026, problem statement "Build for Your World".*
 
-**Live demo:** [coverpilot.veloxpro.in](https://coverpilot.veloxpro.in) (Chrome, microphone, sample documents only) · **Demo video:** [intro + demo](https://www.youtube.com/watch?v=BRHOGpE4NCo) · [demo only](https://www.youtube.com/watch?v=BRHOGpE4NCo&t=48) (3:58, chapters in the description)
-
-**Presenter / debug view:** [coverpilot.veloxpro.in/presenter](https://coverpilot.veloxpro.in/presenter) — the same app with a side panel showing the agent's internals live: model calls and latency, knowledge-base chunks retrieved, the turn timeline, Muse Wonder verdicts and customer memory.
+- **Live demo:** [coverpilot.veloxpro.in](https://coverpilot.veloxpro.in) (Chrome, microphone, sample documents only)
+- **Demo video (3:58):** [intro + demo](https://www.youtube.com/watch?v=BRHOGpE4NCo) · [demo only](https://www.youtube.com/watch?v=BRHOGpE4NCo&t=48) (starts at 0:48; chapters in the description)
+- **Presenter / debug view:** [coverpilot.veloxpro.in/presenter](https://coverpilot.veloxpro.in/presenter) (the same app plus a live panel of the agent's internals: model calls and latency, knowledge-base chunks, turn timeline, Muse Wonder verdicts, customer memory)
 
 > **Everything here is a demo.** The insurer (NexaSure), its policy documents, UIN, policy numbers and people are fictional. The sample documents are marked as such, the e-signature is a typed name and the payment moves no money. Nothing in this project is an offer of insurance, tax advice or medical advice. The demo build works on the bundled sample documents only (see [Demo build](#demo-build-and-own-files)).
 
