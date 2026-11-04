@@ -385,7 +385,21 @@ Built from 27 Oct:
 
 ## Other uses and future work
 
-The pattern (a co-browsing agent that fills a regulated form with approvals, plus an independent document checker on open weights) transfers to health and motor insurance proposals, loan and KYC onboarding, government benefit applications, rental and employment contracts, and any form where the document a customer signs should be checked against what they were promised. Next steps we would take: a manual baseline with real testers; the identity shield on real cards under a privacy review; the Guardian on issued policies and claim letters; a phone-first layout; and running Muse Spark Open for the OmniCB Agent too, so the whole product can be self-hosted.
+The pattern, a co-browsing agent that fills a regulated form with approvals plus an independent document checker on open weights, transfers to:
+
+- health and motor insurance proposals
+- loan and KYC onboarding
+- government benefit applications
+- rental and employment contracts
+- any form where the document a customer signs should be checked against what they were promised
+
+Next steps we would take:
+
+- a manual baseline with real testers
+- the identity shield on real cards, under a privacy review
+- the Guardian on issued policies and claim letters
+- a phone-first layout
+- Muse Spark Open for the OmniCB Agent too, so the whole product can be self-hosted
 
 ## License
 
