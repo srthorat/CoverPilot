@@ -4,11 +4,13 @@
 
 Buying term-life cover in India means a long form, identity documents that get photographed and forwarded, and a policy that most people sign without reading. CoverPilot is built for that customer: they talk and the form fills itself in English, Hindi or Marathi; their ID numbers never leave the browser; and a second, independent agent reads the proposed policy back to them, page by page, before they sign. In the demo it caught 7 of 7 planted problems in a sample policy and raised none on a correct one.
 
+**The gap it is built for:** 84% of insurance leads abandon a quote early (Earnix, 2026) · 91% of consumers accept terms without reading them (Deloitte) · households lack about 56% of the life cover they need (Swiss Re Institute, 2024) · in India, death claims worth about ₹976 crore were denied in one year (IRDAI Annual Report FY 2024-25). Sources on slide 2 of the [pitch deck](docs/CoverPilot-pitch.pdf).
+
 **Two voice agents on one Meta-powered runtime, for a term-life insurance application: one fills the form with the customer, the other checks the policy before they sign.**
 *A verifiable agent: every action is typed and allow-listed, a second Meta model checks each one and a rejected one is reverted, deterministic code does the comparisons the model must not, and the browser confirms what actually changed.*
 *Built for the Meta Global AI Developer Hackathon 2026, problem statement "Build for Your World".*
 
-- **Live demo:** [coverpilot.veloxpro.in](https://coverpilot.veloxpro.in) (Chrome, microphone, sample documents only)
+- **Live demo:** [coverpilot.veloxpro.in](https://coverpilot.veloxpro.in) (Chrome, microphone; sample documents, or your own ID image and policy PDF)
 - **Demo video, intro + demo:** [youtube.com/watch?v=BRHOGpE4NCo](https://www.youtube.com/watch?v=BRHOGpE4NCo)
 - **Demo video, demo only:** [youtube.com/watch?v=BRHOGpE4NCo&t=48](https://www.youtube.com/watch?v=BRHOGpE4NCo&t=48)
 - **Pitch deck (5 slides):** [docs/CoverPilot-pitch.pdf](docs/CoverPilot-pitch.pdf) (problem, solution, model map, other uses)
@@ -315,7 +317,7 @@ Open the app, pick **Start a new policy**, accept the session and speak. Use the
 
 ### Demo build and own files
 
-The image works on the bundled sample documents only. The controls for picking your own ID image or policy PDF are implemented and tested but compiled out unless the app is built with `--build-arg NEXT_PUBLIC_ALLOW_OWN_FILES=true` (or `BUILD_ARGS="--build-arg NEXT_PUBLIC_ALLOW_OWN_FILES=true" deploy/deploy.sh …`). The privacy design was tuned on the bundled layouts plus the 14 test cards above; it has not been tried on real cards.
+By default the image works on the bundled sample documents only; the controls for picking your own ID image or policy PDF are compiled in only when the app is built with `--build-arg NEXT_PUBLIC_ALLOW_OWN_FILES=true` (or `BUILD_ARGS="--build-arg NEXT_PUBLIC_ALLOW_OWN_FILES=true" deploy/deploy.sh …`). The public demo at coverpilot.veloxpro.in is built with that flag on, so you can bring your own files. The privacy design was tuned on the bundled layouts plus the 14 test cards above and has not been tried on real cards: a real ID goes through the same blur-first shield (the sharp image never leaves the browser, only blurred copies and the redacted image are sent), but treat that as a design claim, not a tested one, and use a sample card if in doubt.
 
 ## Configuration
 
@@ -384,7 +386,7 @@ Built from 27 Oct:
 
 ## Honest limits
 
-- A demo on fictional documents. The identity shield was tuned on the three bundled layouts and 14 generated test cards; it has not been tried on real cards, and multi-page or password-protected PDFs of ID cards are refused.
+- Tuned on fictional documents. The identity shield was tuned on the three bundled layouts and 14 generated test cards; it has not been tried on real cards. The public demo lets you upload your own ID image or policy PDF, which runs the same shield, but that path is untested on real cards. Multi-page or password-protected PDFs of ID cards are refused.
 - Meta's retention of API inputs is not verified. Name, date of birth, address and PIN on a redacted document, masked policy text and form state do go to Meta.
 - One container carries 8 voice conversations on 5 cores; the stall at 12 was measured, its root cause was not found. More callers need more containers behind a sticky load balancer.
 - The CoverPilot timings are machine-paced lower bounds; a manual baseline with real people was not measured.
