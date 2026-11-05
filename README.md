@@ -2,6 +2,8 @@
 
 # CoverPilot
 
+Buying term-life cover in India means a long form, identity documents that get photographed and forwarded, and a policy that most people sign without reading. CoverPilot is built for that customer: they talk and the form fills itself in English, Hindi or Marathi; their ID numbers never leave the browser; and a second, independent agent reads the proposed policy back to them, page by page, before they sign. In the demo it caught 7 of 7 planted problems in a sample policy and raised none on a correct one.
+
 **Two voice agents on one Meta-powered runtime, for a term-life insurance application: one fills the form with the customer, the other checks the policy before they sign.**
 *A verifiable agent: every action is typed and allow-listed, a second Meta model checks each one and a rejected one is reverted, deterministic code does the comparisons the model must not, and the browser confirms what actually changed.*
 *Built for the Meta Global AI Developer Hackathon 2026, problem statement "Build for Your World".*
@@ -106,6 +108,7 @@ A real customer with think time and a human reading pace will take longer; this 
 
 | Metric | Result |
 |---|---|
+| Headline: problems caught vs false findings | **7 of 7 planted problems caught, 0 false findings on the correct policy** (three runs each); the two rows below are the detail |
 | Review of the 4-page sample policy (Muse Spark Open, low reasoning) | **6.4 s and 7.0 s** model time on two recorded runs; about 8.5 s from click to result |
 | Planted problems found in the "sample with issues" | **7 of 7**, each with a page reference |
 | The draft policy generated from a correct application | 0 issues reported (all three timed runs) |
@@ -239,6 +242,8 @@ Not used: Muse Glimmer. Muse Code is a coding tool, not part of the product. The
 | The sharp identity-document image; policy PDF text before masking; the generated draft PDF; the resume key; the plaintext of a paused proposal | Blurred copies of ID documents; the redacted document image (name, date of birth, address and PIN are readable on it, because the form is filled from them); masked policy text; form state as JSON; screenshots of the form with sensitive elements removed | Aadhaar, PAN and mobile numbers typed by the customer; the e-signature; the payment |
 
 How the identity shield works: the browser blurs the card with its own box filter (identical in every browser) and sends only blurred copies. SAM 3.1 finds photo, signature and QR (Aadhaar 48–54 px wide, PAN 70–90 px); Muse Spark finds the ID numbers from layout alone (Aadhaar 48–54 px, PAN 85–95 px, salary slip 70–90 px). A box is kept only where at least two copies agree; a missing one fails the request, so nothing is read. The browser pixelates those boxes on the sharp image and only that image is read. Measured with Muse Spark as the reader: the Aadhaar number was unreadable at 54 px and below and fully readable from 80 px; the PAN was unreadable up to 100 px and leaked at 130 px. A leak probe reads the redacted image once more; if five or more characters of a number are legible the scan is not used.
+
+Model names used, verbatim from the code: `muse-spark-1.3`, `muse-spark-open-1026`, `muse-voice-transcribe-1.0`, `muse-wonder-1.0`, `muse-image-1.0`, `sam-3.1`. No `-contributor` model variant is used anywhere, so the data-sharing terms attached to those variants do not apply to anything a customer says or uploads.
 
 Spoken text does not appear in the agent's logs: Pipecat frame payloads are trimmed at every log level, and loguru's variable dump on exceptions is off (`DEBUG_LOG_TRANSCRIPTS=1` opts in locally).
 
@@ -380,6 +385,7 @@ Built from 27 Oct:
 - Meta's retention of API inputs is not verified. Name, date of birth, address and PIN on a redacted document, masked policy text and form state do go to Meta.
 - One container carries 8 voice conversations on 5 cores; the stall at 12 was measured, its root cause was not found. More callers need more containers behind a sticky load balancer.
 - The CoverPilot timings are machine-paced lower bounds; a manual baseline with real people was not measured.
+- No comparison against a single plain-prompted model was run. The verifier, the Confirm gate and the deterministic Guardian checks are shown working; what they add over one prompt is not yet measured as a number.
 - A few regulatory points are marked unverified in `voice-agent-py/knowledge/SOURCES-*.md`, and the passages tell the customer to confirm them with the insurer.
 - The Guardian explains contract wording and flags possible issues. It does not predict claim decisions and is not legal, tax or financial advice.
 
