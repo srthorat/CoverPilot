@@ -11,6 +11,7 @@ Buying term-life cover in India means a long form, identity documents that get p
 - **Live demo:** [coverpilot.veloxpro.in](https://coverpilot.veloxpro.in) (Chrome, microphone, sample documents only)
 - **Demo video, intro + demo:** [youtube.com/watch?v=BRHOGpE4NCo](https://www.youtube.com/watch?v=BRHOGpE4NCo)
 - **Demo video, demo only:** [youtube.com/watch?v=BRHOGpE4NCo&t=48](https://www.youtube.com/watch?v=BRHOGpE4NCo&t=48)
+- **Pitch deck (5 slides):** [docs/CoverPilot-pitch.pdf](docs/CoverPilot-pitch.pdf) (problem, solution, model map, other uses)
 - **Presenter / debug view:** [coverpilot.veloxpro.in/presenter](https://coverpilot.veloxpro.in/presenter) (the same app plus a live panel of the agent's internals: model calls and latency, knowledge-base chunks, turn timeline, Muse Wonder verdicts, customer memory)
 
 > **Everything here is a demo.** The insurer (NexaSure), its policy documents, UIN, policy numbers and people are fictional. The sample documents are marked as such, the e-signature is a typed name and the payment moves no money. Nothing in this project is an offer of insurance, tax advice or medical advice. The demo build works on the bundled sample documents only (see [Demo build](#demo-build-and-own-files)).
@@ -64,6 +65,8 @@ Buying term-life cover in India means a long form, identity documents that get p
 | Long insurance forms make customers drop off; in India a term-life proposal is 5 steps and 14 fields before riders and nominees. | **OmniCB Agent fills it together with the customer, by voice**, in English, Hindi or Marathi. Documents fill the fields; the customer confirms. |
 | Typing errors, and mismatches between the identity documents and the application, are found at claim time, when it is too late. | Every value from a document is compared with what was typed; a difference becomes a **Keep mine / Use the document's** card, and the application check at step 5 lists what is still open. |
 | Customers sign policies they have not read: exclusions, waiting periods, a wrong nominee, a premium that differs from the quote. | **Integrity Guardian reads the whole proposed policy**, compares it with the application and with fixed IRDAI rules, cites the page for every finding, answers questions by voice, and suggests what to ask the insurer. It never changes the application and never says whether a claim would be paid. |
+
+The size of the problem, from the sources named: households lack about 56% of the life cover they would need if a breadwinner died, a global gap of about $432 billion (Swiss Re Institute, 2024); 84% of insurance leads abandon a quote early (Earnix via FinTech Global, 2026); 91% of consumers accept terms without reading them (Deloitte Global Mobile Consumer Survey); in India, death claims worth about ₹976 crore were denied in one year (IRDAI Annual Report FY 2024-25). These are the figures on slide 2 of the pitch deck; CoverPilot's own numbers in the Measured section are from the demo on sample documents.
 
 The loop is: **build the application → get the proposed policy → review it independently → fix what it finds → review again.**
 
@@ -391,20 +394,27 @@ Built from 27 Oct:
 
 ## Other uses and future work
 
-The pattern, a co-browsing agent that fills a regulated form with approvals plus an independent document checker on open weights, transfers to:
+The pattern, a co-browsing agent that fills a regulated form with approvals plus an independent document checker on open weights, transfers to any long form and any document a customer must trust:
 
-- health and motor insurance proposals
-- loan and KYC onboarding
-- government benefit applications
-- rental and employment contracts
-- any form where the document a customer signs should be checked against what they were promised
+| Industry | OmniCB fills | Integrity Guardian reviews |
+|---|---|---|
+| Banking and lending | loan and KYC onboarding | loan agreements |
+| Insurance | health and motor claims | policy exclusions |
+| Legal | affidavits, court forms | contracts and NDAs |
+| Government | benefit and tax forms | scheme terms |
+| Healthcare | patient intake forms | treatment consent terms |
+| Real estate and telecom | rental and SIM applications | lease and service terms |
 
 Next steps we would take:
 
-- a manual baseline with real testers
+- a manual baseline with real testers, and a comparison against a single plain-prompted model
 - the identity shield on real cards, under a privacy review
-- the Guardian on issued policies and claim letters
-- a phone-first layout
+- the Guardian on more document types and longer policies: issued policies, claim letters
+- more Indian languages beyond Hindi and Marathi
+- a Meta text-to-speech voice when one exists, removing the one outside service
+- integration with a real insurer's e-sign and payment
+- hand-off to a human advisor mid-call, with full context
+- a phone-first layout, and a phone line or WhatsApp channel for "read my policy to me"
 - Muse Spark Open for the OmniCB Agent too, so the whole product can be self-hosted
 
 ## License
